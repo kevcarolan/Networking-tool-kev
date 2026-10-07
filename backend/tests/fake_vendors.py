@@ -46,6 +46,7 @@ def setup(d) -> None:
         d.install_request = "No install operation in progress\n"
     elif d.platform == "huawei_vrp":
         d.files[d.image.split("/")[-1]] = (112345678, "b" * 32)  # the running .cc stays on flash
+    firewall_setup(d)
 
 
 def _ros_size(size: int) -> str:
@@ -93,6 +94,9 @@ def version_text(d) -> str | None:
 def output(d, cmd: str) -> str | None:
     """Show output for the new platforms (None: not handled here)."""
     p = d.platform
+    fw = firewall_output(d, cmd)
+    if fw is not None:
+        return fw
     if cmd == VERSION_COMMANDS.get(p):
         return version_text(d)
     if p == "arista_eos":
@@ -215,6 +219,9 @@ def execute(net, d, cmd: str) -> str | None:
 
     p = d.platform
     version_of = net._image_version
+    fw = firewall_execute(net, d, cmd)
+    if fw is not None:
+        return fw
     if p == "arista_eos" and cmd == "reload now":
         boot = d.boot[0] if d.boot else d.image
         net.reload(d, version_of(boot), boot)
@@ -345,3 +352,154 @@ def execute(net, d, cmd: str) -> str | None:
             net.reload(d, d.slots["default"])
             return "Proceed with reboot? [confirm][y] " + RELOAD_CLOSED
     return None
+
+
+# --- firewalls: SSH output and the management APIs ---------------------------------------
+
+def firewall_setup(d) -> None:
+    if d.platform == "fortinet_fortios":
+        d.slots, d.selected = {"1": d.version, "2": "7.0.12"}, "1"
+        d.uninterruptible = True
+    elif d.platform == "paloalto_panos":
+        d.software = {d.version: True}  # version -> downloaded
+        d.next_version, d.suspended, d.jobs = None, False, {}
+
+
+def firewall_output(d, cmd: str) -> str | None:
+    if d.platform == "fortinet_fortios":
+        if cmd == "get system status":
+            mode = "standalone" if not d.role else f"a-p, {d.role}"
+            return v.FORTIOS_STATUS.replace("v7.2.5,build1517", f"v{d.version},build1517") \
+                .replace("Current HA mode: a-p, primary", f"Current HA mode: {mode}")
+        if cmd == "diagnose sys flash list":
+            return "Partition  Image                         TotalSize(KB)  Used(KB)  Use%  Active\n" + \
+                "".join(f"{p}          FGT60F-{ver}-FW-build1517      253920    164104   65%  "
+                        f"{'Yes' if p == d.selected and d.up else 'No'}\n"
+                        for p, ver in sorted(d.slots.items()))
+        if cmd == "get system ha status":
+            if not d.role:
+                return "HA Health Status: OK\nModel: FortiGate-60F\nMode: standalone\n"
+            return "HA Health Status: OK\nModel: FortiGate-60F\nMode: HA A-P\nGroup: 1\n"
+        if cmd == "get system ha | grep uninterruptible-upgrade":
+            return f"uninterruptible-upgrade: {'enable' if d.uninterruptible else 'disable'}\n"
+    if d.platform == "paloalto_panos":
+        if cmd == "show system info":
+            return v.PANOS_INFO.replace("sw-version: 10.2.7-h3", f"sw-version: {d.version}")
+        if cmd == "show high-availability state":
+            if not d.role:
+                return "HA not enabled\n"
+            peer = d.peer
+            link = "up" if peer is not None and peer.up else "down"
+            me = "suspended" if d.suspended else d.role
+            other = ("suspended" if peer.suspended else peer.role) if peer and peer.up else "unknown"
+            return (f"Group 1:\n  Mode: Active-Passive\n  Local Information:\n    Version: 1\n"
+                    f"    State: {me} (last 1 days)\n  Peer Information:\n"
+                    f"    Connection status: {link}\n    State: {other} (last 1 days)\n")
+    return None
+
+
+def firewall_execute(net, d, cmd: str) -> str | None:
+    from app.tools.firmware_upgrade.deviceio import RELOAD_CLOSED
+
+    if d.platform == "fortinet_fortios":
+        if cmd.startswith("execute set-next-reboot "):
+            d.selected = {"primary": "1", "secondary": "2"}[cmd.split()[-1]]
+            return "Default image is changed to image# " + d.selected + ".\n"
+        if cmd == "execute reboot":
+            net.reload(d, d.slots[d.selected])
+            return "This operation will reboot the system !\nDo you want to continue? (y/n)y" + \
+                RELOAD_CLOSED
+    return None
+
+
+class FakeFortios:
+    """The FortiGate REST API: the image upload installs and reboots."""
+
+    def __init__(self, net, dev):
+        self.net, self.dev = net, dev
+
+    def _up(self):
+        from app.core.ssh import UNREACHABLE, DeviceError
+        if not self.dev.up:
+            raise DeviceError(UNREACHABLE, "FortiGate API unreachable: device down")
+
+    def login(self):
+        self._up()
+
+    def status(self):
+        self._up()
+        return {"version": f"v{self.dev.version}", "build": 1517}
+
+    def upgrade(self, local):
+        from app.core.ssh import ERROR, DeviceError
+        self._up()
+        d = self.dev
+        d.commands.append(f"api:upgrade {local.name}")
+        self.net.log.append((d.name, f"api:upgrade {local.name}"))
+        if "image_rejected" in d.fail:
+            raise DeviceError(ERROR, "FortiGate refused the image: invalid firmware")
+        version = self.net.versions[local.name]
+        other = "2" if d.selected == "1" else "1"
+        d.slots[other], d.selected = version, other
+        if d.role:  # an HA cluster upgrades itself; its address stays up
+            d.version = version
+            return {"status": "success"}
+        self.net.reload(d, version)
+        return {"status": "success"}
+
+
+class FakePanos:
+    """The PAN-OS XML API."""
+
+    def __init__(self, net, dev):
+        self.net, self.dev = net, dev
+
+    def _up(self):
+        from app.core.ssh import UNREACHABLE, DeviceError
+        if not self.dev.up:
+            raise DeviceError(UNREACHABLE, "PAN-OS API unreachable: device down")
+
+    def _log(self, what):
+        self.dev.commands.append(what)
+        self.net.log.append((self.dev.name, what))
+
+    def login(self):
+        self._up()
+
+    def software_info(self):
+        self._up()
+        return [{"version": ver, "downloaded": dl, "current": ver == self.dev.version}
+                for ver, dl in self.dev.software.items()]
+
+    def upload(self, local):
+        self._up()
+        self._log(f"api:upload {local.name}")
+        self.dev.software[self.net.versions[local.name]] = True
+
+    def install(self, version):
+        self._up()
+        self._log(f"api:install {version}")
+        job = str(len(self.dev.jobs) + 1)
+        ok = self.dev.software.get(version) and "install" not in self.dev.fail
+        self.dev.jobs[job] = {"status": "FIN", "result": "OK" if ok else "FAIL",
+                              "details": "" if ok else f"Failed to install {version}"}
+        if ok:
+            self.dev.next_version = version
+        return job
+
+    def job(self, job_id):
+        self._up()
+        return dict(self.dev.jobs[job_id])
+
+    def restart(self):
+        self._up()
+        self._log("api:restart")
+        self.net.reload(self.dev, self.dev.next_version or self.dev.version)
+
+    def ha_state(self, state):
+        self._up()
+        self._log(f"api:ha {state}")
+        d = self.dev
+        d.suspended = state == "suspend"
+        if d.suspended and d.role == "active" and d.peer:  # the peer takes over
+            d.role, d.peer.role = "passive", "active"

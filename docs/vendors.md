@@ -19,14 +19,14 @@ needs. Every command in this page is read-only (`show` or the vendor's equivalen
 | Cisco | ASA (`cisco_asa`) | yes | yes, failover role | no | yes | yes |
 | Cisco | FTD managed by FDM (`cisco_ftd`) | yes | yes, HA role | no | yes | yes |
 | Cisco | IOS-XR (`cisco_xr`) | yes | yes | no | yes | lab test first |
-| Cisco | Catalyst 1200/1300, CBS, SG (`cisco_smb`) | yes | yes | yes | yes | later (image pull) |
+| Cisco | Catalyst 1200/1300, CBS, SG (`cisco_smb`) | yes | yes | yes | yes | no (by choice) |
 | Allied Telesis | AlliedWare Plus (`allied_awplus`) | yes | yes | yes | yes | yes |
 | Arista | EOS (`arista_eos`) | yes | yes, free flash | yes | yes | lab test first; MLAG pairs |
 | Juniper | Junos: EX, QFX, MX, SRX (`juniper_junos`) | yes | yes | yes (EX, QFX) | yes | lab test first; not SRX clusters |
-| Fortinet | FortiGate (`fortinet_fortios`) | yes (see below) | yes, HA mode | no | yes | later |
-| Palo Alto | PAN-OS (`paloalto_panos`) | yes | yes, HA state | no | yes | later |
-| Check Point | Gaia gateways (`checkpoint_gaia`) | yes (Gaia OS only) | yes, cluster state | no | yes | later |
-| HPE Aruba | AOS-CX (`aruba_aoscx`) | yes | yes, active image | yes | yes | later (image pull) |
+| Fortinet | FortiGate (`fortinet_fortios`) | yes (see below) | yes, HA mode | no | yes | lab test first; standalone and HA cluster |
+| Palo Alto | PAN-OS (`paloalto_panos`) | yes | yes, HA state | no | yes | lab test first; standalone and HA pair |
+| Check Point | Gaia gateways (`checkpoint_gaia`) | yes (Gaia OS only) | yes, cluster state | no | yes | to be decided |
+| HPE Aruba | AOS-CX (`aruba_aoscx`) | yes | yes, active image | yes | yes | no (by choice) |
 | HPE Aruba | ArubaOS-Switch / ProCurve (`aruba_osswitch`) | yes | yes | yes | yes | lab test first |
 | HPE Aruba | Mobility Controller / Conductor, AOS 8 (`aruba_aos8`) | yes | yes | no | yes | lab test first |
 | Dell | SmartFabric OS10 (`dell_os10`) | yes | yes (service tag) | yes | yes | lab test first |
@@ -114,5 +114,9 @@ SSH must be allowed from the server to each device (TCP 22). Nothing else is nee
 backups, version checks, circuit locations or the upgrade jobs above: the image is copied
 over the same SSH connection (SCP). Some devices need their SCP server switched on first
 ([upgrades.md](upgrades.md)). Upgrades use a separate **upgrade account** with the rights to
-copy files, change the boot setting and reload. Firewall upgrades (later) will need HTTPS to
-the FortiGate and PAN-OS APIs.
+copy files, change the boot setting and reload. FortiGate and PAN-OS upgrades also need
+HTTPS from the server to their management address (see upgrades.md).
+
+Upgrade jobs are only for devices whose image can be sent from the server (SSH/SCP, or
+the firewall's own API). Devices that would have to pull the image from a server (AOS-CX,
+Cisco small business) keep backups, version checks and circuits only.

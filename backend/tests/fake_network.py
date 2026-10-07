@@ -13,6 +13,8 @@ engine's sleep/monotonic are the network's). Failures can be injected per device
     readiness    FTD readiness check fails
     image_install  Dell OS10 'image install' fails
     stays_old    after a reload the device still runs its old software
+    image_rejected  FortiGate refuses the image
+    install      PAN-OS install job fails
 The other vendors' output and commands are in tests/fake_vendors.py.
 """
 
@@ -297,6 +299,18 @@ class FakeNetwork(DeviceIO):
 
     def fetch_fingerprint(self, address):
         return FP
+
+    def api_client(self, target, fingerprint):
+        d = self.devices[target.name]
+        if target.platform in ("fortinet_fortios", "paloalto_panos"):
+            if not fingerprint:
+                raise DeviceError(SETUP, "The certificate isn't trusted yet")
+            if fingerprint.upper() != d.fingerprint:
+                raise DeviceError(SETUP, "certificate changed")
+            cls = fake_vendors.FakeFortios if target.platform == "fortinet_fortios" \
+                else fake_vendors.FakePanos
+            return cls(self, d)
+        return super().api_client(target, fingerprint)
 
     def change(self, target, commands, *, config=False, timeout=600, expect_reload=False):
         d = self._dev(target)

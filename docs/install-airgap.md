@@ -425,4 +425,4 @@ device still works. That proves the stored passwords can still be decrypted.
 | Check the sandbox | `systemd-analyze security netops` and `… netops-worker` (a lower score is better) |
 | "The upgrade worker isn't running" in the GUI | `systemctl status netops-worker`; `journalctl -u netops-worker -n 50` |
 | `install.sh` refuses: "a live upgrade job is running" | A device is being upgraded. Wait until the job has finished or paused (`sudo netops-cli upgrades-running`), or run with `FORCE=1` if you are sure |
-| FTD upgrade: "FDM API unreachable" | The firewall output rule to `FDM_HOSTS` on port 443, and FDM's management access list |
+| FTD, FortiGate or PAN-OS upgrade: "API unreachable" | The firewall output rule to `FDM_HOSTS` on port 443, and the device's management access list (trusted hosts) |

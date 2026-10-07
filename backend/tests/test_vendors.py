@@ -30,10 +30,10 @@ def test_live_commands_use_known_keys():
 
 
 def test_platforms_without_an_upgrade_driver_yet():
-    # Firewalls come with PR C; AOS-CX and Cisco small business need the device to pull
-    # the image. Until then a job can't be created for them.
-    assert set(PLATFORMS) - set(drivers.DRIVERS) == {
-        "fortinet_fortios", "paloalto_panos", "checkpoint_gaia", "aruba_aoscx", "cisco_smb"}
+    # AOS-CX and Cisco small business would have to pull the image (not wanted: backups and
+    # versions only); Check Point needs an expert-shell account (to be decided). A job
+    # can't be created for them.
+    assert set(PLATFORMS) - set(drivers.DRIVERS) == {"checkpoint_gaia", "aruba_aoscx", "cisco_smb"}
 
 
 # --- backups -------------------------------------------------------------------
