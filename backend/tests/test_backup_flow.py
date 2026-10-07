@@ -129,3 +129,15 @@ def test_product_name_setting(settings):
     with TestClient(create_app(settings)) as c:
         page = c.get("/").text
     assert page.count("Acme &lt;Net&gt; Ops") == 3 and "NetOps Tools" not in page
+
+
+def test_run_command_uses_the_port_setting(monkeypatch):
+    import app.__main__ as entry
+    from app.core.config import Settings
+
+    seen = {}
+    monkeypatch.setattr(entry, "get_settings", lambda: Settings(_env_file=None, port=8720))
+    monkeypatch.setattr(entry.uvicorn, "run", lambda *a, **kw: seen.update(kw))
+    entry.main()
+    assert seen["port"] == 8720 and seen["host"] == "127.0.0.1" and seen["factory"]
+    assert Settings(_env_file=None).port == 8710

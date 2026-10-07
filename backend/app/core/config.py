@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     # Product name shown in the browser title, the page header and reports.
     product_name: str = "NetOps Tools"
 
+    # Where 'python -m app' listens (development and trials). Not 8000, which other
+    # local tools often use. The installed service (systemd + nginx) also uses 8710.
+    host: str = "127.0.0.1"
+    port: int = 8710
+
     # Storage: SQLite database and the git repository of device configs live here.
     data_dir: Path = REPO_ROOT / "data"
     # Key used to encrypt device credentials. Keep it OUTSIDE data_dir in

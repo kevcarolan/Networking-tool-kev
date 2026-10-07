@@ -53,6 +53,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-07 | Upgrade jobs only for devices whose image can be sent from the server (SSH/SCP or the firewall's own API); AOS-CX and Cisco small business keep backups, versions and circuits only | The owner: the tool is for large production networks managed over SSH; nothing is built for devices to pull images |
 | 2026-10-07 | FortiGate and PAN-OS get the image through their management API (pinned certificate, like FDM); everything else over SSH | They can't receive a file over SSH; the API upload is a push from the server |
 | 2026-10-07 | FortiGate REST API token kept in the credential's enable secret (optional) | No database change needed; FortiOS has no enable mode |
+| 2026-10-07 | The app uses port 8710 everywhere (`NETOPS_PORT`, `python -m app`, Docker, systemd/nginx) | 8000 clashes with other local tools the owner runs |
 
 ## Open questions
 
@@ -71,3 +72,4 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-07 | Networking-tool-kev | Multi-vendor PR A: 15 platforms for backups, version checks and circuit locations; vendor groups in the GUI; fixed AlliedWare Plus circuits never being located |
 | 2026-10-07 | Networking-tool-kev | Multi-vendor PR B: upgrade drivers for 10 more platforms, tested on the simulator; post-check now fails when the version can't be read |
 | 2026-10-07 | Networking-tool-kev | Multi-vendor PR C: FortiGate and PAN-OS upgrades (standalone and HA) through their APIs; shared pinned-certificate client; Check Point and pull-only switches left out by decision |
+| 2026-10-07 | Networking-tool-kev | Multi-vendor PRs A-C merged; app port 8000 replaced by 8710 for development and Docker (`NETOPS_PORT`) |
