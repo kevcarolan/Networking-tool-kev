@@ -12,7 +12,7 @@ services:
       - netops-data:/data
       - ./secrets:/secrets   # credential.key (back this up!) and your AD CA file
     restart: unless-stopped
-    expose: ["8000"]         # only reachable through Caddy
+    expose: ["8710"]         # only reachable through Caddy
 
   # Carries out firmware upgrade jobs; shares the data volume with the web app.
   netops-worker:

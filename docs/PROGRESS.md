@@ -53,6 +53,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-07 | FortiGate and PAN-OS get the image through their management API (pinned certificate, like FDM); everything else over SSH | They can't receive a file over SSH; the API upload is a push from the server |
 | 2026-10-07 | FortiGate REST API token kept in the credential's enable secret (optional) | No database change needed; FortiOS has no enable mode |
 | 2026-10-07 | Check Point upgrades stay in SmartConsole / Central Deployment; the tool does backups, versions and ARP for Check Point | Upgrading from the tool would need an expert-shell account on every gateway; production sites already upgrade from the management server |
+| 2026-10-07 | The app uses port 8710 everywhere (`NETOPS_PORT`, `python -m app`, Docker, systemd/nginx) | 8000 clashes with other local tools the owner runs |
 
 ## Open questions
 
@@ -71,3 +72,4 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-07 | Networking-tool-kev | Multi-vendor PR B: upgrade drivers for 10 more platforms, tested on the simulator; post-check now fails when the version can't be read |
 | 2026-10-07 | Networking-tool-kev | Multi-vendor PR C: FortiGate and PAN-OS upgrades (standalone and HA) through their APIs; shared pinned-certificate client; Check Point and pull-only switches left out by decision |
 | 2026-10-07 | Networking-tool-kev | Decided: Check Point upgrades stay in SmartConsole |
+| 2026-10-07 | Networking-tool-kev | Multi-vendor PRs A-C merged; app port 8000 replaced by 8710 for development and Docker (`NETOPS_PORT`) |

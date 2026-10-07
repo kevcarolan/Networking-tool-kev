@@ -3,5 +3,5 @@
 netops.corp.local {
 	tls internal
 	encode gzip
-	reverse_proxy netops:8000
+	reverse_proxy netops:8710
 }
