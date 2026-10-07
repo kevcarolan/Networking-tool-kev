@@ -41,6 +41,7 @@ from app.tools.firmware_upgrade import drivers
 from app.tools.firmware_upgrade.deviceio import DeviceIO
 from app.tools.firmware_upgrade.drivers.base import (ImageRef, Paused, Step, StepContext,
                                                      StepFailed, Unit, UpgradePath)
+from app.tools.firmware_upgrade.facts import FACT_COMMANDS
 from app.tools.firmware_upgrade.models import (
     BLOCKED, BUSY_STATES, CANCELLED, COMPLETED, COMPLETED_OVERRIDES, FAILED, NEEDS_ATTENTION,
     PAUSED, PLANNED, POST_CHECKING, PRE_CHECKING, READY, ROLLED_BACK, ROLLING_BACK, RUNNING,
@@ -274,6 +275,10 @@ def _finish(db: Session, job: UpgradeJob, mode: str) -> None:
 
 # --- the context drivers work through -------------------------------------------------
 
+API_NAMES = {"cisco_ftd": "FDM API", "fortinet_fortios": "FortiGate API",
+             "paloalto_panos": "PAN-OS API"}
+
+
 class EngineContext(StepContext):
     def __init__(self, svc: "JobService", job: UpgradeJob, image: ImageRef, path: UpgradePath,
                  units: list[Unit], targets: dict):
@@ -385,7 +390,7 @@ class EngineContext(StepContext):
             if not self.svc.io.reachable(t):
                 return False
             try:
-                self.svc.io.show(t, ["show version"])
+                self.svc.io.show(t, [FACT_COMMANDS.get(u.platform, ("show version",))[0]])
                 return True
             except Exception:  # noqa: BLE001 - still booting
                 return False
@@ -398,21 +403,29 @@ class EngineContext(StepContext):
         self.settle(u)
 
     def fdm(self, u):
+        """The device's management API (FDM, FortiGate or PAN-OS), logged in, with the
+        certificate pinned to the fingerprint in its upgrade settings."""
         if u.device_id not in self._fdm:
-            client = self.svc.io.fdm(self.target(u), u.fdm_fingerprint)
+            client = self.svc.io.api_client(self.target(u), u.fdm_fingerprint)
             client.login()
             self._fdm[u.device_id] = client
         return self._fdm[u.device_id]
+
+    api = fdm
+
+    def api_change(self, u, label, fn):
+        return self.fdm_change(u, label, fn)
 
     def forget_fdm(self, u):
         self._fdm.pop(u.device_id, None)
 
     def fdm_change(self, u, label, fn):
+        what = API_NAMES.get(u.platform, "API")
         if self.dry_run:
-            self.event(f"DRY RUN - would {label} on {u.name} (FDM API)", "change", "action",
+            self.event(f"DRY RUN - would {label} on {u.name} ({what})", "change", "action",
                        u.device_id)
             return None
-        self.event(f"FDM API on {u.name}: {label}", "change", "action", u.device_id)
+        self.event(f"{what} on {u.name}: {label}", "change", "action", u.device_id)
         try:
             return fn(self.fdm(u))
         except DeviceError as exc:

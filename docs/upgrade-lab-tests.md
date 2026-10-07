@@ -20,7 +20,7 @@ the platform's driver (`backend/app/tools/firmware_upgrade/drivers/`).
 - [ ] The lab devices are in NetOps, with a backup account and an **upgrade account** (Upgrade settings).
 - [ ] Firmware › Versions › Check now reads the model and version of each device correctly.
 - [ ] The SCP server is enabled on each device (see upgrades.md).
-- [ ] The firewall allows SSH, and HTTPS to the FTDs, from the server (`FDM_HOSTS`).
+- [ ] The firewall allows SSH, and HTTPS to the FTDs, FortiGates and PAN-OS firewalls, from the server (`FDM_HOSTS`).
 - [ ] The images are uploaded with the vendor checksum (they show "verified").
 - [ ] `NETOPS_UPGRADE_LIVE_PLATFORMS` lists **only the platform under test**. Restart both services after changing it.
 
@@ -160,6 +160,71 @@ device each. Commands and accounts: [vendors.md](vendors.md).
 - [ ] `sudo systemctl restart netops` during a live job: the job carries on (it runs in the worker).
 - [ ] `sudo systemctl stop netops-worker` during a copy: the job pauses before its next step (or, if the copy is cut off, shows Needs attention). Start the worker again.
 - [ ] Reinstall the bundle while a live job runs: `install.sh` refuses ("a live upgrade job is running").
+
+## 9. Other vendors: upgrade jobs
+
+Arista, Junos, ArubaOS-Switch, Aruba AOS 8, Dell OS10, Extreme EXOS, Huawei VRP, Cisco IOS-XR,
+MikroTik and EdgeRouter. Do section 7b for the platform first, then section 1 (the common
+tests), then these. Procedures and roll back: [upgrades.md](upgrades.md#paths-per-platform).
+
+For every one of these platforms:
+- [ ] **Copy:** Stage image works and lands where the procedure expects it (note the path). The
+      check after the copy (MD5 or size) passes; a copy that is cut off fails it.
+- [ ] **Prompts:** every question the device asks during the upgrade is answered (the job
+      log shows the device output). Note any question that made a step time out.
+- [ ] **Live Start:** the device comes back on the new version; the post-checks pass.
+- [ ] **Roll back:** make the post-check fail (e.g. use a standard with the wrong version),
+      roll back, and the device comes back on the previous version.
+
+Platform notes to confirm:
+- [ ] **Arista MLAG:** the secondary is upgraded first and the job waits for the MLAG to be
+      active before the primary.
+- [ ] **Junos Virtual Chassis:** every member is on the new version; `request system software
+      rollback` is available on this release.
+- [ ] **ArubaOS-Switch:** the SCP upload goes into `/os/secondary` (or primary) directly; the
+      `show flash` size matches the file.
+- [ ] **Aruba AOS 8:** the copy to flash works with the controller's SCP (Netmiko); `copy flash:
+      ... system: partition` and `boot system partition` are run from enable mode.
+- [ ] **Dell OS10:** `home://` is the upgrade account's home folder; `show image status` shows
+      "Completed: No error" when the install has finished.
+- [ ] **Extreme EXOS:** `install image ... reboot` installs into the other partition and asks no
+      question the job doesn't answer.
+- [ ] **Huawei VRP:** `dir flash:/<file>` shows the size; `startup system-software` and `reboot`
+      work on this model (S series or CloudEngine).
+- [ ] **IOS-XR:** the right path for the release (install add / activate, or install replace);
+      `show install request` shows when the operation has finished; roll back before the
+      commit brings back the committed software.
+- [ ] **MikroTik:** the `.npk` goes to the right folder for the model (root or `flash/`); the
+      RouterBOARD firmware step runs; roll back stops with the "by hand" instruction.
+- [ ] **EdgeRouter:** `md5sum` works from the upgrade account; `add system image` and `set system
+      image default-image` work.
+
+## 10. Firewalls: FortiGate and PAN-OS
+
+Do section 7b for the platform first. Trust the certificate in each device's upgrade settings
+(Fetch from the device, compare with what the device shows), and allow HTTPS to it from
+the server (`FDM_HOSTS`).
+
+**FortiGate (standalone, then an HA cluster):**
+- [ ] The API pre-check passes, with a REST API token (in the credential's enable secret) and
+      without one (username and password). Note which you will use.
+- [ ] Live Start: the image is accepted and the FortiGate reboots onto the new version.
+      Note how long the upload takes, and check the job log shows the API's answer *before*
+      the reboot. (If the connection drops instead, the job stops at that step although the
+      upgrade goes ahead: report it, the step then needs to treat the drop as "rebooting".)
+- [ ] `diagnose sys flash list` shows the partitions; roll back with `execute set-next-reboot`
+      brings back the previous version. With VDOMs: check the commands work from the
+      account's context (they may need `config global`).
+- [ ] HA cluster with `uninterruptible-upgrade`: the job waits while the cluster upgrades
+      itself, and finishes when every member is on the new version and HA health is OK.
+
+**PAN-OS (standalone, then an HA pair):**
+- [ ] The API pre-check passes; the base release check is right for a maintenance release.
+- [ ] Stage image uploads the software; the firewall lists it as downloaded.
+- [ ] Live Start: the install job finishes, the firewall restarts on the new version.
+- [ ] Roll back installs the previous version and restarts.
+- [ ] HA pair: the passive unit is upgraded first; suspending the active unit fails the pair
+      over to it; both end on the new version and the pair is healthy (active/passive).
 
 ## Sign-off
 

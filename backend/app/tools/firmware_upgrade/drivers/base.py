@@ -92,12 +92,18 @@ class UpgradeDriver:
     platform = ""
     paths: list[UpgradePath] = [UpgradePath("standalone", "Standalone")]
     default_fs = "flash:"
+    check_label = "check its MD5"  # how the copy is checked, for the step label
 
     def path(self, path_id: str) -> UpgradePath | None:
         return next((p for p in self.paths if p.id == path_id), None)
 
     def file_system(self, unit: Unit) -> str:
         return unit.file_system or self.default_fs
+
+    def transfer_fs(self, unit: Unit) -> str:
+        """Where the copy puts the image, as the file transfer names it (on most platforms
+        the same as file_system; Arista copies to /mnt/flash for 'flash:')."""
+        return self.file_system(unit)
 
     # --- pre-checks --------------------------------------------------------------
 
@@ -141,7 +147,7 @@ class UpgradeDriver:
         return [
             Step(f"backup_before:{d}", "backup", f"{u.name}: config backup before", d,
                  args={"label": "before"}),
-            Step(f"stage:{d}", "stage", f"{u.name}: copy the image and check its MD5", d),
+            Step(f"stage:{d}", "stage", f"{u.name}: copy the image and {self.check_label}", d),
             *self.activate_steps(ctx, u),
             Step(f"wait:{d}", "wait", f"{u.name}: wait for the device to come back", d),
             Step(f"postcheck:{d}", "postcheck", f"{u.name}: post-checks", d, gate=True),
@@ -189,7 +195,7 @@ class UpgradeDriver:
                 return
             ctx.event(f"The copy on {u.name} doesn't match the MD5 - copying it again",
                       step.kind, "warn", u.device_id)
-        ctx.transfer(u, fs)
+        ctx.transfer(u, self.transfer_fs(u))
         if ctx.dry_run:
             ctx.record_checks(u, "stage", [ck.CheckResult(
                 "device_md5", "Image on the device matches the MD5", ck.BLOCKER, ck.SKIP,
@@ -235,8 +241,11 @@ class StepContext:
                expect_reload: bool = False, long: bool = False) -> str: ...
     def transfer(self, unit: Unit, file_system: str) -> None: ...
     def wait_back(self, unit: Unit, expect_down: bool = True) -> None: ...
+    def poll(self, fn, minutes: float, what: str) -> bool: ...
     def fdm(self, unit: Unit): ...
     def fdm_change(self, unit: Unit, label: str, fn): ...
+    def api(self, unit: Unit): ...  # the management API (FDM, FortiGate, PAN-OS)
+    def api_change(self, unit: Unit, label: str, fn): ...
     def event(self, message: str, step: str = "", level: str = "info",
               device_id: int | None = None) -> None: ...
     def record_checks(self, unit: Unit, phase: str, results: list) -> list: ...

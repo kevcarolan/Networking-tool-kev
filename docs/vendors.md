@@ -5,10 +5,10 @@ needs. Every command in this page is read-only (`show` or the vendor's equivalen
 
 > **Status:** Cisco IOS/IOS-XE, NX-OS, ASA, FTD and Allied Telesis AlliedWare Plus are
 > complete. The other platforms (added October 2026) do **backups, version checks and
-> circuit locations**. Their output readers were written from the vendors' documented
-> output, so each one must be checked against a real device first
-> ([upgrade-lab-tests.md](upgrade-lab-tests.md), section 7b). Upgrade jobs for them come
-> later, platform by platform ([plans/multi-vendor.md](plans/multi-vendor.md)).
+> circuit locations**, and most of them **upgrade jobs** too. They were written from the
+> vendors' documentation and tested on the simulator, so each one must be checked against a
+> real device first ([upgrade-lab-tests.md](upgrade-lab-tests.md), sections 7b and 9). Until
+> then, keep their upgrade jobs as dry runs. Upgrade procedures: [upgrades.md](upgrades.md#paths-per-platform).
 
 ## What works where
 
@@ -18,22 +18,22 @@ needs. Every command in this page is read-only (`show` or the vendor's equivalen
 | Cisco | NX-OS (`cisco_nxos`) | yes | yes | yes | yes | yes |
 | Cisco | ASA (`cisco_asa`) | yes | yes, failover role | no | yes | yes |
 | Cisco | FTD managed by FDM (`cisco_ftd`) | yes | yes, HA role | no | yes | yes |
-| Cisco | IOS-XR (`cisco_xr`) | yes | yes | no | yes | later |
-| Cisco | Catalyst 1200/1300, CBS, SG (`cisco_smb`) | yes | yes | yes | yes | later |
+| Cisco | IOS-XR (`cisco_xr`) | yes | yes | no | yes | lab test first |
+| Cisco | Catalyst 1200/1300, CBS, SG (`cisco_smb`) | yes | yes | yes | yes | no (by choice) |
 | Allied Telesis | AlliedWare Plus (`allied_awplus`) | yes | yes | yes | yes | yes |
-| Arista | EOS (`arista_eos`) | yes | yes, free flash | yes | yes | later |
-| Juniper | Junos: EX, QFX, MX, SRX (`juniper_junos`) | yes | yes | yes (EX, QFX) | yes | later |
-| Fortinet | FortiGate (`fortinet_fortios`) | yes (see below) | yes, HA mode | no | yes | later |
-| Palo Alto | PAN-OS (`paloalto_panos`) | yes | yes, HA state | no | yes | later |
-| Check Point | Gaia gateways (`checkpoint_gaia`) | yes (Gaia OS only) | yes, cluster state | no | yes | later |
-| HPE Aruba | AOS-CX (`aruba_aoscx`) | yes | yes, active image | yes | yes | later |
-| HPE Aruba | ArubaOS-Switch / ProCurve (`aruba_osswitch`) | yes | yes | yes | yes | later |
-| HPE Aruba | Mobility Controller / Conductor, AOS 8 (`aruba_aos8`) | yes | yes | no | yes | later |
-| Dell | SmartFabric OS10 (`dell_os10`) | yes | yes (service tag) | yes | yes | later |
-| Extreme | EXOS / Switch Engine (`extreme_exos`) | yes | yes, booted image | yes | yes | later |
-| MikroTik | RouterOS (`mikrotik_routeros`) | yes | yes, free storage | yes (bridge hosts) | yes | later |
-| Ubiquiti | EdgeRouter, EdgeOS (`ubiquiti_edgeos`) | yes | yes | no | yes | later |
-| Huawei | VRP: S series, CloudEngine, AR (`huawei_vrp`) | yes | yes | yes | yes | later |
+| Arista | EOS (`arista_eos`) | yes | yes, free flash | yes | yes | lab test first; MLAG pairs |
+| Juniper | Junos: EX, QFX, MX, SRX (`juniper_junos`) | yes | yes | yes (EX, QFX) | yes | lab test first; not SRX clusters |
+| Fortinet | FortiGate (`fortinet_fortios`) | yes (see below) | yes, HA mode | no | yes | lab test first; standalone and HA cluster |
+| Palo Alto | PAN-OS (`paloalto_panos`) | yes | yes, HA state | no | yes | lab test first; standalone and HA pair |
+| Check Point | Gaia gateways (`checkpoint_gaia`) | yes (Gaia OS only) | yes, cluster state | no | yes | to be decided |
+| HPE Aruba | AOS-CX (`aruba_aoscx`) | yes | yes, active image | yes | yes | no (by choice) |
+| HPE Aruba | ArubaOS-Switch / ProCurve (`aruba_osswitch`) | yes | yes | yes | yes | lab test first |
+| HPE Aruba | Mobility Controller / Conductor, AOS 8 (`aruba_aos8`) | yes | yes | no | yes | lab test first |
+| Dell | SmartFabric OS10 (`dell_os10`) | yes | yes (service tag) | yes | yes | lab test first |
+| Extreme | EXOS / Switch Engine (`extreme_exos`) | yes | yes, booted image | yes | yes | lab test first |
+| MikroTik | RouterOS (`mikrotik_routeros`) | yes | yes, free storage | yes (bridge hosts) | yes | lab test first; roll back by hand |
+| Ubiquiti | EdgeRouter, EdgeOS (`ubiquiti_edgeos`) | yes | yes | no | yes | lab test first |
+| Huawei | VRP: S series, CloudEngine, AR (`huawei_vrp`) | yes | yes | yes | yes | lab test first |
 
 Not supported yet: Ubiquiti EdgeSwitch and UniFi (UniFi is managed through its controller,
 not SSH), and the Check Point management server (policy lives there, not on the gateway).
@@ -111,5 +111,12 @@ it. Check each platform with `python -m app.cli backup <device>` and
 | Huawei VRP | Level 3 (management), so `display current-configuration` is allowed. |
 
 SSH must be allowed from the server to each device (TCP 22). Nothing else is needed for
-backups, version checks and circuit locations. Upgrades will need more (SCP, or HTTPS to
-the FortiGate and PAN-OS APIs); this will be documented with each upgrade driver.
+backups, version checks, circuit locations or the upgrade jobs above: the image is copied
+over the same SSH connection (SCP). Some devices need their SCP server switched on first
+([upgrades.md](upgrades.md)). Upgrades use a separate **upgrade account** with the rights to
+copy files, change the boot setting and reload. FortiGate and PAN-OS upgrades also need
+HTTPS from the server to their management address (see upgrades.md).
+
+Upgrade jobs are only for devices whose image can be sent from the server (SSH/SCP, or
+the firewall's own API). Devices that would have to pull the image from a server (AOS-CX,
+Cisco small business) keep backups, version checks and circuits only.

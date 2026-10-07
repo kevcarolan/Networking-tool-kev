@@ -1235,11 +1235,11 @@ async function openUpgradeSettings(device, after) {
   form.peer_device_id.value = settings.peer_device_id ?? "";
   form.file_system.value = settings.file_system || "";
   form.fdm_fingerprint.value = settings.fdm_fingerprint || "";
-  $("#ups-fdm").hidden = device.platform !== "cisco_ftd";
+  $("#ups-fdm").hidden = !["cisco_ftd", "fortinet_fortios", "paloalto_panos"].includes(device.platform);
   $("#ups-fetch").onclick = async () => {
     try {
       const r = await api(`/api/firmware/devices/${device.id}/fdm-fingerprint`, { method: "POST" });
-      if (confirm(`${device.name} presents this certificate:\n\n${r.fingerprint}\n\nDoes it match the fingerprint shown in FDM? Only then trust it.`)) {
+      if (confirm(`${device.name} presents this certificate:\n\n${r.fingerprint}\n\nDoes it match the fingerprint the device shows? Only then trust it.`)) {
         form.fdm_fingerprint.value = r.fingerprint;
       }
     } catch (e) {
@@ -1342,7 +1342,7 @@ function renderJob() {
   const live = !j.dry_run;
   $("#job-actions").replaceChildren(
     allowed("precheck") ? act(j.pre_run ? "Re-check" : "Run pre-checks", "precheck", j.status === "planned" ? "primary" : "") : "",
-    allowed("stage") ? act("Stage image", "stage", "", `Copy ${j.image.filename} to ${j.units.map((u) => u.name).join(" and ")} and check its MD5 there?\n\nNothing is reloaded.`) : "",
+    allowed("stage") ? act("Stage image", "stage", "", `Copy ${j.image.filename} to ${j.units.map((u) => u.name).join(" and ")} and check it there?\n\nNothing is reloaded.`) : "",
     allowed("start") ? act(live ? "Start LIVE upgrade" : "Start (dry run)", "start", live ? "danger" : "primary",
       live ? null : `Start the dry run for ${j.device.name}?\n\nPre-checks run again first; nothing is changed on the device.`) : "",
     allowed("continue") ? act("Continue", "continue", "primary") : "",

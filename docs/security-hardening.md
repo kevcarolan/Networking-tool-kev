@@ -171,7 +171,7 @@ be able to use this server to reach anything except the devices it manages.
 
 ```bash
 sudo cp /opt/netops/current/deploy/hardening/nftables.conf /etc/nftables.conf
-sudo nano /etc/nftables.conf        # set ADMIN_NETS, GUI_NETS, DEVICE_NETS, FDM_HOSTS, DC/DNS/NTP/SYSLOG hosts
+sudo nano /etc/nftables.conf        # set ADMIN_NETS, GUI_NETS, DEVICE_NETS, FDM_HOSTS (FTD, FortiGate, PAN-OS), DC/DNS/NTP/SYSLOG hosts
 sudo nft -c -f /etc/nftables.conf   # syntax check only
 ```
 

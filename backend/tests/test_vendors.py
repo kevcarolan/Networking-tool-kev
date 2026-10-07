@@ -29,10 +29,11 @@ def test_live_commands_use_known_keys():
         assert platform in PLATFORMS and set(commands) <= keys, platform
 
 
-def test_new_platforms_have_no_upgrade_driver_yet():
-    # Upgrade drivers come in PR B and C; until then a job can't be created for them.
-    assert set(drivers.DRIVERS) == {"cisco_ios", "cisco_nxos", "cisco_asa", "cisco_ftd",
-                                    "allied_awplus"}
+def test_platforms_without_an_upgrade_driver_yet():
+    # AOS-CX and Cisco small business would have to pull the image (not wanted: backups and
+    # versions only); Check Point needs an expert-shell account (to be decided). A job
+    # can't be created for them.
+    assert set(PLATFORMS) - set(drivers.DRIVERS) == {"checkpoint_gaia", "aruba_aoscx", "cisco_smb"}
 
 
 # --- backups -------------------------------------------------------------------

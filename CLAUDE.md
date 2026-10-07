@@ -30,7 +30,8 @@ Design docs: [docs/design.md](docs/design.md) (platform and backup tool),
   Firepower FTD managed by FDM (+HA), and Allied Telesis AlliedWare Plus. Backups, version
   checks and circuit locations also cover Arista, Juniper, Fortinet, Palo Alto, Check Point,
   HPE Aruba, Dell, Extreme, Cisco IOS-XR/small business, MikroTik, Ubiquiti and Huawei
-  ([docs/vendors.md](docs/vendors.md)); their upgrade drivers follow (docs/plans/multi-vendor.md).
+  ([docs/vendors.md](docs/vendors.md)), and most have upgrade drivers that still need lab
+  sign-off (`drivers/common.py` holds their shared copy-check-boot-reload logic).
   Upgrade procedures are drivers with selectable paths, so new designs are new paths.
 * Login is Active Directory over LDAPS and/or local NetOps users, plus a break-glass local admin.
 * Target server: **Ubuntu 26.04** (Python 3.14, nginx, systemd), often **air-gapped**, installed
@@ -78,7 +79,10 @@ remote); never sync the two automatically.
 * Upgrade jobs:
   * checks and parsers in `checks.py`; one **driver** per platform in `drivers/` (paths, extra
     pre-checks, the procedure as `Step`s); the engine in `jobs.py` (`JobService`, `allowed_actions`);
-    device access in `deviceio.py` (SSH change/copy) and `fdm.py` (FDM API);
+    device access in `deviceio.py` (SSH change/copy) and the management APIs (`fdm.py`,
+    `fortios.py`, `panos.py`, sharing the pinned-certificate code in `apiclient.py`);
+  * upgrade jobs only for devices whose image can be sent from the server (SSH/SCP or the
+    device's own API); never build a way for devices to pull images;
   * the web app only **queues** requests (`request_action`); the **worker** (`app/worker.py`,
     `netops-worker.service`) runs them. Never talk to a device for a job from the web process;
   * a dry run and a live run use the same steps: only `StepContext.change/transfer/fdm_change`
