@@ -15,7 +15,8 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 - [ ] PR C: firewall upgrades (FortiGate and PAN-OS via API, Check Point CPUSE)
 
 ### Product
-- [ ] Product name and branding (GUI title, logo, docs)
+- [ ] Product name and branding (GUI title, logo, docs). The name is now one setting,
+  `NETOPS_PRODUCT_NAME`; still to do: choose the name, a logo, and rename the docs
 - [ ] Licence terms (EULA, or open source plus support)
 - [ ] First-run setup screen (admin account, AD settings, certificate) instead of editing `netops.env`
 - [ ] Installer for internet-connected and air-gapped sites
@@ -25,7 +26,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 ### Platform (inherited)
 - [x] Core: AD and local login, per-area permissions, device inventory, encrypted credentials, audit and activity report
 - [x] Air-gapped install kit, hardening guide and templates, nightly backups
-- [ ] GitHub Actions: run the tests on every pull request
+- [x] GitHub Actions: run the tests on every pull request (Python 3.11 and 3.14)
 - [ ] Add database migrations (Alembic) before the first change to an existing table
 
 ### Tools (inherited)
@@ -40,6 +41,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 |---|---|---|
 | 2026-10-07 | Separate repository from the work version, started from a clean copy without history | Product and work tool evolve independently |
 | 2026-10-07 | No PRTG integration; monitoring through `/api/health` and syslog forwarding | Customers use different monitoring systems |
+| 2026-10-07 | Product name comes from `NETOPS_PRODUCT_NAME` (default "NetOps Tools"); messages say "inventory" instead of naming the product | Name not chosen yet; renaming or rebranding for a customer is a setting, not a code change |
 
 ## Open questions
 
@@ -51,3 +53,4 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | Date | Where | What happened |
 |---|---|---|
 | 2026-10-07 | Networking-tool-kev | Repository created from NetOps Tools (main @ 29e6bb1): PRTG removed, sample data made generic |
+| 2026-10-07 | Networking-tool-kev | Tests run on every pull request (GitHub Actions); product name made a setting |

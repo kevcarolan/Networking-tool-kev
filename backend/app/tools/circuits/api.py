@@ -128,7 +128,7 @@ def export_csv(db: Session = Depends(get_db), _: User = Depends(CIRCUITS_VIEW)):
     imp = _active(db)
     out = io.StringIO()
     w = csv.writer(out)
-    w.writerow([CSV_HEADERS[f] for f in FIELDS] + ["Matched NetOps device", "Warnings"]
+    w.writerow([CSV_HEADERS[f] for f in FIELDS] + ["Matched inventory device", "Warnings"]
                + LIVE_HEADERS)
     for r in _export_rows(db):
         w.writerow([r[f] for f in FIELDS] + [r["switch_device_name"] or r["match"],
