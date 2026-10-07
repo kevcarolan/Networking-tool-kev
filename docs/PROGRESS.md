@@ -5,9 +5,14 @@ of every working session.
 
 **Now:** Clean copy of NetOps Tools (config backup, firmware and upgrade jobs, circuits with
 live MAC/ARP locations, users and activity). No PRTG integration; generic sample data.
-**Next:** Decide the product name and licence; then database migrations (Alembic) and the first-run setup screen.
+**Next:** Multi-vendor support, as planned in [plans/multi-vendor.md](plans/multi-vendor.md): PR A (backup, versions, circuits for every new platform), then PR B (SSH/SCP upgrade drivers), then PR C (firewall upgrades via API).
 
 ## Roadmap
+
+### Multi-vendor ([plans/multi-vendor.md](plans/multi-vendor.md))
+- [ ] PR A: Arista, Juniper, Fortinet, Palo Alto, Check Point, Aruba (CX, ProCurve, AOS 8 controllers), Dell OS10, Extreme, Cisco IOS-XR and SMB, MikroTik, Ubiquiti EdgeOS, Huawei: backup, versions, circuits
+- [ ] PR B: upgrade drivers for the SSH/SCP platforms
+- [ ] PR C: firewall upgrades (FortiGate and PAN-OS via API, Check Point CPUSE)
 
 ### Product
 - [ ] Product name and branding (GUI title, logo, docs). The name is now one setting,
