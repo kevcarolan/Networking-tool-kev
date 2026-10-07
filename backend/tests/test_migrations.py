@@ -11,7 +11,7 @@ from sqlalchemy import create_engine, inspect, text
 from app.core import migrate
 from app.core.db import Base, import_models
 
-BASELINE_SQL = Path(__file__).parent / "data" / "baseline_schema.sql"
+BASELINE_SQL = Path(__file__).parent / "baseline_schema.sql"
 
 
 def _engine(path: Path):

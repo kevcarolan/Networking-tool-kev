@@ -67,7 +67,7 @@ remote); never sync the two automatically.
   the app or worker starts (`core/migrate.py`, `backend/migrations/`). After changing a model,
   run `alembic revision --autogenerate -m "..."` from `backend/`, review the file (SQLite: batch
   mode), and commit it with the model. `tests/test_migrations.py` fails when a model and the
-  migrations disagree. Never edit `tests/data/baseline_schema.sql` or an existing migration.
+  migrations disagree. Never edit `tests/baseline_schema.sql` or an existing migration.
 * Frontend: plain HTML/CSS/JS in `backend/app/static/`, no build step. Use the `h()` and
   `api()` helpers in `app.js`, keep styles on the CSS variables in `style.css` (light and dark),
   and hide admin-only controls with `data-admin`.
