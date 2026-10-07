@@ -169,7 +169,8 @@ credential's **enable secret**. Without one, the account's username and password
 
 Not done, by choice: HPE Aruba AOS-CX and the Cisco small business switches (they would
 have to pull the image from a server; they keep backups, versions and circuits). Check
-Point (its package has to be copied with an expert-shell account: to be decided). Also not
+Point (upgrade gateways from SmartConsole / Central Deployment as usual; the tool keeps
+their backups and versions). Also not
 yet: Junos NSSU and SRX chassis clusters, and pair paths for Dell VLT and Aruba controller
 clusters.
 
