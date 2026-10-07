@@ -151,7 +151,8 @@ class CircuitScanService:
         """Read one device and keep the result. Returns (device name, error or '')."""
         with session_scope() as db:
             device = db.get(Device, device_id)
-            name, commands = device.name, live.commands_for(device.platform)
+            name, platform = device.name, device.platform
+            commands = live.commands_for(platform)
             try:
                 target = target_for(device, self.cipher, self.settings.ssh_timeout,
                                     self.settings.command_timeout)
@@ -161,7 +162,7 @@ class CircuitScanService:
                 return name, error
         try:
             outputs = self.collector(target, tuple(commands.values()))
-            read = live.read_device(dict(zip(commands.keys(), outputs)))
+            read = live.read_device(dict(zip(commands.keys(), outputs)), platform)
         except Exception as exc:  # noqa: BLE001
             error = classify_error(exc)[1]
             with session_scope() as db:

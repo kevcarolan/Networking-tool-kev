@@ -133,6 +133,26 @@ FDM's API Explorer (`https://<ftd>/#/api-explorer`).
 - If any table is read wrong, send `show mac address-table` (and the CDP/LLDP detail) from
   that device: the parsers are in `backend/app/tools/circuits/live.py`.
 
+## 7b. Other vendors: backups, versions and circuit locations
+
+For each platform added in October 2026 (Arista, Juniper, Fortinet, Palo Alto, Check Point,
+HPE Aruba, Dell, Extreme, Cisco IOS-XR and small business, MikroTik, Ubiquiti, Huawei).
+Their output readers were written from vendor documentation, so check them on one real
+device each. Commands and accounts: [vendors.md](vendors.md).
+
+- [ ] **Backup:** `sudo netops-cli backup <device>` works. Run it twice with no change on the
+      device: the second run shows **no change**. (If it does show one, the diff shows which
+      line changes on every run.)
+- [ ] The backup holds the whole configuration, including secrets where the vendor shows
+      them (FortiGate: masked on purpose).
+- [ ] **Version check:** `sudo netops-cli firmware-check <device> --raw` shows the right
+      version, model and serial, and the HA or cluster role on firewalls.
+- [ ] **Circuits** (switches): the 7a tests above. Also check that a port-channel or LAG and
+      an LLDP uplink to another switch are *not* used as a circuit's location.
+- If anything is read wrong, send the `--raw` output (and the MAC table and LLDP output for
+  circuits). Replace the sample in `backend/tests/vendor_samples.py` with the real output and
+  fix the reader so the test passes.
+
 ## 8. Operations
 
 - [ ] **Stop after this step** during a live job (e.g. while it copies): it pauses before the next step; Continue finishes it.

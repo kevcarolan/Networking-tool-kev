@@ -54,6 +54,7 @@ upload or delete images.
 | Cisco ASA | `show version`, `dir`, `show failover` | version, model, serial, image, flash, failover role |
 | Cisco FTD (FDM) | `show version`, `show failover` | FTD version and build, model, serial, HA role |
 | Allied Telesis AW+ | `show version`, `show system` | release, model, serial |
+| Other vendors | See [vendors.md](vendors.md) | version, model, serial; HA role on firewalls |
 
 ## Phase 2: staging and pre-checks (no reloads)
 

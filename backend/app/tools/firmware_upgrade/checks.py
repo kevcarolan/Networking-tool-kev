@@ -96,9 +96,10 @@ def commands_for(platform: str) -> dict[str, str]:
             **{f"live:{k}": v for k, v in live.commands_for(platform).items()}}
 
 
-def live_read(outputs: dict[str, str]) -> "live.DeviceRead":
+def live_read(outputs: dict[str, str], platform: str = "") -> "live.DeviceRead":
     """The MAC/ARP tables in the outputs (keys 'live:mac', 'live:arp', ...)."""
-    return live.read_device({k[5:]: v for k, v in outputs.items() if k.startswith("live:")})
+    return live.read_device({k[5:]: v for k, v in outputs.items() if k.startswith("live:")},
+                            platform)
 
 
 def facts_outputs(platform: str, outputs: dict[str, str]) -> list[str]:
@@ -258,7 +259,7 @@ def snapshot(platform: str, outputs: dict[str, str]) -> dict:
         snap["etherchannel"] = parse_etherchannel(get("snap:etherchannel"))
     if not _unsupported(get("snap:mac")):
         snap["mac_count"] = parse_mac_count(get("snap:mac"))
-    read = live_read(outputs)
+    read = live_read(outputs, platform)
     if read.macs is not None:
         # MACs on edge ports: [mac, port, port_norm, vlan], to compare circuits
         snap["macs"] = sorted([e.mac, e.port, e.port_norm, e.vlan] for e in read.edge)

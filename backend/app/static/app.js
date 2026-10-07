@@ -288,7 +288,7 @@ async function openDeviceDialog(row = null) {
   form.reset();
   $(".error", form).hidden = true;
   state.credentials = await api("/api/credentials").catch(() => []);
-  form.platform.replaceChildren(...state.platforms.map((p) => h("option", { value: p.key }, p.label)));
+  form.platform.replaceChildren(...platformOptions());
   form.credential_id.replaceChildren(h("option", { value: "" }, "— none —"),
     ...state.credentials.map((c) => h("option", { value: c.id }, `${c.name} (${c.username})`)));
   $("#device-dialog-title").textContent = row ? `Edit ${row.device.name}` : "Add device";
@@ -502,6 +502,14 @@ function renderFwSummary(s) {
       h("span", { class: "num" }, n ?? 0), h("span", { class: "lbl" }, label))));
 }
 
+// Platform choices grouped by vendor (Cisco, Arista, Juniper, ...)
+function platformOptions() {
+  const groups = new Map();
+  state.platforms.forEach((p) => groups.set(p.vendor, [...(groups.get(p.vendor) || []), p]));
+  return [...groups].map(([vendor, list]) => h("optgroup", { label: vendor },
+    ...list.map((p) => h("option", { value: p.key }, p.label))));
+}
+
 function fillSelect(sel, allLabel, values) {
   const current = sel.value;
   sel.replaceChildren(h("option", { value: "" }, allLabel), ...values.map(([v, l]) => h("option", { value: v }, l)));
@@ -621,7 +629,7 @@ async function openStandardDialog(std = null) {
   form.reset();
   $(".error", form).hidden = true;
   fw.images = await api("/api/firmware/images").catch(() => []);
-  form.platform.replaceChildren(...state.platforms.map((p) => h("option", { value: p.key }, p.label)));
+  form.platform.replaceChildren(...platformOptions());
   const fillImages = () => {
     const current = form.image_id.value;
     form.image_id.replaceChildren(h("option", { value: "" }, "— none —"),
@@ -711,7 +719,7 @@ function openUploadDialog() {
   form.reset();
   $(".error", form).hidden = true;
   $("#fw-upload-progress").hidden = true;
-  form.platform.replaceChildren(...state.platforms.map((p) => h("option", { value: p.key }, p.label)));
+  form.platform.replaceChildren(...platformOptions());
   $("#fw-upload-dialog").showModal();
 }
 $("#fw-upload").addEventListener("click", openUploadDialog);

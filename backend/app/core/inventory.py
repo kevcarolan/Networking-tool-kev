@@ -40,7 +40,7 @@ def validate_address(value: str) -> str:
 
 @router.get("/platforms")
 def list_platforms(_: User = Depends(current_user)):
-    return [{"key": p.key, "label": p.label} for p in PLATFORMS.values()]
+    return [{"key": p.key, "label": p.label, "vendor": p.vendor} for p in PLATFORMS.values()]
 
 
 # --- Credentials ------------------------------------------------------------
