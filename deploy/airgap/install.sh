@@ -163,6 +163,7 @@ if have_systemd && systemctl is-active --quiet netops; then
   systemctl stop netops-worker 2>/dev/null || true
   systemctl stop netops
 fi
+MIGRATION_MARK="$(mktemp)"  # database copies newer than this were made by this install
 rm -rf "$REL"
 mv "$STAGE" "$REL"
 ln -sfn "$REL" "$PREFIX/current.new" && mv -T "$PREFIX/current.new" "$PREFIX/current"
@@ -194,6 +195,15 @@ if have_systemd; then
       echo "The new release did not become healthy - rolling back."
       journalctl -u netops -n 30 --no-pager || true
       if [[ -n "$CURRENT" && -d "$CURRENT" && "$CURRENT" != "$REL" ]]; then
+        systemctl stop netops 2>/dev/null || true
+        # If the new release migrated the database, the old release needs the copy taken first
+        DB_COPY="$(find "$DATA" -maxdepth 1 -name 'app.db.before-*' -newer "$MIGRATION_MARK" \
+                   -printf '%T@ %p\n' 2>/dev/null | sort -n | head -1 | cut -d' ' -f2-)"
+        if [[ -n "$DB_COPY" ]]; then
+          echo "Putting back the database as it was before the new release migrated it ($DB_COPY)"
+          rm -f "$DATA/app.db-wal" "$DATA/app.db-shm"
+          install -m 0640 -o netops -g netops "$DB_COPY" "$DATA/app.db"
+        fi
         ln -sfn "$CURRENT" "$PREFIX/current"
         systemctl restart netops
         if health; then

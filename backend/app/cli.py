@@ -8,6 +8,8 @@
   python -m app.cli upgrades-running         # list upgrade jobs that are mid-step
                                              # (exit code 3 if a LIVE one is: don't restart
                                              # the worker now)
+  python -m app.cli db-status                # database version (migrations); applies
+                                             # nothing - the app migrates when it starts
 
 CSV columns: name,address,platform,site,credential,frequency_minutes,notes
 (`credential` is the name of an existing credential profile; `site`,
@@ -174,6 +176,25 @@ def _upgrades_running(_args) -> int:
     return 3 if live else 0
 
 
+def _db_status(_args) -> int:
+    from sqlalchemy import create_engine, inspect
+
+    from app.core import migrate
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    engine = create_engine(settings.database_url)
+    head = migrate.head_revision()
+    tables = set(inspect(engine).get_table_names())
+    current = migrate.current_revision(engine) if "alembic_version" in tables else None
+    print(f"Database:  {settings.data_dir / 'app.db'}")
+    print(f"Version:   {current or ('none (from before migrations)' if tables else 'empty')}")
+    print(f"Latest:    {head}")
+    print("Up to date." if current == head else
+          "The app brings it up to date when it starts (a copy is kept first).")
+    return 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -189,6 +210,7 @@ def main(argv=None) -> int:
     p.add_argument("--raw", action="store_true", help="also print the raw command output")
     p.set_defaults(func=_firmware_check)
     sub.add_parser("upgrades-running").set_defaults(func=_upgrades_running)
+    sub.add_parser("db-status").set_defaults(func=_db_status)
     args = parser.parse_args(argv)
     return args.func(args)
 

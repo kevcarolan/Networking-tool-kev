@@ -1,5 +1,7 @@
-"""Database engine and session handling (SQLite by default)."""
+"""Database engine and session handling (SQLite by default). The schema is kept up to
+date by Alembic migrations (app/core/migrate.py, backend/migrations/)."""
 
+import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -30,15 +32,21 @@ def init_engine(database_url: str):
         cur.execute("PRAGMA busy_timeout=15000")
         cur.close()
 
-    # Import every model module so its tables are registered before create_all.
-    from app.core import models  # noqa: F401
-    from app.tools.config_backup import models as backup_models  # noqa: F401
-    from app.tools.firmware_upgrade import models as firmware_models  # noqa: F401
-    from app.tools.circuits import models as circuit_models  # noqa: F401
+    from app.core import migrate
 
-    Base.metadata.create_all(engine)
+    import_models()
+    result = migrate.upgrade(engine, Base.metadata)
+    logging.getLogger(__name__).info("Database: %s", result)
     SessionLocal.configure(bind=engine)
     return engine
+
+
+def import_models() -> None:
+    """Import every model module so its tables are registered on Base.metadata."""
+    from app.core import models  # noqa: F401
+    from app.tools.circuits import models as circuit_models  # noqa: F401
+    from app.tools.config_backup import models as backup_models  # noqa: F401
+    from app.tools.firmware_upgrade import models as firmware_models  # noqa: F401
 
 
 @contextmanager

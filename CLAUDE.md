@@ -63,9 +63,11 @@ remote); never sync the two automatically.
   setting (`{{product_name}}` in `index.html`), or neutral words such as "inventory".
 * `core/` is shared by every tool: auth, inventory, credentials, platforms, SSH (`core/ssh.py`),
   audit log. Tools live in `tools/<name>/` with `models.py`, `service.py`, `api.py`.
-* **Database:** SQLite `data/app.db`, created with `create_all` and no migration tool. New
-  tables appear automatically, but **a new column on an existing table does not**. Add a new
-  table (prefixed with the tool, e.g. `fw_`), or introduce Alembic first.
+* **Database:** SQLite `data/app.db`, kept up to date by **Alembic** migrations, applied when
+  the app or worker starts (`core/migrate.py`, `backend/migrations/`). After changing a model,
+  run `alembic revision --autogenerate -m "..."` from `backend/`, review the file (SQLite: batch
+  mode), and commit it with the model. `tests/test_migrations.py` fails when a model and the
+  migrations disagree. Never edit `tests/data/baseline_schema.sql` or an existing migration.
 * Frontend: plain HTML/CSS/JS in `backend/app/static/`, no build step. Use the `h()` and
   `api()` helpers in `app.js`, keep styles on the CSS variables in `style.css` (light and dark),
   and hide admin-only controls with `data-admin`.
