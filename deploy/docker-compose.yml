@@ -1,0 +1,44 @@
+# From the repo root:  docker compose -f deploy/docker-compose.yml up -d --build
+services:
+  netops:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    env_file: ../.env
+    environment:
+      NETOPS_DATA_DIR: /data
+      NETOPS_CREDENTIAL_KEY_FILE: /secrets/credential.key
+    volumes:
+      - netops-data:/data
+      - ./secrets:/secrets   # credential.key (back this up!) and your AD CA file
+    restart: unless-stopped
+    expose: ["8000"]         # only reachable through Caddy
+
+  # Carries out firmware upgrade jobs; shares the data volume with the web app.
+  netops-worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: ["python", "-m", "app.worker"]
+    env_file: ../.env
+    environment:
+      NETOPS_DATA_DIR: /data
+      NETOPS_CREDENTIAL_KEY_FILE: /secrets/credential.key
+    volumes:
+      - netops-data:/data
+      - ./secrets:/secrets
+    restart: unless-stopped
+    stop_grace_period: 45m   # let a running step finish; jobs pause before the next one
+
+  caddy:
+    image: caddy:2
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    restart: unless-stopped
+    depends_on: [netops]
+
+volumes:
+  netops-data:
+  caddy-data:

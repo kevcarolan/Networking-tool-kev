@@ -1,0 +1,14 @@
+# Runtime data: database, config archive, keys. Never commit these.
+data/
+.env
+*.key
+deploy/secrets/
+
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# Offline bundles built by deploy/airgap/build-bundle.sh
+dist/
