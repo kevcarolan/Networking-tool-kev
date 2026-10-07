@@ -7,6 +7,7 @@ WORKDIR /app
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/app ./app
+COPY backend/migrations ./migrations
 ENV NETOPS_DATA_DIR=/data NETOPS_CREDENTIAL_KEY_FILE=/secrets/credential.key
 USER netops
 EXPOSE 8710

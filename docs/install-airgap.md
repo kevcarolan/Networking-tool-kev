@@ -345,7 +345,22 @@ sudo ln -sfn /opt/netops/releases/<previous> /opt/netops/current
 sudo systemctl restart netops
 ```
 
-Settings, the key and the data are never touched by an upgrade.
+Settings and the key are never touched by an upgrade. When a new release changes the
+**database layout**, it updates the database by itself when it starts, after keeping a copy
+next to it (`/var/lib/netops/app.db.before-<version>`). If the new release then doesn't
+start, the installer puts that copy back before switching to the previous release.
+
+Rolling back by hand across such a release: stop the service, put the copy back, then switch
+the release as above:
+
+```bash
+sudo systemctl stop netops-worker netops
+sudo -u netops cp /var/lib/netops/app.db.before-<version> /var/lib/netops/app.db
+sudo rm -f /var/lib/netops/app.db-wal /var/lib/netops/app.db-shm
+```
+
+`sudo netops-cli db-status` shows the database version and whether it is up to date.
+Changes made after the upgrade are lost when you put the copy back, so do it straight away.
 
 ---
 

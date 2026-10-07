@@ -28,7 +28,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 - [x] Core: AD and local login, per-area permissions, device inventory, encrypted credentials, audit and activity report
 - [x] Air-gapped install kit, hardening guide and templates, nightly backups
 - [x] GitHub Actions: run the tests on every pull request (Python 3.11 and 3.14)
-- [ ] Add database migrations (Alembic) before the first change to an existing table
+- [x] Database migrations (Alembic): applied at start, copy kept first, installer restores it on a failed upgrade
 
 ### Tools (inherited)
 - [x] Config backup
@@ -54,6 +54,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-07 | FortiGate REST API token kept in the credential's enable secret (optional) | No database change needed; FortiOS has no enable mode |
 | 2026-10-07 | Check Point upgrades stay in SmartConsole / Central Deployment; the tool does backups, versions and ARP for Check Point | Upgrading from the tool would need an expert-shell account on every gateway; production sites already upgrade from the management server |
 | 2026-10-07 | The app uses port 8710 everywhere (`NETOPS_PORT`, `python -m app`, Docker, systemd/nginx) | 8000 clashes with other local tools the owner runs |
+| 2026-10-07 | Alembic migrations run automatically at start (locked, database copied first); new databases are created from the models and marked current; old installs are marked as the baseline | No manual step for engineers installing an upgrade; a failed upgrade can always go back |
 
 ## Open questions
 
@@ -73,3 +74,4 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-07 | Networking-tool-kev | Multi-vendor PR C: FortiGate and PAN-OS upgrades (standalone and HA) through their APIs; shared pinned-certificate client; Check Point and pull-only switches left out by decision |
 | 2026-10-07 | Networking-tool-kev | Decided: Check Point upgrades stay in SmartConsole |
 | 2026-10-07 | Networking-tool-kev | Multi-vendor PRs A-C merged; app port 8000 replaced by 8710 for development and Docker (`NETOPS_PORT`) |
+| 2026-10-07 | Networking-tool-kev | Alembic migrations added (baseline, startup upgrade, db-status, installer roll back of the database) |
