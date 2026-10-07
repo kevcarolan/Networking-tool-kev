@@ -1342,7 +1342,7 @@ function renderJob() {
   const live = !j.dry_run;
   $("#job-actions").replaceChildren(
     allowed("precheck") ? act(j.pre_run ? "Re-check" : "Run pre-checks", "precheck", j.status === "planned" ? "primary" : "") : "",
-    allowed("stage") ? act("Stage image", "stage", "", `Copy ${j.image.filename} to ${j.units.map((u) => u.name).join(" and ")} and check its MD5 there?\n\nNothing is reloaded.`) : "",
+    allowed("stage") ? act("Stage image", "stage", "", `Copy ${j.image.filename} to ${j.units.map((u) => u.name).join(" and ")} and check it there?\n\nNothing is reloaded.`) : "",
     allowed("start") ? act(live ? "Start LIVE upgrade" : "Start (dry run)", "start", live ? "danger" : "primary",
       live ? null : `Start the dry run for ${j.device.name}?\n\nPre-checks run again first; nothing is changed on the device.`) : "",
     allowed("continue") ? act("Continue", "continue", "primary") : "",

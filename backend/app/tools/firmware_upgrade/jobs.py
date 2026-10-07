@@ -41,6 +41,7 @@ from app.tools.firmware_upgrade import drivers
 from app.tools.firmware_upgrade.deviceio import DeviceIO
 from app.tools.firmware_upgrade.drivers.base import (ImageRef, Paused, Step, StepContext,
                                                      StepFailed, Unit, UpgradePath)
+from app.tools.firmware_upgrade.facts import FACT_COMMANDS
 from app.tools.firmware_upgrade.models import (
     BLOCKED, BUSY_STATES, CANCELLED, COMPLETED, COMPLETED_OVERRIDES, FAILED, NEEDS_ATTENTION,
     PAUSED, PLANNED, POST_CHECKING, PRE_CHECKING, READY, ROLLED_BACK, ROLLING_BACK, RUNNING,
@@ -385,7 +386,7 @@ class EngineContext(StepContext):
             if not self.svc.io.reachable(t):
                 return False
             try:
-                self.svc.io.show(t, ["show version"])
+                self.svc.io.show(t, [FACT_COMMANDS.get(u.platform, ("show version",))[0]])
                 return True
             except Exception:  # noqa: BLE001 - still booting
                 return False

@@ -22,9 +22,13 @@ log = logging.getLogger(__name__)
 # Checked against the newest output only, so a question is never answered twice.
 PROMPT_ANSWERS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"Save\?\s*\[yes/no\]:?\s*$", re.I), "yes"),
-    (re.compile(r"\[yes/no\]:?\s*$", re.I), "yes"),
-    (re.compile(r"\(y/n\)\s*\??\s*(\[\w\])?\s*$", re.I), "y"),
-    (re.compile(r"\[y/n\]:?\s*$", re.I), "y"),
+    (re.compile(r"\[yes/no\]:?\s*(\[yes\])?\s*$", re.I), "yes"),  # IOS-XR "[yes/no]:[yes]"
+    (re.compile(r"\[confirm yes/no\]:?\s*$", re.I), "yes"),  # Dell OS10
+    (re.compile(r"\[yes,no\]\s*(\(no\))?\s*$", re.I), "yes"),  # Junos "[yes,no] (no)"
+    (re.compile(r"\(Yes/No\)\s*(\[Yes\])?:?\s*$"), "Yes"),  # EdgeOS
+    (re.compile(r"\(y/n\)\s*[?:]?\s*(\[\w\])?\s*$", re.I), "y"),
+    (re.compile(r"\[y/n(/\^C)?\]\s*[?:]?\s*$", re.I), "y"),  # also ArubaOS-Switch, Huawei
+    (re.compile(r"\[confirm\]\s*\[y\]\s*$", re.I), "y"),  # EdgeOS reboot
     (re.compile(r"Do you want to continue.*\?\s*$", re.I), "y"),
     (re.compile(r"reboot the system now\?.*$", re.I), "y"),
     (re.compile(r"Proceed with reload\?.*$", re.I), ""),
@@ -32,6 +36,16 @@ PROMPT_ANSWERS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"\[confirm\]\s*$"), ""),
 ]
 RELOAD_CLOSED = "\n[connection closed - the device is reloading]"
+
+# Platforms that take the image as a plain SCP upload (the device's SCP server), not
+# through Netmiko's file transfer. ArubaOS-Switch writes straight into an image slot.
+SCP_PUSH = {"allied_awplus", "huawei_vrp", "aruba_osswitch"}
+
+
+def scp_remote_path(file_system: str, filename: str) -> str:
+    if file_system.startswith("/os/"):  # ArubaOS-Switch: /os/primary or /os/secondary
+        return file_system.rstrip("/")
+    return f"{file_system}{filename}" if file_system else filename
 
 
 class DeviceIO:
@@ -87,9 +101,10 @@ class DeviceIO:
     def transfer(self, target: Target, local: Path, file_system: str, filename: str,
                  timeout: float = 3600) -> str:
         """Copy the image to the device over SCP. The checksum is verified separately."""
-        if target.platform == "allied_awplus":
-            return _scp_put(target, local, f"{file_system}{filename}" if file_system else filename,
-                            timeout)
+        if target.platform in SCP_PUSH:
+            return _scp_put(target, local, scp_remote_path(file_system, filename), timeout)
+        if target.platform == "dell_os10" and file_system == "home://":
+            file_system = f"/home/{target.username}"  # OS10 'home://' is the user's home folder
         from netmiko import file_transfer
 
         conn = self._connect(target)

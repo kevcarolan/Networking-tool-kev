@@ -161,6 +161,44 @@ device each. Commands and accounts: [vendors.md](vendors.md).
 - [ ] `sudo systemctl stop netops-worker` during a copy: the job pauses before its next step (or, if the copy is cut off, shows Needs attention). Start the worker again.
 - [ ] Reinstall the bundle while a live job runs: `install.sh` refuses ("a live upgrade job is running").
 
+## 9. Other vendors: upgrade jobs
+
+Arista, Junos, ArubaOS-Switch, Aruba AOS 8, Dell OS10, Extreme EXOS, Huawei VRP, Cisco IOS-XR,
+MikroTik and EdgeRouter. Do section 7b for the platform first, then section 1 (the common
+tests), then these. Procedures and roll back: [upgrades.md](upgrades.md#paths-per-platform).
+
+For every one of these platforms:
+- [ ] **Copy:** Stage image works and lands where the procedure expects it (note the path). The
+      check after the copy (MD5 or size) passes; a copy that is cut off fails it.
+- [ ] **Prompts:** every question the device asks during the upgrade is answered (the job
+      log shows the device output). Note any question that made a step time out.
+- [ ] **Live Start:** the device comes back on the new version; the post-checks pass.
+- [ ] **Roll back:** make the post-check fail (e.g. use a standard with the wrong version),
+      roll back, and the device comes back on the previous version.
+
+Platform notes to confirm:
+- [ ] **Arista MLAG:** the secondary is upgraded first and the job waits for the MLAG to be
+      active before the primary.
+- [ ] **Junos Virtual Chassis:** every member is on the new version; `request system software
+      rollback` is available on this release.
+- [ ] **ArubaOS-Switch:** the SCP upload goes into `/os/secondary` (or primary) directly; the
+      `show flash` size matches the file.
+- [ ] **Aruba AOS 8:** the copy to flash works with the controller's SCP (Netmiko); `copy flash:
+      ... system: partition` and `boot system partition` are run from enable mode.
+- [ ] **Dell OS10:** `home://` is the upgrade account's home folder; `show image status` shows
+      "Completed: No error" when the install has finished.
+- [ ] **Extreme EXOS:** `install image ... reboot` installs into the other partition and asks no
+      question the job doesn't answer.
+- [ ] **Huawei VRP:** `dir flash:/<file>` shows the size; `startup system-software` and `reboot`
+      work on this model (S series or CloudEngine).
+- [ ] **IOS-XR:** the right path for the release (install add / activate, or install replace);
+      `show install request` shows when the operation has finished; roll back before the
+      commit brings back the committed software.
+- [ ] **MikroTik:** the `.npk` goes to the right folder for the model (root or `flash/`); the
+      RouterBOARD firmware step runs; roll back stops with the "by hand" instruction.
+- [ ] **EdgeRouter:** `md5sum` works from the upgrade account; `add system image` and `set system
+      image default-image` work.
+
 ## Sign-off
 
 | Platform / path | Lab job numbers | Tested by | Date | Live enabled |

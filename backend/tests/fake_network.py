@@ -11,6 +11,9 @@ engine's sleep/monotonic are the network's). Failures can be injected per device
     no_return    the device never comes back after a reload
     impact       NX-OS 'show install all impact' reports an incompatible image
     readiness    FTD readiness check fails
+    image_install  Dell OS10 'image install' fails
+    stays_old    after a reload the device still runs its old software
+The other vendors' output and commands are in tests/fake_vendors.py.
 """
 
 import hashlib
@@ -18,6 +21,7 @@ from pathlib import Path
 
 from app.core.ssh import SETUP, UNREACHABLE, DeviceError
 from app.tools.firmware_upgrade.deviceio import RELOAD_CLOSED, DeviceIO
+from tests import fake_vendors
 from tests import firmware_samples as s
 
 FP = "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99"
@@ -62,6 +66,7 @@ class SimDevice:
         self.pending: list = []
         self.readiness = ""
         self.after_reload: dict[str, str] = {}  # outputs that change once it has reloaded
+        fake_vendors.setup(self)
 
     # --- show output ---------------------------------------------------------------
 
@@ -106,6 +111,9 @@ class SimDevice:
                 f"        Other host: Secondary - {other}\n")
 
     def output(self, cmd: str) -> str:
+        vendor = fake_vendors.output(self, cmd)
+        if vendor is not None:
+            return vendor
         if cmd == "show version":
             return self.version_text()
         if self.platform == "allied_awplus" and cmd.startswith("dir flash:/"):
@@ -247,6 +255,8 @@ class FakeNetwork(DeviceIO):
 
     def reload(self, d: SimDevice, version: str, image: str | None = None) -> None:
         self.versions.setdefault(d.image.split(":")[-1].lstrip("/"), d.version)
+        if "stays_old" in d.fail:  # comes back on the software it ran before
+            version, image = d.version, d.image
         d.previous = (d.version, d.image)
         d.up, d.down_for, d.next = False, self.reload_seconds, (version, image or d.image)
         d.reloads += 1
@@ -271,7 +281,10 @@ class FakeNetwork(DeviceIO):
         d.commands.append(f"copy {filename} -> {file_system}")
         self.log.append((d.name, f"copy {filename}"))
         md5 = "0" * 32 if "copy_md5" in d.fail else md5_of(local)
-        d.files[filename] = (local.stat().st_size, md5)
+        size = local.stat().st_size // (2 if "copy_md5" in d.fail else 1)  # a cut-off copy
+        if not fake_vendors.transfer(d, file_system, filename, size, md5,
+                                     self.versions.get(filename, "?")):
+            d.files[filename] = (size, md5)
         return "copied"
 
     def fdm(self, target, fingerprint):
@@ -295,6 +308,8 @@ class FakeNetwork(DeviceIO):
                     d.boot = []
                 elif line.startswith("boot system backup "):
                     pass
+                elif line.startswith("boot system ") and d.platform == "arista_eos":
+                    d.boot = [line.split(" ", 2)[2]]  # EOS has one boot image
                 elif line.startswith("boot system "):
                     d.boot.append(line.split(" ", 2)[2])
             if d.platform == "cisco_asa" and d.peer:
@@ -307,6 +322,9 @@ class FakeNetwork(DeviceIO):
         return self.versions.get(name) or self.versions.get(path, "?")
 
     def _exec(self, d: SimDevice, cmd: str) -> str:
+        vendor = fake_vendors.execute(self, d, cmd)
+        if vendor is not None:
+            return vendor
         if cmd.startswith("write memory") or cmd == "failover exec mate write memory":
             return "Building configuration...\n[OK]"
         if cmd.startswith("install add file "):

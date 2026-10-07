@@ -30,7 +30,8 @@ Design docs: [docs/design.md](docs/design.md) (platform and backup tool),
   Firepower FTD managed by FDM (+HA), and Allied Telesis AlliedWare Plus. Backups, version
   checks and circuit locations also cover Arista, Juniper, Fortinet, Palo Alto, Check Point,
   HPE Aruba, Dell, Extreme, Cisco IOS-XR/small business, MikroTik, Ubiquiti and Huawei
-  ([docs/vendors.md](docs/vendors.md)); their upgrade drivers follow (docs/plans/multi-vendor.md).
+  ([docs/vendors.md](docs/vendors.md)), and most have upgrade drivers that still need lab
+  sign-off (`drivers/common.py` holds their shared copy-check-boot-reload logic).
   Upgrade procedures are drivers with selectable paths, so new designs are new paths.
 * Login is Active Directory over LDAPS and/or local NetOps users, plus a break-glass local admin.
 * Target server: **Ubuntu 26.04** (Python 3.14, nginx, systemd), often **air-gapped**, installed

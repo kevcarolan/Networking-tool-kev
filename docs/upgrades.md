@@ -135,6 +135,30 @@ If NetOps restarts mid-step, or a device doesn't come back after a reload, the j
 | FTD (FDM) | **HA pair** | The **standby** unit first; when it is back and HA is healthy, **fail over** so the upgraded unit is active; then the other unit; HA health checked at the end. | Revert each unit. |
 | AlliedWare Plus | **Standalone or VCStack** | SCP the `.rel`, `boot system flash:/<new>.rel`, `boot system backup flash:/<old>.rel`, `write memory`, `reload`. Stack members follow the master. | `boot system flash:/<old>.rel`, `write memory`, `reload`. |
 
+**Other vendors** (October 2026). These were built from vendor documentation and tested on
+the simulator only. Keep them as dry runs until each one passes its lab test
+([upgrade-lab-tests.md](upgrade-lab-tests.md), section 9).
+
+| Platform | Path | What it does | Roll back |
+|---|---|---|---|
+| Arista EOS | **Standalone** | Copy the `.swi` to flash, check its MD5, `boot system flash:<new>.swi`, `write memory`, `reload now`. | `boot system` the previous `.swi` (kept on flash), `write memory`, `reload now`. |
+| Arista EOS | **MLAG pair** | The MLAG **secondary** first; check that the MLAG is active and the peer link is up; then the primary. | Each switch back, in reverse order. |
+| Juniper Junos | **Standalone or Virtual Chassis** | Copy the package to `/var/tmp`, check its MD5, `request system software add /var/tmp/<pkg> reboot`. A Virtual Chassis upgrades and reloads every member together. | `request system software rollback`, `request system reboot`. |
+| ArubaOS-Switch | **Standalone or stack** | Upload over SCP straight into the image slot the switch is **not** running from, check it there, `write memory`, `boot set-default flash <slot>`, `reload`. | `boot set-default flash <previous slot>`, `reload`. |
+| Aruba AOS 8 controller | **One controller** | Copy to flash, `copy flash: <img> system: partition <other>`, check the version in that partition, `boot system partition <other>`, `write memory`, `reload`. A cluster: one controller per job. | `boot system partition <previous>`, `write memory`, `reload`. |
+| Dell OS10 | **One switch** | Copy to the account's home folder, `image install home://<img>` (waits until `show image status` says it is done), `boot system standby`, `write memory`, `reload`. A VLT pair: one switch per job, the secondary first. | `boot system standby` (the previous software is there now), `write memory`, `reload`. |
+| Extreme EXOS | **Standalone or SummitStack** | Copy to `/usr/local/cfg`, check its size, `install image <file> reboot` (installs into the partition not in use and boots from it). | `use image <previous partition>`, `reboot`. |
+| Huawei VRP | **Standalone or stack** | Upload the `.cc` over SCP, check its size, `startup system-software flash:/<new>.cc`, `save`, `reboot`. | `startup system-software` the previous `.cc`, `save`, `reboot`. |
+| Cisco IOS-XR | **install add / activate** (eXR) | `install add source harddisk: <img>` (waits until it is done), `install activate <img> noprompt` (reloads). **Commits only after the post-checks pass** (`install commit`). | Before the commit: `reload location all`, which comes back on the committed (previous) software. After the commit: by hand. |
+| Cisco IOS-XR | **install replace** (XR 7 on 8000, NCS 540/5700) | `install replace /harddisk:/<img> noprompt` (reloads), then `install commit` after the post-checks. | The same as above. |
+| MikroTik RouterOS | **One router or switch** | Upload the `routeros` `.npk`, `/system reboot` (RouterOS installs it while booting). After the post-checks: `/system routerboard upgrade` and one more reboot, unless the firmware is already current. | **By hand:** RouterOS keeps no copy of the old release. Upload the previous `.npk` and run `/system package downgrade`. The job shows Needs attention with this instruction. |
+| Ubiquiti EdgeRouter | **One router** | Copy the `.tar` to `/tmp`, check its MD5, `add system image /tmp/<file>` (replaces the image not in use and makes the new one the default), `reboot`. | `set system image default-image` (back to the previous image), `reboot`. |
+
+Not yet: HPE Aruba AOS-CX and the Cisco small business switches. They can't receive an
+image over SSH, so they have to pull it from a server; how they will do that is still to
+be decided. Firewalls (FortiGate, PAN-OS, Check Point) come in a later release, as do Junos
+NSSU and SRX chassis clusters, and pair paths for Dell VLT and Aruba controller clusters.
+
 The ASA failover pair is set up as two NetOps devices: the **active address** (the job's
 device) and the **standby address** (its peer). The addresses follow the roles, so
 NetOps always talks to "whichever unit is active" and "whichever is standby".
@@ -151,6 +175,11 @@ pick it up from there.
 | NX-OS | `feature scp-server` |
 | ASA | `ssh scopy enable` |
 | AW+ | `ssh server scp` |
+| Arista EOS | none (SCP works with the switch's SSH server) |
+| Junos, IOS-XR, Dell OS10, EXOS, MikroTik, EdgeRouter | none (the copy uses the SSH login) |
+| ArubaOS-Switch | `ip ssh filetransfer` |
+| Aruba AOS 8 | none (checked in the lab) |
+| Huawei VRP | `scp server enable` |
 
 FTD uses the FDM API instead, so the server needs HTTPS (443) to the FTD management
 addresses (`FDM_HOSTS` in the firewall template).
@@ -185,6 +214,13 @@ addresses (`FDM_HOSTS` in the firewall template).
 | ASA | The failover pair is healthy, with one active and one standby unit. A pair member can't use the standalone path. |
 | NX-OS | The vPC peer link and keep-alive are healthy (vPC path); `show install all impact` runs before the reload. |
 | FTD | The FDM API is reachable with a trusted certificate; no undeployed changes; HA is healthy and in sync (HA path). |
+| Arista EOS | The running `.swi` stays on flash; the MLAG is active with the peer link up (MLAG path). |
+| Junos | Every Virtual Chassis member is present. |
+| ArubaOS-Switch, Huawei | The SCP server is on. ArubaOS-Switch shows which slot the new image goes to. |
+| Every other vendor | The running software is known, so it can be rolled back to. |
+
+For the other vendors the before/after snapshot is the version and the MAC addresses on
+edge ports (for the circuit check). Their alarm, environment and interface checks come later.
 
 **Before and after snapshot (IOS / IOS-XE):** interfaces, CDP and LLDP neighbours,
 port-channels, MAC address count, the MAC addresses on edge ports, stack members and version.

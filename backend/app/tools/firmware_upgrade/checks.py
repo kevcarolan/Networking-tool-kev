@@ -85,6 +85,12 @@ COMMANDS: dict[str, tuple[dict, dict]] = {
     "cisco_nxos": ({"version": "show version", "dir": "dir bootflash:"}, {}),
     "allied_awplus": ({"version": "show version", "system": "show system"}, {}),
 }
+# The other platforms: their version-check commands (the first one is "version"), so the
+# pre-checks read version, model and free space. Health checks for them come later.
+for _platform, _cmds in FACT_COMMANDS.items():
+    if _platform not in COMMANDS:
+        COMMANDS[_platform] = ({"version": _cmds[0],
+                                **{f"facts{i}": c for i, c in enumerate(_cmds[1:], 1)}}, {})
 FULL_CHECKS = {"cisco_ios"}  # platforms with the full health-check set
 
 
@@ -456,6 +462,11 @@ def compare_snapshots(pre: dict, post: dict, target_version: str) -> list[CheckR
         results.append(CheckResult("post_version", "Device runs the target version", BLOCKER,
                                    PASS if ok else FAIL,
                                    f"{post.get('version')} (target {target_version})"))
+    elif pre.get("version"):
+        # read before the upgrade but not now: don't let the post-check pass without it
+        results.append(CheckResult("post_version", "Device runs the target version", BLOCKER,
+                                   FAIL, "could not be read",
+                                   "The version was read before the upgrade but not after it"))
     if "interfaces" in pre and "interfaces" in post:
         lost = sorted(i for i, s in pre["interfaces"].items()
                       if s == "up" and post["interfaces"].get(i) != "up")

@@ -11,7 +11,8 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 
 ### Multi-vendor ([plans/multi-vendor.md](plans/multi-vendor.md))
 - [x] PR A: Arista, Juniper, Fortinet, Palo Alto, Check Point, Aruba (CX, ProCurve, AOS 8 controllers), Dell OS10, Extreme, Cisco IOS-XR and SMB, MikroTik, Ubiquiti EdgeOS, Huawei: backup, versions, circuits ([vendors.md](vendors.md)). Readers built from vendor docs: check each on a real device (lab tests 7b)
-- [ ] PR B: upgrade drivers for the SSH/SCP platforms
+- [x] PR B: upgrade drivers for Arista (+MLAG), Junos (+Virtual Chassis), ArubaOS-Switch, Aruba AOS 8, Dell OS10, EXOS, Huawei VRP, IOS-XR, MikroTik, EdgeRouter ([upgrades.md](upgrades.md#paths-per-platform)); lab tests section 9
+- [ ] PR B follow-up: AOS-CX and Cisco small business (they must pull the image: method to decide); Junos NSSU and SRX clusters; Dell VLT and Aruba controller cluster paths
 - [ ] PR C: firewall upgrades (FortiGate and PAN-OS via API, Check Point CPUSE)
 
 ### Product
@@ -45,12 +46,16 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-07 | Readers for the new vendors are built from vendor documentation, with samples in `tests/vendor_samples.py` | No lab kit yet; each is checked on a real device (lab tests 7b) and its sample replaced |
 | 2026-10-07 | FortiGate backups mask `ENC` secrets | FortiOS re-encrypts them on every show, so every backup would look changed; full restores use FortiGate's own backup |
 | 2026-10-07 | `ubiquiti_edgeos` is EdgeRouter only (Netmiko `ubiquiti_edgerouter`) | EdgeSwitch has a different CLI; UniFi needs its controller API |
+| 2026-10-07 | New drivers share `drivers/common.py` (copy, check by MD5 or size, set boot, save, reload) | Ten platforms follow the same pattern; each driver only says what differs |
+| 2026-10-07 | A post-check fails when the version could be read before the upgrade but not after it | Before, an unreadable version let the post-check pass |
+| 2026-10-07 | MikroTik roll back is by hand | RouterOS keeps no copy of the previous release |
 
 ## Open questions
 
 - Product name?
 - Licence model: sold, subscription, or open source with paid support?
 - FortiGate backups: is masking the secrets acceptable, or should the backup use FortiGate's own encrypted backup file instead?
+- AOS-CX and Cisco small business can't receive an image over SSH. Should they pull it from the server over HTTPS (a one-time link per job), from an SCP/SFTP account on the server, or (AOS-CX) be sent it through the REST API?
 - The AlliedWare Plus circuit-location fix (ports named `port1.0.x` were treated as port-channels) also applies to the work version; copy it across?
 
 ## Session log
@@ -60,3 +65,4 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-07 | Networking-tool-kev | Repository created from NetOps Tools (main @ 29e6bb1): PRTG removed, sample data made generic |
 | 2026-10-07 | Networking-tool-kev | Tests run on every pull request (GitHub Actions); product name made a setting |
 | 2026-10-07 | Networking-tool-kev | Multi-vendor PR A: 15 platforms for backups, version checks and circuit locations; vendor groups in the GUI; fixed AlliedWare Plus circuits never being located |
+| 2026-10-07 | Networking-tool-kev | Multi-vendor PR B: upgrade drivers for 10 more platforms, tested on the simulator; post-check now fails when the version can't be read |
