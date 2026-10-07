@@ -26,6 +26,21 @@ Progress, decisions and open questions are tracked in [docs/PROGRESS.md](docs/PR
 | Cisco ASA / Firepower in ASA mode | `cisco_asa` | SSH `show running-config` |
 | Cisco Firepower Threat Defense | `cisco_ftd` | SSH `show running-config` (FTD CLI) |
 | Allied Telesis AlliedWare Plus | `allied_awplus` | SSH `show running-config` |
+| Cisco IOS-XR, Catalyst 1200/1300 and CBS | `cisco_xr`, `cisco_smb` | SSH `show running-config` |
+| Arista EOS | `arista_eos` | SSH `show running-config` |
+| Juniper Junos | `juniper_junos` | SSH `show configuration \| display set` |
+| Fortinet FortiGate | `fortinet_fortios` | SSH `show full-configuration` |
+| Palo Alto PAN-OS | `paloalto_panos` | SSH `show` (set format) |
+| Check Point Gaia | `checkpoint_gaia` | SSH `show configuration` (clish) |
+| HPE Aruba AOS-CX, ArubaOS-Switch, AOS 8 controllers | `aruba_aoscx`, `aruba_osswitch`, `aruba_aos8` | SSH `show running-config` |
+| Dell OS10 | `dell_os10` | SSH `show running-configuration` |
+| Extreme EXOS / Switch Engine | `extreme_exos` | SSH `show configuration` |
+| MikroTik RouterOS | `mikrotik_routeros` | SSH `/export terse` |
+| Ubiquiti EdgeRouter | `ubiquiti_edgeos` | SSH `show configuration commands` |
+| Huawei VRP | `huawei_vrp` | SSH `display current-configuration` |
+
+What each platform supports (versions, circuits, upgrades) and the account it needs:
+[docs/vendors.md](docs/vendors.md).
 
 ## What it does
 

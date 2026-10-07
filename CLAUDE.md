@@ -27,8 +27,11 @@ Design docs: [docs/design.md](docs/design.md) (platform and backup tool),
 
 * Each deployment is a customer or site network. Don't assume any one network: platforms
   supported today are Cisco IOS/IOS-XE (install and bundle mode), NX-OS (+vPC), ASA (+failover),
-  Firepower FTD managed by FDM (+HA), and Allied Telesis AlliedWare Plus. Upgrade procedures are
-  drivers with selectable paths, so new designs are new paths.
+  Firepower FTD managed by FDM (+HA), and Allied Telesis AlliedWare Plus. Backups, version
+  checks and circuit locations also cover Arista, Juniper, Fortinet, Palo Alto, Check Point,
+  HPE Aruba, Dell, Extreme, Cisco IOS-XR/small business, MikroTik, Ubiquiti and Huawei
+  ([docs/vendors.md](docs/vendors.md)); their upgrade drivers follow (docs/plans/multi-vendor.md).
+  Upgrade procedures are drivers with selectable paths, so new designs are new paths.
 * Login is Active Directory over LDAPS and/or local NetOps users, plus a break-glass local admin.
 * Target server: **Ubuntu 26.04** (Python 3.14, nginx, systemd), often **air-gapped**, installed
   from an offline bundle (`deploy/airgap/`, [docs/install-airgap.md](docs/install-airgap.md)).
@@ -83,7 +86,9 @@ remote); never sync the two automatically.
   * tests drive every path against `tests/fake_network.py`. Extend the simulator with any new
     command a driver sends.
 * Device access is always injectable (`fetcher=` / `fw_collector=` in `create_app`), so tests
-  never touch SSH. Parser tests use real sample output in `backend/tests/firmware_samples.py`.
+  never touch SSH. Parser tests use real sample output in `backend/tests/firmware_samples.py`;
+  the newer vendors' samples (`tests/vendor_samples.py`) are from vendor documentation until
+  replaced by lab captures.
 
 ## Working rules
 

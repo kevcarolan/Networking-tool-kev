@@ -584,7 +584,7 @@ class JobService:
         from app.tools.circuits import store
         from app.tools.circuits.models import CircuitScan
 
-        reads = {d: ck.live_read(o) for d, o in units_outputs.items()}
+        reads = {d: ck.live_read(o, db.get(Device, d).platform) for d, o in units_outputs.items()}
         reads = {d: r for d, r in reads.items() if r.macs is not None or r.arps is not None}
         if not reads:
             return

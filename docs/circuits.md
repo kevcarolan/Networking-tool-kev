@@ -76,6 +76,7 @@ The scan logs in with each device's **backup account** and only runs `show` comm
 | NX-OS | `show mac address-table`, `show ip arp vrf all`, CDP and LLDP detail, `show port-channel summary` |
 | AlliedWare Plus | `show mac address-table`, `show arp`, `show lldp neighbors detail` |
 | ASA | `show arp` (to find the MAC of rows that only have an IP) |
+| Other vendors | See [vendors.md](vendors.md) |
 
 **How a circuit is found:**
 1. Its MAC from the sheet. If the sheet has only an IP, the MAC comes from an ARP table

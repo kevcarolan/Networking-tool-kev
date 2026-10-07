@@ -84,13 +84,16 @@ _PORT_PREFIXES = (  # longest first
     ("port-channel", "po"), ("ethernet", "eth"), ("twe", "twe"), ("gig", "gi"),
     ("ten", "te"), ("eth", "eth"), ("gi", "gi"), ("te", "te"), ("tw", "tw"), ("fi", "fi"),
     ("fa", "fa"), ("fo", "fo"), ("hu", "hu"), ("po", "po"), ("port", "port"), ("e", "eth"),
+    ("et", "eth"),  # Arista Et5 = Ethernet5
+    ("ge", "gi"), ("xgigabitethernet", "xge"),  # Huawei GE0/0/5 = GigabitEthernet0/0/5
 )
 
 
 def normalize_port(port: str) -> str:
     """'Gi2/0/13', 'GigabitEthernet2/0/13' and 'gi 2/0/13' -> 'gi2/0/13';
-    AlliedWare Plus 'port1.0.1' -> 'port1.0.1'."""
+    AlliedWare Plus 'port1.0.1' -> 'port1.0.1'; Junos 'ge-0/0/5.0' -> 'ge-0/0/5'."""
     p = re.sub(r"\s+", "", (port or "").lower())
+    p = re.sub(r"^([a-z]{2,3}-\d+/\d+/\d+|ae\d+)\.\d+$", r"\1", p)  # Junos logical unit
     m = re.match(r"^([a-z-]+)(\d.*)$", p)
     if not m:
         return p
