@@ -31,7 +31,7 @@ def test_live_commands_use_known_keys():
 
 def test_platforms_without_an_upgrade_driver_yet():
     # AOS-CX and Cisco small business would have to pull the image (not wanted: backups and
-    # versions only); Check Point needs an expert-shell account (to be decided). A job
+    # versions only); Check Point upgrades stay in SmartConsole (decided). A job
     # can't be created for them.
     assert set(PLATFORMS) - set(drivers.DRIVERS) == {"checkpoint_gaia", "aruba_aoscx", "cisco_smb"}
 

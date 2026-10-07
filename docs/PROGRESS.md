@@ -14,7 +14,6 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 - [x] PR B: upgrade drivers for Arista (+MLAG), Junos (+Virtual Chassis), ArubaOS-Switch, Aruba AOS 8, Dell OS10, EXOS, Huawei VRP, IOS-XR, MikroTik, EdgeRouter ([upgrades.md](upgrades.md#paths-per-platform)); lab tests section 9
 - [ ] Later if needed: Junos NSSU and SRX clusters; Dell VLT and Aruba controller cluster paths
 - [x] PR C: FortiGate (standalone, HA cluster) and PAN-OS (standalone, HA pair), image sent through their API ([upgrades.md](upgrades.md#paths-per-platform)); lab tests section 10
-- [ ] Check Point upgrades: needs an expert-shell account to copy the package (to decide)
 
 ### Product
 - [ ] Product name and branding (GUI title, logo, docs). The name is now one setting,
@@ -53,13 +52,13 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-07 | Upgrade jobs only for devices whose image can be sent from the server (SSH/SCP or the firewall's own API); AOS-CX and Cisco small business keep backups, versions and circuits only | The owner: the tool is for large production networks managed over SSH; nothing is built for devices to pull images |
 | 2026-10-07 | FortiGate and PAN-OS get the image through their management API (pinned certificate, like FDM); everything else over SSH | They can't receive a file over SSH; the API upload is a push from the server |
 | 2026-10-07 | FortiGate REST API token kept in the credential's enable secret (optional) | No database change needed; FortiOS has no enable mode |
+| 2026-10-07 | Check Point upgrades stay in SmartConsole / Central Deployment; the tool does backups, versions and ARP for Check Point | Upgrading from the tool would need an expert-shell account on every gateway; production sites already upgrade from the management server |
 
 ## Open questions
 
 - Product name?
 - Licence model: sold, subscription, or open source with paid support?
 - FortiGate backups: is masking the secrets acceptable, or should the backup use FortiGate's own encrypted backup file instead?
-- Check Point upgrades: Gaia only accepts the package over SCP from an expert-shell (bash) account. Allow such an upgrade account, or leave Check Point upgrades to SmartConsole / Central Deployment?
 - The AlliedWare Plus circuit-location fix (ports named `port1.0.x` were treated as port-channels) also applies to the work version; copy it across?
 
 ## Session log
@@ -71,3 +70,4 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-07 | Networking-tool-kev | Multi-vendor PR A: 15 platforms for backups, version checks and circuit locations; vendor groups in the GUI; fixed AlliedWare Plus circuits never being located |
 | 2026-10-07 | Networking-tool-kev | Multi-vendor PR B: upgrade drivers for 10 more platforms, tested on the simulator; post-check now fails when the version can't be read |
 | 2026-10-07 | Networking-tool-kev | Multi-vendor PR C: FortiGate and PAN-OS upgrades (standalone and HA) through their APIs; shared pinned-certificate client; Check Point and pull-only switches left out by decision |
+| 2026-10-07 | Networking-tool-kev | Decided: Check Point upgrades stay in SmartConsole |
