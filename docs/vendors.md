@@ -25,7 +25,7 @@ needs. Every command in this page is read-only (`show` or the vendor's equivalen
 | Juniper | Junos: EX, QFX, MX, SRX (`juniper_junos`) | yes | yes | yes (EX, QFX) | yes | lab test first; not SRX clusters |
 | Fortinet | FortiGate (`fortinet_fortios`) | yes (see below) | yes, HA mode | no | yes | lab test first; standalone and HA cluster |
 | Palo Alto | PAN-OS (`paloalto_panos`) | yes | yes, HA state | no | yes | lab test first; standalone and HA pair |
-| Check Point | Gaia gateways (`checkpoint_gaia`) | yes (Gaia OS only) | yes, cluster state | no | yes | to be decided |
+| Check Point | Gaia gateways (`checkpoint_gaia`) | yes (Gaia OS only) | yes, cluster state | no | yes | no: use SmartConsole / Central Deployment |
 | HPE Aruba | AOS-CX (`aruba_aoscx`) | yes | yes, active image | yes | yes | no (by choice) |
 | HPE Aruba | ArubaOS-Switch / ProCurve (`aruba_osswitch`) | yes | yes | yes | yes | lab test first |
 | HPE Aruba | Mobility Controller / Conductor, AOS 8 (`aruba_aos8`) | yes | yes | no | yes | lab test first |
