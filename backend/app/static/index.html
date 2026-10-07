@@ -489,10 +489,10 @@
         <small>The other unit of an HA, failover or vPC pair. Both units are set to point at each other. ASA: the active and standby addresses.</small></label>
       <label>File system <input name="file_system" maxlength="30" placeholder="default (flash:, bootflash:, disk0:/)"></label>
       <fieldset id="ups-fdm">
-        <legend>FDM certificate (FTD)</legend>
+        <legend>API certificate (FTD, FortiGate, PAN-OS)</legend>
         <label>Trusted SHA-256 fingerprint <input name="fdm_fingerprint" maxlength="100" placeholder="not trusted yet"></label>
         <button type="button" id="ups-fetch" class="small">Fetch from the device</button>
-        <small>Compare the fingerprint with the one FDM shows (Device › System Settings › Management Access / the browser's certificate view) before saving.</small>
+        <small>Compare the fingerprint with the one the device shows (FDM: Device › System Settings › Management Access; FortiGate and PAN-OS: the browser's certificate view of the management page) before saving.</small>
       </fieldset>
       <p class="error" hidden></p>
       <div class="dialog-actions">

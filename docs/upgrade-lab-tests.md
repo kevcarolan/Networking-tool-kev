@@ -20,7 +20,7 @@ the platform's driver (`backend/app/tools/firmware_upgrade/drivers/`).
 - [ ] The lab devices are in NetOps, with a backup account and an **upgrade account** (Upgrade settings).
 - [ ] Firmware › Versions › Check now reads the model and version of each device correctly.
 - [ ] The SCP server is enabled on each device (see upgrades.md).
-- [ ] The firewall allows SSH, and HTTPS to the FTDs, from the server (`FDM_HOSTS`).
+- [ ] The firewall allows SSH, and HTTPS to the FTDs, FortiGates and PAN-OS firewalls, from the server (`FDM_HOSTS`).
 - [ ] The images are uploaded with the vendor checksum (they show "verified").
 - [ ] `NETOPS_UPGRADE_LIVE_PLATFORMS` lists **only the platform under test**. Restart both services after changing it.
 
@@ -198,6 +198,33 @@ Platform notes to confirm:
       RouterBOARD firmware step runs; roll back stops with the "by hand" instruction.
 - [ ] **EdgeRouter:** `md5sum` works from the upgrade account; `add system image` and `set system
       image default-image` work.
+
+## 10. Firewalls: FortiGate and PAN-OS
+
+Do section 7b for the platform first. Trust the certificate in each device's upgrade settings
+(Fetch from the device, compare with what the device shows), and allow HTTPS to it from
+the server (`FDM_HOSTS`).
+
+**FortiGate (standalone, then an HA cluster):**
+- [ ] The API pre-check passes, with a REST API token (in the credential's enable secret) and
+      without one (username and password). Note which you will use.
+- [ ] Live Start: the image is accepted and the FortiGate reboots onto the new version.
+      Note how long the upload takes, and check the job log shows the API's answer *before*
+      the reboot. (If the connection drops instead, the job stops at that step although the
+      upgrade goes ahead: report it, the step then needs to treat the drop as "rebooting".)
+- [ ] `diagnose sys flash list` shows the partitions; roll back with `execute set-next-reboot`
+      brings back the previous version. With VDOMs: check the commands work from the
+      account's context (they may need `config global`).
+- [ ] HA cluster with `uninterruptible-upgrade`: the job waits while the cluster upgrades
+      itself, and finishes when every member is on the new version and HA health is OK.
+
+**PAN-OS (standalone, then an HA pair):**
+- [ ] The API pre-check passes; the base release check is right for a maintenance release.
+- [ ] Stage image uploads the software; the firewall lists it as downloaded.
+- [ ] Live Start: the install job finishes, the firewall restarts on the new version.
+- [ ] Roll back installs the previous version and restarts.
+- [ ] HA pair: the passive unit is upgraded first; suspending the active unit fails the pair
+      over to it; both end on the new version and the pair is healthy (active/passive).
 
 ## Sign-off
 

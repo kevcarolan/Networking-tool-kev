@@ -1235,11 +1235,11 @@ async function openUpgradeSettings(device, after) {
   form.peer_device_id.value = settings.peer_device_id ?? "";
   form.file_system.value = settings.file_system || "";
   form.fdm_fingerprint.value = settings.fdm_fingerprint || "";
-  $("#ups-fdm").hidden = device.platform !== "cisco_ftd";
+  $("#ups-fdm").hidden = !["cisco_ftd", "fortinet_fortios", "paloalto_panos"].includes(device.platform);
   $("#ups-fetch").onclick = async () => {
     try {
       const r = await api(`/api/firmware/devices/${device.id}/fdm-fingerprint`, { method: "POST" });
-      if (confirm(`${device.name} presents this certificate:\n\n${r.fingerprint}\n\nDoes it match the fingerprint shown in FDM? Only then trust it.`)) {
+      if (confirm(`${device.name} presents this certificate:\n\n${r.fingerprint}\n\nDoes it match the fingerprint the device shows? Only then trust it.`)) {
         form.fdm_fingerprint.value = r.fingerprint;
       }
     } catch (e) {

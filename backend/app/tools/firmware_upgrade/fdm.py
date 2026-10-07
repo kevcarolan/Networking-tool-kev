@@ -1,22 +1,20 @@
 """A small client for the FDM REST API (Firepower Threat Defense managed by FDM).
 
-Standard library only. FDM uses a self-signed certificate, so instead of a CA we
-pin its SHA-256 fingerprint: an admin confirms the fingerprint once in the device's
-upgrade settings, and every connection is refused if it doesn't match.
+Standard library only. The certificate is pinned (apiclient.py).
 
 The endpoint paths are in ENDPOINTS so they can be adjusted to the FDM API version
 without touching the procedure (confirm them in the lab - see upgrade-lab-tests.md).
 """
 
-import hashlib
 import json
-import socket
-import ssl
-import uuid
 from http.client import HTTPSConnection
 from pathlib import Path
 
-from app.core.ssh import AUTH, ERROR, SETUP, UNREACHABLE, DeviceError
+from app.core.ssh import AUTH, ERROR, UNREACHABLE, DeviceError
+from app.tools.firmware_upgrade.apiclient import (fetch_fingerprint, format_fp, multipart,
+                                                  pinned_connection, require_fingerprint)
+
+__all__ = ["ENDPOINTS", "FdmClient", "fetch_fingerprint", "format_fp"]
 
 BASE = "/api/fdm/latest"
 ENDPOINTS = {
@@ -34,55 +32,18 @@ ENDPOINTS = {
 }
 
 
-def _context() -> ssl.SSLContext:
-    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE  # trust comes from the pinned fingerprint instead
-    return ctx
-
-
-def fetch_fingerprint(address: str, port: int = 443, timeout: float = 10) -> str:
-    """SHA-256 of the certificate the device presents, as colon-separated hex."""
-    try:
-        with socket.create_connection((address, port), timeout=timeout) as sock, \
-                _context().wrap_socket(sock) as tls:
-            der = tls.getpeercert(binary_form=True)
-    except OSError as exc:
-        raise DeviceError(UNREACHABLE, f"Could not connect to {address}:{port}: {exc}") from None
-    return format_fp(hashlib.sha256(der).hexdigest())
-
-
-def format_fp(hexdigest: str) -> str:
-    h = hexdigest.replace(":", "").lower()
-    return ":".join(h[i:i + 2] for i in range(0, len(h), 2)).upper()
-
-
 class FdmClient:
     def __init__(self, address: str, username: str, password: str, fingerprint: str,
                  timeout: float = 60, port: int = 443):
-        if not fingerprint:
-            raise DeviceError(SETUP, "The FDM certificate isn't trusted yet: an admin must "
-                                     "confirm its fingerprint in the device's upgrade settings")
+        self.fingerprint = require_fingerprint(fingerprint, "FDM")
         self.address, self.username, self.password = address, username, password
-        self.fingerprint = format_fp(fingerprint)
         self.timeout, self.port = timeout, port
         self.token: str | None = None
 
     # --- transport ---------------------------------------------------------------
 
     def _connection(self) -> HTTPSConnection:
-        conn = HTTPSConnection(self.address, self.port, timeout=self.timeout, context=_context())
-        try:
-            conn.connect()
-        except OSError as exc:
-            raise DeviceError(UNREACHABLE, f"FDM API unreachable: {exc}") from None
-        seen = format_fp(hashlib.sha256(conn.sock.getpeercert(binary_form=True)).hexdigest())
-        if seen != self.fingerprint:
-            conn.close()
-            raise DeviceError(SETUP, f"FDM certificate changed (now {seen}); check the device "
-                                     "and trust the new certificate in its upgrade settings")
-        return conn
+        return pinned_connection(self.address, self.port, self.fingerprint, self.timeout, "FDM")
 
     def request(self, method: str, name_or_path: str, body=None, raw: bytes | None = None,
                 content_type: str = "application/json") -> dict:
@@ -139,13 +100,8 @@ class FdmClient:
     # --- changes -----------------------------------------------------------------
 
     def upload(self, local: Path) -> dict:
-        boundary = uuid.uuid4().hex
-        head = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"fileToUpload\"; "
-                f"filename=\"{local.name}\"\r\nContent-Type: application/octet-stream\r\n\r\n")
-        # FTD packages are up to ~1 GB; read in one go (the worker has the memory headroom)
-        raw = head.encode() + local.read_bytes() + f"\r\n--{boundary}--\r\n".encode()
-        return self.request("POST", "upload", raw=raw,
-                            content_type=f"multipart/form-data; boundary={boundary}")
+        raw, content_type = multipart("fileToUpload", local)
+        return self.request("POST", "upload", raw=raw, content_type=content_type)
 
     def readiness_check(self, file_id: str) -> dict:
         return self.request("POST", "readiness", {"type": "upgradereadinesscheck",

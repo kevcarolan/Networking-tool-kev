@@ -79,7 +79,10 @@ remote); never sync the two automatically.
 * Upgrade jobs:
   * checks and parsers in `checks.py`; one **driver** per platform in `drivers/` (paths, extra
     pre-checks, the procedure as `Step`s); the engine in `jobs.py` (`JobService`, `allowed_actions`);
-    device access in `deviceio.py` (SSH change/copy) and `fdm.py` (FDM API);
+    device access in `deviceio.py` (SSH change/copy) and the management APIs (`fdm.py`,
+    `fortios.py`, `panos.py`, sharing the pinned-certificate code in `apiclient.py`);
+  * upgrade jobs only for devices whose image can be sent from the server (SSH/SCP or the
+    device's own API); never build a way for devices to pull images;
   * the web app only **queues** requests (`request_action`); the **worker** (`app/worker.py`,
     `netops-worker.service`) runs them. Never talk to a device for a job from the web process;
   * a dry run and a live run use the same steps: only `StepContext.change/transfer/fdm_change`

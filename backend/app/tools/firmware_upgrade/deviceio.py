@@ -14,7 +14,7 @@ from pathlib import Path
 
 from app.core.platforms import PLATFORMS
 from app.core.ssh import ERROR, SETUP, TIMEOUT, DeviceError, Target, run_commands
-from app.tools.firmware_upgrade import fdm
+from app.tools.firmware_upgrade import fdm, fortios, panos
 
 log = logging.getLogger(__name__)
 
@@ -124,6 +124,18 @@ class DeviceIO:
 
     def fetch_fingerprint(self, address: str) -> str:
         return fdm.fetch_fingerprint(address)
+
+    def api_client(self, target: Target, fingerprint: str):
+        """The management API client for platforms that upgrade (partly) through one."""
+        if target.platform == "cisco_ftd":
+            return self.fdm(target, fingerprint)
+        if target.platform == "fortinet_fortios":
+            # A REST API token can be kept in the credential's enable secret
+            return fortios.FortiosClient(target.address, target.username, target.password,
+                                         fingerprint, token=target.enable_secret or "")
+        if target.platform == "paloalto_panos":
+            return panos.PanosClient(target.address, target.username, target.password, fingerprint)
+        raise DeviceError(SETUP, f"No management API client for {target.platform}")
 
 
 def _interactive(conn, command: str, timeout: float, expect_reload: bool) -> str:

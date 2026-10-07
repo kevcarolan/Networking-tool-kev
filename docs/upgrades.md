@@ -154,10 +154,24 @@ the simulator only. Keep them as dry runs until each one passes its lab test
 | MikroTik RouterOS | **One router or switch** | Upload the `routeros` `.npk`, `/system reboot` (RouterOS installs it while booting). After the post-checks: `/system routerboard upgrade` and one more reboot, unless the firmware is already current. | **By hand:** RouterOS keeps no copy of the old release. Upload the previous `.npk` and run `/system package downgrade`. The job shows Needs attention with this instruction. |
 | Ubiquiti EdgeRouter | **One router** | Copy the `.tar` to `/tmp`, check its MD5, `add system image /tmp/<file>` (replaces the image not in use and makes the new one the default), `reboot`. | `set system image default-image` (back to the previous image), `reboot`. |
 
-Not yet: HPE Aruba AOS-CX and the Cisco small business switches. They can't receive an
-image over SSH, so they have to pull it from a server; how they will do that is still to
-be decided. Firewalls (FortiGate, PAN-OS, Check Point) come in a later release, as do Junos
-NSSU and SRX chassis clusters, and pair paths for Dell VLT and Aruba controller clusters.
+**Firewalls** (October 2026, built from vendor documentation; lab test first, section 10):
+
+| Platform | Path | What it does | Roll back |
+|---|---|---|---|
+| FortiGate | **Standalone** | The image is sent through the FortiGate REST API (FortiOS can't receive a file over SSH). FortiOS checks it, writes it to the partition it isn't running from, and reboots onto it. | `execute set-next-reboot <previous partition>`, `execute reboot`. |
+| FortiGate | **HA cluster** | The image is sent to the cluster. With `uninterruptible-upgrade` (a pre-check warns when it is off) the cluster upgrades the secondaries, fails over, then the old primary, so its address stays up. The job waits until the cluster reports the new version with HA health OK. | **By hand** on each member (the job says how). |
+| PAN-OS | **Standalone** | Through the XML API: upload the image, `request system software install version <v>` (the job follows the install), restart. The pre-check makes sure the base release (e.g. 10.2.0 before 10.2.8) is on the firewall. | Install the previous version (still on the firewall) and restart. |
+| PAN-OS | **HA pair** | The **passive** unit first: suspend it, install, restart, make it functional and check the pair. Then the active unit: suspending it fails the pair over to the upgraded unit. The pair is checked again at the end. | Each unit back to the previous version, in reverse order. |
+
+**FortiGate account:** the upgrade account logs in over SSH (version checks, roll back) and
+to the REST API. For the API, use a REST API token if you have one: put it in the
+credential's **enable secret**. Without one, the account's username and password are used.
+
+Not done, by choice: HPE Aruba AOS-CX and the Cisco small business switches (they would
+have to pull the image from a server; they keep backups, versions and circuits). Check
+Point (its package has to be copied with an expert-shell account: to be decided). Also not
+yet: Junos NSSU and SRX chassis clusters, and pair paths for Dell VLT and Aruba controller
+clusters.
 
 The ASA failover pair is set up as two NetOps devices: the **active address** (the job's
 device) and the **standby address** (its peer). The addresses follow the roles, so
@@ -181,8 +195,10 @@ pick it up from there.
 | Aruba AOS 8 | none (checked in the lab) |
 | Huawei VRP | `scp server enable` |
 
-FTD uses the FDM API instead, so the server needs HTTPS (443) to the FTD management
-addresses (`FDM_HOSTS` in the firewall template).
+FTD, FortiGate and PAN-OS receive the image through their management API instead, so the
+server needs HTTPS (443) to their management addresses (`FDM_HOSTS` in the firewall
+template). Each one's certificate is trusted once, in its upgrade settings ("Fetch from the
+device", then compare with the fingerprint the device shows).
 
 ## The checks
 
@@ -217,6 +233,8 @@ addresses (`FDM_HOSTS` in the firewall template).
 | Arista EOS | The running `.swi` stays on flash; the MLAG is active with the peer link up (MLAG path). |
 | Junos | Every Virtual Chassis member is present. |
 | ArubaOS-Switch, Huawei | The SCP server is on. ArubaOS-Switch shows which slot the new image goes to. |
+| FortiGate | The API answers with a trusted certificate; the running partition is known; standalone path: not in a cluster; HA path: cluster health OK and `uninterruptible-upgrade` on (a warning). |
+| PAN-OS | The API answers with a trusted certificate; the base release is on the firewall; the running version is kept for roll back; HA path: one active and one passive unit, link up. |
 | Every other vendor | The running software is known, so it can be rolled back to. |
 
 For the other vendors the before/after snapshot is the version and the MAC addresses on
