@@ -14,6 +14,9 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="NETOPS_", env_file=".env", extra="ignore")
 
+    # Product name shown in the browser title, the page header and reports.
+    product_name: str = "NetOps Tools"
+
     # Storage: SQLite database and the git repository of device configs live here.
     data_dir: Path = REPO_ROOT / "data"
     # Key used to encrypt device credentials. Keep it OUTSIDE data_dir in

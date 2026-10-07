@@ -12,7 +12,7 @@ NetOps checks, in this order:
 2. **A user added on the Users page.** They get **exactly** the permissions set there.
    * **Active Directory:** they sign in with their normal AD password (`jsmith`,
      `jsmith@corp.local` or `CORP\jsmith`). Their AD groups don't matter.
-   * **Local (NetOps password):** for the test server, contractors or anyone without AD.
+   * **Local (password kept here):** for the test server, contractors or anyone without AD.
      The password is stored hashed (scrypt) and needs at least 12 characters. The user can
      change it with **Change password** (top right); an admin can **Reset password**.
 3. **Any other AD user**, from the AD groups as before:

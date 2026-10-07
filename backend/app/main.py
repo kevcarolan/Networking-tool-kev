@@ -1,10 +1,12 @@
-"""NetOps platform entry point.  Run with:  uvicorn --factory app.main:create_app"""
+"""Platform entry point.  Run with:  uvicorn --factory app.main:create_app"""
 
+import html
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -65,7 +67,7 @@ def create_app(settings: Settings | None = None, fetcher=fetch_config,
         circuit_scan.stop()
 
     docs = settings.api_docs
-    app = FastAPI(title="NetOps Tools", lifespan=lifespan, redoc_url=None,
+    app = FastAPI(title=settings.product_name, lifespan=lifespan, redoc_url=None,
                   docs_url="/docs" if docs else None,
                   openapi_url="/openapi.json" if docs else None)
     app.state.settings = settings
@@ -102,6 +104,16 @@ def create_app(settings: Settings | None = None, fetcher=fetch_config,
     @app.get("/api/health", include_in_schema=False)
     def health():
         return {"ok": True}
+
+    # The page shell carries the product name, filled in once here so it shows
+    # before any script runs (also on the login screen).
+    index_page = (STATIC_DIR / "index.html").read_text(encoding="utf-8").replace(
+        "{{product_name}}", html.escape(settings.product_name))
+
+    @app.get("/", include_in_schema=False)
+    @app.get("/index.html", include_in_schema=False)
+    def index():
+        return HTMLResponse(index_page)
 
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
     return app

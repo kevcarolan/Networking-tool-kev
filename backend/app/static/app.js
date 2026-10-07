@@ -1,4 +1,4 @@
-// NetOps Tools - browser frontend (plain JavaScript, no build step).
+// Browser frontend (plain JavaScript, no build step).
 "use strict";
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -782,7 +782,7 @@ async function deleteImage(img) {
 
 const ct = { rows: [], imp: null, pending: null };
 
-const CT_MATCH = { matched: "Linked", unmatched: "Switch not in NetOps", ambiguous: "Several devices match", none: "No switch" };
+const CT_MATCH = { matched: "Linked", unmatched: "Switch not in inventory", ambiguous: "Several devices match", none: "No switch" };
 const CT_LIVE_CLS = { matches: "success", moved: "failed", found: "changed", not_seen: "never", several: "changed", no_address: "never" };
 
 async function loadCircuits() {
@@ -948,8 +948,8 @@ function renderPreview(imp) {
     h("p", { class: "muted" }, `${imp.filename}, sheet "${imp.sheet}", header on row ${s.header_row}. ` +
       (s.replaces_import ? "Compared with the current live list." : "There is no live list yet; every row is new.") +
       (s.missing_columns.length ? ` Columns not found (left empty): ${s.missing_columns.join(", ")}.` : "")),
-    h("h3", {}, "Switches not found in NetOps"),
-    h("p", { class: "muted" }, "Rows on these switches can't be linked to upgrade jobs until a NetOps device with that name (or ending in -name) exists."),
+    h("h3", {}, "Switches not found in the inventory"),
+    h("p", { class: "muted" }, "Rows on these switches can't be linked to upgrade jobs until a device with that name (or ending in -name) exists."),
     list([...s.unmatched_switches, ...s.ambiguous_switches.map((x) => `${x} (matches more than one device)`)],
       s.unmatched_switches.length + s.ambiguous_switches.length),
     h("h3", {}, "Changes"),

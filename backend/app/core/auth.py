@@ -303,7 +303,7 @@ def change_password(body: PasswordChange, request: Request, db: Session = Depend
 
     acc = db.get(UserAccount, user.user_id) if user.user_id else None
     if acc is None or acc.source != "local":
-        raise HTTPException(409, "Only local NetOps accounts have a password here; "
+        raise HTTPException(409, "Only local accounts have a password here; "
                                  "AD users change theirs in Active Directory")
     if not verify_password(body.current, acc.password_hash or ""):
         raise HTTPException(403, "The current password is wrong")

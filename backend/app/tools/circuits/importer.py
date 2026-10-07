@@ -140,7 +140,7 @@ def match_switches(device_names: dict[int, str], keys: set[str]) -> dict[str, tu
 def _validate(v: dict[str, str]) -> list[str]:
     w = []
     if not v["mac"] and not v["ip"]:
-        w.append("no MAC or IP address, so NetOps can't find it on the network")
+        w.append("no MAC or IP address, so it can't be found on the network")
     if bool(v["switch"]) != bool(v["port"]):
         w.append("only one of NETWORK PORT DEVICE and PORT is filled in")
     for key, label in (("ip", "IP address"), ("gateway", "default gateway")):
@@ -196,7 +196,7 @@ def parse_workbook(data: bytes, max_rows: int = 50000) -> ParsedSheet:
             if "mac" not in columns and "ip" not in columns:
                 raise CircuitImportError(
                     f"Sheet '{ws.title}': neither 'Hardware Mac Address' nor 'IP Address' "
-                    "was found - NetOps needs one of them to find each circuit")
+                    "was found - one of them is needed to find each circuit")
             rows = []
             start = header_idx + 2  # 1-based row number of the first data row
             for row_no, raw in enumerate(ws.iter_rows(min_row=start, values_only=True), start):

@@ -55,6 +55,8 @@ remote); never sync the two automatically.
 
 * Backend: Python 3.11+, FastAPI, SQLAlchemy 2, Netmiko. Settings are env vars prefixed
   `NETOPS_` (`backend/app/core/config.py`, documented in `.env.example`).
+* Never write the product name into the GUI, reports or messages: use the `product_name`
+  setting (`{{product_name}}` in `index.html`), or neutral words such as "inventory".
 * `core/` is shared by every tool: auth, inventory, credentials, platforms, SSH (`core/ssh.py`),
   audit log. Tools live in `tools/<name>/` with `models.py`, `service.py`, `api.py`.
 * **Database:** SQLite `data/app.db`, created with `create_all` and no migration tool. New

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>NetOps Tools</title>
+  <title>{{product_name}}</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="style.css">
   <script src="app.js" defer></script>
@@ -12,7 +12,7 @@
   <!-- Login -->
   <section id="login-view" class="login" hidden>
     <form id="login-form" class="card login-card">
-      <h1>NetOps Tools</h1>
+      <h1>{{product_name}}</h1>
       <p class="muted">Sign in with your domain account</p>
       <label>Username <input name="username" autocomplete="username" required autofocus></label>
       <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
@@ -24,7 +24,7 @@
   <!-- App shell -->
   <div id="app-view" hidden>
     <header class="topbar">
-      <span class="brand">NetOps Tools</span>
+      <span class="brand">{{product_name}}</span>
       <nav id="nav">
         <button data-view="backups" class="active" data-perm="backups:view">Config backups</button>
         <button data-view="firmware" data-perm="firmware:view|upgrades:view">Firmware</button>
@@ -172,7 +172,7 @@
           <select id="ct-filter-vlan"><option value="">All VLANs</option></select>
           <select id="ct-filter-match">
             <option value="">All rows</option>
-            <option value="matched">Linked to a NetOps device</option>
+            <option value="matched">Linked to an inventory device</option>
             <option value="unlinked">Not linked</option>
             <option value="warnings">With warnings</option>
             <option value="live:matches">Network: matches the list</option>

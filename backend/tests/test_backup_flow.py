@@ -115,3 +115,17 @@ def test_frontend_served(client):
     r = client.get("/")
     assert r.status_code == 200 and "NetOps Tools" in r.text
     assert "default-src 'self'" in r.headers["content-security-policy"]
+    assert "{{product_name}}" not in r.text
+    assert client.get("/index.html").text == r.text
+    assert client.get("/style.css").status_code == 200
+
+
+def test_product_name_setting(settings):
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+
+    settings.product_name = "Acme <Net> Ops"
+    with TestClient(create_app(settings)) as c:
+        page = c.get("/").text
+    assert page.count("Acme &lt;Net&gt; Ops") == 3 and "NetOps Tools" not in page
