@@ -28,10 +28,7 @@ cd "$REPO_ROOT"
 
 TARGET_ARCH="${TARGET_ARCH:-x86_64}"
 # Ubuntu packages the server needs (their dependencies are added automatically).
-OS_PACKAGES=(
-  python3-venv git sqlite3 nginx
-  nftables chrony auditd aide apparmor-utils rsyslog-gnutls apt-offline open-vm-tools
-)
+mapfile -t OS_PACKAGES < <(sed 's/#.*//' deploy/os-packages.txt | tr -s ' ' '\n' | grep .)
 
 say() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
@@ -117,7 +114,7 @@ say "Manifest (for the change ticket)"
   echo "Everything in this bundle. Nothing else is installed or downloaded on the server."
   echo
   echo "== Ubuntu $UBUNTU packages (installed only if missing; never downgraded) =="
-  echo "Requested: $(tr '\n' ' ' < "$OUT/debs/PACKAGES.txt" 2>/dev/null || echo 'none (SKIP_DEBS)')"
+  echo "Requested: $({ tr '\n' ' ' < "$OUT/debs/PACKAGES.txt"; } 2>/dev/null || echo 'none (SKIP_DEBS)')"
   for deb in "$OUT"/debs/*.deb; do
     if [[ -e "$deb" ]]; then
       dpkg-deb --show --showformat='${Package}\t${Version}\t${Architecture}\n' "$deb"

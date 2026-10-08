@@ -22,7 +22,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 - [ ] Licence terms: draft agreement in [legal/EULA-draft.md](legal/EULA-draft.md); decisions listed at its end, then a solicitor's review
 - [ ] Owner: make the licence signing key and commit its public key ([licensing.md](licensing.md#one-time-make-the-signing-key))
 - [x] First-run setup screen (admin account, AD settings, certificate) instead of editing `netops.env`; AD and the certificate stay on a Settings page for admins
-- [ ] Installer for internet-connected and air-gapped sites
+- [x] Installer for internet-connected and air-gapped sites (`deploy/install-online.sh` builds and installs the same bundle on the server; [install-online.md](install-online.md))
 - [x] Customer documentation: install guide, admin guide, user guide ([customer/](customer/README.md))
 - [x] Licence keys: 60-day trial, signed licences (end date, devices, optional installation), read-only for new work without one ([licensing.md](licensing.md))
 - [ ] Optional: multi-site support
@@ -67,6 +67,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-08 | A licence sets an end date and a device count; a new install gets a 60-day trial | The owner's choice: yearly subscription priced by network size; long enough to test an upgrade in a change window |
 | 2026-10-08 | Without a valid licence only new work is blocked (adding devices, planning and starting upgrades); backups, checks, viewing and jobs under way go on | A customer's network is never left without backups, and a device is never left half-upgraded |
 | 2026-10-08 | No bypass login or setting; the owner uses an internal licence, and `python -m app` is development mode | A hidden bypass could be found in the shipped code |
+| 2026-10-08 | The online installer builds the air-gapped bundle on the server and runs the same `install.sh` | One install, upgrade and roll-back path to test and support; the bundle doubles as the record for the change ticket |
 
 ## Open questions
 
@@ -95,3 +96,4 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-08 | Networking-tool-kev | Customer documentation (install, admin and user guides) and a draft licence agreement; open-source licences checked (no GPL; LGPL ldap3, paramiko, scp) |
 | 2026-10-08 | Networking-tool-kev | Per-customer settings on the Settings page (site name, defaults), applied live in the web app and the worker; circuit scan follows the schedule setting |
 | 2026-10-08 | Networking-tool-kev | Licence keys: trial, signed licences, Settings page and banner, signing tool; wrong setup codes are now kept in the audit log (they were rolled back) |
+| 2026-10-08 | Networking-tool-kev | Online installer (`deploy/install-online.sh`), shared Ubuntu package list; tested end to end in an Ubuntu container (bundle built, verified and installed) |

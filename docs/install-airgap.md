@@ -1,7 +1,8 @@
 # Installing NetOps Tools on an air-gapped server
 
 This is the supported way to install the platform on a network with no internet
-access. Everything the server needs goes across in **one offline bundle**:
+access. For a server that can reach the internet, [install-online.md](install-online.md)
+does the same steps on the server with one command. Everything the server needs goes across in **one offline bundle**:
 
 * the app;
 * every Python package, pinned and checked for known vulnerabilities;
