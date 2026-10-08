@@ -112,3 +112,4 @@ remote); never sync the two automatically.
 * **At the end of every session, update `docs/PROGRESS.md`:** tick finished items, add a
   line to the session log, and record new decisions and open questions.
 * Keep the docs in plain language. The users are network engineers, not developers.
+  When a change alters what admins or users see, update the customer guides in `docs/customer/` too.
