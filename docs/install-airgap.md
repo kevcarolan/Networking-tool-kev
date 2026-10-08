@@ -202,7 +202,8 @@ The installer:
    * the nightly backup timer;
    * the `netops-cli` admin command;
    * the audit rules;
-   * the nginx site;
+   * the nginx sites: the main one (443) and the wall display (8443, closed by the
+     hardened firewall until you allow your screens);
    * the certificate service: it installs a certificate you add on the setup screen
      (`netops-tls.path`, `/usr/local/sbin/netops-tls-apply`);
 7. on a **first install**: makes a temporary self-signed certificate (30 days) for the

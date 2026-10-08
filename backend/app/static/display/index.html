@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Status display</title>
+  <link rel="stylesheet" href="display.css">
+</head>
+<body>
+  <header>
+    <div class="title"><span id="product"></span> <span id="site" class="dim"></span></div>
+    <div id="page-name" class="page-name"></div>
+    <div class="right"><span id="clock" class="clock"></span><span id="dots" class="dots"></span></div>
+  </header>
+  <div id="stale" class="stale" hidden></div>
+  <main>
+    <section id="page-overview" class="page"></section>
+    <section id="page-upgrades" class="page" hidden></section>
+  </main>
+  <footer><span id="updated" class="dim"></span><span id="screen" class="dim"></span></footer>
+  <script src="display.js"></script>
+</body>
+</html>

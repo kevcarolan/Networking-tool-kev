@@ -149,6 +149,23 @@ elif [[ -f "$NGINX_SITE" ]] && grep -q 'proxy_pass http://127.0.0.1:8000;' "$NGI
   NGINX_PORT_CHANGED=1
   echo "Updated $NGINX_SITE: the app now listens on port $APP_PORT instead of 8000."
 fi
+# The wall display: its own nginx site on port 8443 (closed by the hardened firewall until
+# DISPLAY_NETS is set), and refused on the main site.
+DISPLAY_SITE=/etc/nginx/sites-available/netops-display
+if [[ -d /etc/nginx/sites-available && ! -f "$DISPLAY_SITE" ]]; then
+  install -m 0644 "$STAGE/deploy/nginx-netops-display.conf" "$DISPLAY_SITE"
+  if [[ -L /etc/nginx/sites-enabled/netops ]]; then
+    ln -sf "$DISPLAY_SITE" /etc/nginx/sites-enabled/netops-display
+    NGINX_DISPLAY_ADDED=1
+    echo "Added the wall display site on port 8443 ($DISPLAY_SITE)."
+  fi
+fi
+if [[ -f "$NGINX_SITE" ]] && ! grep -q '/api/display/' "$NGINX_SITE"; then
+  # Sites made before the wall display: keep the display off the main port.
+  cp -p "$NGINX_SITE" "$NGINX_SITE.before-display"
+  sed -i '0,/^    location \/ {/s||    # The wall display has its own port (netops-display); never on this one.\n    location ^~ /display/ { return 404; }\n    location ^~ /api/display/ { return 404; }\n\n    location / {|' "$NGINX_SITE"
+  NGINX_DISPLAY_ADDED=1
+fi
 
 say "Switching to $VERSION"
 # Never restart the upgrade worker in the middle of a live device upgrade.
@@ -187,8 +204,15 @@ if have_systemd; then
   systemctl enable --quiet netops-backup.timer
   systemctl start netops-backup.timer
   systemctl enable --quiet --now netops-tls.path   # installs certificates from the setup screen
-  if [[ -n "${NGINX_PORT_CHANGED:-}" ]] && nginx -t 2>/dev/null; then
-    systemctl reload nginx || true
+  if [[ -n "${NGINX_PORT_CHANGED:-}${NGINX_DISPLAY_ADDED:-}" ]]; then
+    if nginx -t 2>/dev/null; then
+      systemctl reload nginx || true
+    elif [[ -n "${NGINX_DISPLAY_ADDED:-}" ]]; then
+      echo "nginx didn't accept the wall display site: put back as it was (see 'nginx -t')."
+      rm -f /etc/nginx/sites-enabled/netops-display
+      [[ -f "$NGINX_SITE.before-display" ]] && cp -p "$NGINX_SITE.before-display" "$NGINX_SITE"
+      nginx -t 2>/dev/null && systemctl reload nginx || true
+    fi
   fi
   if [[ -n "$SERVICE_WAS_RUNNING" ]]; then
     systemctl start netops
@@ -240,6 +264,7 @@ if [[ -n "$FIRST_INSTALL" ]] && have_systemd && command -v nginx >/dev/null \
     echo "Made a temporary self-signed certificate (30 days) for $FQDN - replace it on the setup screen."
   fi
   ln -sf "$NGINX_SITE" /etc/nginx/sites-enabled/netops
+  ln -sf "$DISPLAY_SITE" /etc/nginx/sites-enabled/netops-display
   rm -f /etc/nginx/sites-enabled/default
   nginx -t && systemctl reload-or-restart nginx
   systemctl enable --quiet --now netops netops-worker

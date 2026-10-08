@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # local tools often use. The installed service (systemd + nginx) also uses 8710.
     host: str = "127.0.0.1"
     port: int = 8710
+    # The wall display's own HTTPS port (nginx). Only used to show the display link; the
+    # nginx site and the host firewall must use the same number.
+    display_port: int = 8443
 
     # Storage: SQLite database and the git repository of device configs live here.
     data_dir: Path = REPO_ROOT / "data"

@@ -2078,13 +2078,50 @@ async function optionsPanel() {
   return box;
 }
 
+/** Wall displays: read-only status screens on their own port, each with its own link. */
+async function displaysPanel() {
+  const { port, screens } = await api("/api/displays");
+  const err = errorLine();
+  const name = h("input", { name: "display_name", placeholder: "e.g. NOC wall 1", maxlength: 100 });
+  const linkFor = (key) => `https://${location.hostname}:${port}/display/#key=${key}`;
+  const shown = h("div", { hidden: true });
+  const box = h("div", { class: "panel" });
+  const rows = screens.length ? h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "Screen"), h("th", {}, "Last connected"), h("th", {}, "From"), h("th", {}, ""))),
+    h("tbody", {}, screens.map((s) => h("tr", {}, h("td", {}, s.name), h("td", {}, fmtTime(s.last_seen_at)),
+      h("td", {}, s.last_seen_from || "—"),
+      h("td", {}, h("button", { type: "button", class: "small", onclick: async () => {
+        if (!confirm(`Remove "${s.name}"? Its link stops working straight away.`)) return;
+        try { await api(`/api/displays/${s.id}`, { method: "DELETE" }); toast("Display removed"); loadSettings(); } catch (e) { showError(err, e); }
+      } }, "Remove"))))))
+    : h("p", { class: "muted" }, "No wall displays yet.");
+  box.replaceChildren(
+    h("h2", {}, "Wall displays"),
+    h("p", { class: "muted" }, `A read-only status screen for a NOC or office wall: failing backups, firmware compliance and the upgrades under way. It is served on port ${port} only; open that port in the server's firewall just for the screens' network.`),
+    rows,
+    h("label", {}, "Add a display", name), err,
+    h("div", { class: "actions" }, h("button", { type: "button", onclick: async () => {
+      err.hidden = true;
+      try {
+        const s = await api("/api/displays", { method: "POST", body: { name: name.value } });
+        const link = h("input", { readonly: true, value: linkFor(s.key) });
+        shown.replaceChildren(h("p", {}, h("strong", {}, "Open this link on the screen's browser (full screen). It is shown only now: copy it before leaving the page."),
+        ), link, h("div", { class: "actions" }, h("button", { type: "button", onclick: () => { link.select(); navigator.clipboard?.writeText(link.value); toast("Link copied"); } }, "Copy link")));
+        shown.hidden = false;
+        name.value = "";
+        toast("Display added");
+      } catch (e) { showError(err, e); }
+    } }, "Add display")),
+    shown);
+  return box;
+}
+
 async function loadSettings() {
   const body = $("#settings-body");
   body.replaceChildren(h("p", { class: "muted" }, "Loading…"));
   try {
-    const [lic, opts, ad, cert] = await Promise.all([licencePanel(), optionsPanel(), adPanel(), certPanel()]);
+    const [lic, opts, disp, ad, cert] = await Promise.all([licencePanel(), optionsPanel(), displaysPanel(), adPanel(), certPanel()]);
     body.replaceChildren(h("section", { class: "card" }, lic), h("section", { class: "card" }, opts),
-      h("section", { class: "card" }, ad),
+      h("section", { class: "card" }, disp), h("section", { class: "card" }, ad),
       h("section", { class: "card" }, cert));
   } catch (e) {
     body.replaceChildren(h("p", { class: "error" }, e.message));

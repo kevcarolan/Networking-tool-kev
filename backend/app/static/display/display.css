@@ -1,0 +1,72 @@
+/* The wall display: always dark, sized from the screen width so it reads from across a room. */
+:root {
+  --bg: #0d1117; --panel: #161b22; --line: #2b323c; --text: #e6edf3; --dim: #8b949e;
+  --ok: #3fb950; --warn: #e3b341; --bad: #f85149; --info: #58a6ff;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: clamp(14px, 1.15vw, 40px);
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); display: flex; flex-direction: column; overflow: hidden; }
+header, footer { display: flex; align-items: center; justify-content: space-between; padding: 0.6rem 1.4rem; }
+header { border-bottom: 1px solid var(--line); }
+.title { font-size: 1.5rem; font-weight: 700; }
+.page-name { font-size: 1.5rem; color: var(--dim); }
+.right { display: flex; align-items: center; gap: 1rem; }
+.clock { font-size: 1.6rem; font-variant-numeric: tabular-nums; }
+.dots span { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 50%; background: var(--line); margin-left: 0.35rem; }
+.dots span.on { background: var(--text); }
+.dim { color: var(--dim); }
+footer { font-size: 0.85rem; gap: 2rem; }
+main { flex: 1; padding: 1rem 1.4rem; min-height: 0; }
+.page { height: 100%; display: flex; flex-direction: column; gap: 1rem; }
+[hidden] { display: none !important; }
+.stale { background: var(--bad); color: #fff; font-size: 1.6rem; font-weight: 700; text-align: center; padding: 0.6rem; }
+
+.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+.tile { background: var(--panel); border: 1px solid var(--line); border-left: 0.5rem solid var(--ok); border-radius: 0.6rem; padding: 1rem 1.2rem; }
+.tile.warn { border-left-color: var(--warn); }
+.tile.bad { border-left-color: var(--bad); }
+.tile .label { font-size: 1.1rem; color: var(--dim); text-transform: uppercase; letter-spacing: 0.04em; }
+.tile .num { font-size: 4.2rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.tile.warn .num { color: var(--warn); }
+.tile.bad .num { color: var(--bad); }
+.tile .sub { font-size: 1.05rem; color: var(--dim); }
+
+.columns { flex: 1; display: grid; grid-template-columns: 3fr 2fr; gap: 1rem; min-height: 0; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 0.6rem; padding: 1rem 1.2rem; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
+.panel h2 { margin: 0 0 0.6rem; font-size: 1.25rem; color: var(--dim); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.list { list-style: none; margin: 0; padding: 0; }
+.list li { display: grid; grid-template-columns: 1fr auto; gap: 1rem; padding: 0.35rem 0; border-bottom: 1px solid var(--line); font-size: 1.15rem; }
+.list li:last-child { border-bottom: 0; }
+.list .what { font-weight: 600; }
+.list .why { color: var(--bad); }
+.empty { color: var(--ok); font-size: 1.6rem; margin: auto; text-align: center; }
+.more { color: var(--dim); padding-top: 0.4rem; }
+
+.sites { display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: 0.6rem; align-content: start; }
+.site { border-radius: 0.4rem; padding: 0.5rem 0.7rem; background: #12261a; border: 1px solid var(--ok); }
+.site.warn { background: #2b2410; border-color: var(--warn); }
+.site.bad { background: #2d1416; border-color: var(--bad); }
+.site.info { background: #0f2238; border-color: var(--info); }
+.site .name { font-weight: 700; font-size: 1.1rem; }
+.site .sub { font-size: 0.9rem; color: var(--dim); }
+
+.jobs { display: grid; grid-template-columns: repeat(auto-fill, minmax(26rem, 1fr)); gap: 1rem; align-content: start; overflow: hidden; }
+.job { background: var(--panel); border: 1px solid var(--line); border-left: 0.5rem solid var(--info); border-radius: 0.6rem; padding: 1rem 1.2rem; }
+.job.bad { border-left-color: var(--bad); }
+.job.warn { border-left-color: var(--warn); }
+.job .head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
+.job .dev { font-size: 1.6rem; font-weight: 700; }
+.badge { font-size: 0.85rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 0.3rem; background: var(--line); }
+.badge.live { background: var(--bad); color: #fff; }
+.job .ver { font-size: 1.2rem; margin: 0.3rem 0; }
+.job .step { font-size: 1.1rem; }
+.bar { height: 0.7rem; background: var(--line); border-radius: 0.35rem; overflow: hidden; margin: 0.5rem 0; }
+.bar span { display: block; height: 100%; background: var(--info); }
+.job.bad .bar span { background: var(--bad); }
+.job.warn .bar span { background: var(--warn); }
+.circuits { margin-top: 0.5rem; font-size: 1rem; color: var(--dim); }
+.circuits b { color: var(--text); }
+.circuits ul { margin: 0.2rem 0 0; padding-left: 1.2rem; }
+.planned { flex: 0 0 auto; }
