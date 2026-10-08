@@ -263,6 +263,10 @@ Then:
    the Settings page says why. Reload the page to use the new certificate.
 4. **Finish.** The setup code stops working. Sign in with the admin account.
 
+The server runs a **60-day trial**. Add the licence on the **Settings** page (it shows the
+installation ID to send when you ask for one). Without a licence, after the trial nobody
+can add devices or start upgrades; backups keep running.
+
 Settings that need a file edit (rarely) are in `/etc/netops/netops.env`; restart the
 services after changing it (`sudo systemctl restart netops netops-worker`). An AD setting
 made there wins over the setup screen and is shown as "set in netops.env".

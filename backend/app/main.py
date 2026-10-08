@@ -10,10 +10,10 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.core import auth, inventory, setup, users
+from app.core import auth, inventory, licence, setup, users
 from app.core.config import Settings, get_settings
 from app.core.crypto import CredentialCipher
-from app.core.db import init_engine
+from app.core.db import init_engine, session_scope
 from app.core.ssh import run_commands
 from app.tools.config_backup import api as backup_api
 from app.tools.config_backup.collector import fetch_config
@@ -54,6 +54,8 @@ def create_app(settings: Settings | None = None, fetcher=fetch_config,
     run_scheduler = settings.scheduler_enabled if start_scheduler is None else start_scheduler
 
     setup.ensure_token(settings)
+    with session_scope() as db:
+        licence.ensure_install(db)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -99,6 +101,7 @@ def create_app(settings: Settings | None = None, fetcher=fetch_config,
     app.include_router(inventory.router)
     app.include_router(users.router)
     app.include_router(setup.router)
+    app.include_router(licence.router)
     app.include_router(backup_api.router)
     app.include_router(firmware_api.router)
     app.include_router(jobs_api.router)

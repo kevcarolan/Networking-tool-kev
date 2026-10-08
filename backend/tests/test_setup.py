@@ -237,3 +237,12 @@ def test_certificate_shows_what_the_root_service_reported(fresh):
     (tls / "apply-status").write_text("2026-10-08T10:00:00Z refused: the certificate has expired\n")
     r = fresh.get("/api/setup/certificate", headers=_h(fresh)).json()
     assert r["applied"].endswith("refused: the certificate has expired")
+
+
+def test_wrong_setup_codes_are_kept_in_the_audit_log(fresh):
+    from app.core.db import session_scope
+    from app.core.models import AuditEvent
+
+    assert fresh.post("/api/setup/check-code", headers=_h(fresh, "WRONG")).status_code == 403
+    with session_scope() as db:
+        assert db.query(AuditEvent).filter_by(action="setup.code_wrong").count() == 1

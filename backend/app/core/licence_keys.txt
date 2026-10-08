@@ -1,0 +1,4 @@
+# Public keys that licences are signed with, one per line (see app/licence_tool.py).
+# Make the key pair once with:  python -m app.licence_tool keygen --out ~/licence-signing.key
+# and paste the line it prints below. Keep the private .key file out of this repository.
+# More than one line is allowed, e.g. while moving to a new signing key.

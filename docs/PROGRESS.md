@@ -19,10 +19,12 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 - [ ] Product name and branding (GUI title, logo, docs). The name is now one setting,
   `NETOPS_PRODUCT_NAME`; still to do: choose the name, a logo, and rename the docs
 - [ ] Licence terms (EULA, or open source plus support)
+- [ ] Owner: make the licence signing key and commit its public key ([licensing.md](licensing.md#one-time-make-the-signing-key))
 - [x] First-run setup screen (admin account, AD settings, certificate) instead of editing `netops.env`; AD and the certificate stay on a Settings page for admins
 - [ ] Installer for internet-connected and air-gapped sites
 - [ ] Customer documentation (install, admin guide, user guide)
-- [ ] Optional: multi-site support, licence keys
+- [x] Licence keys: 60-day trial, signed licences (end date, devices, optional installation), read-only for new work without one ([licensing.md](licensing.md))
+- [ ] Optional: multi-site support
 
 ### Platform (inherited)
 - [x] Core: AD and local login, per-area permissions, device inventory, encrypted credentials, audit and activity report
@@ -59,6 +61,10 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-08 | The app only proposes a certificate; a root path unit checks it and installs it for nginx, keeping the old one if `nginx -t` fails | The app stays without root and can't write to `/etc` or reload nginx |
 | 2026-10-08 | AD settings from the GUI are stored in the database (`app_settings`); a value in `netops.env` wins and is shown as locked | Existing installs keep working unchanged; a site can still keep AD settings root-only |
 | 2026-10-08 | A first install starts the services with a 30-day self-signed certificate | The setup screen needs HTTPS before a real certificate exists |
+| 2026-10-08 | Licences are signed text checked on the server (Ed25519); no activation server | Air-gapped sites must work the same way |
+| 2026-10-08 | A licence sets an end date and a device count; a new install gets a 60-day trial | The owner's choice: yearly subscription priced by network size; long enough to test an upgrade in a change window |
+| 2026-10-08 | Without a valid licence only new work is blocked (adding devices, planning and starting upgrades); backups, checks, viewing and jobs under way go on | A customer's network is never left without backups, and a device is never left half-upgraded |
+| 2026-10-08 | No bypass login or setting; the owner uses an internal licence, and `python -m app` is development mode | A hidden bypass could be found in the shipped code |
 
 ## Open questions
 
@@ -82,3 +88,4 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-07 | Networking-tool-kev | Multi-vendor PRs A-C merged; app port 8000 replaced by 8710 for development and Docker (`NETOPS_PORT`) |
 | 2026-10-07 | Networking-tool-kev | Alembic migrations added (baseline, startup upgrade, db-status, installer roll back of the database) |
 | 2026-10-08 | Networking-tool-kev | First-run setup screen (setup code, admin, AD with test sign-in, certificate request or upload) and admin Settings page; root certificate service; installer starts the services on a first install; fixed legacy databases failing once a later migration adds a table |
+| 2026-10-08 | Networking-tool-kev | Licence keys: trial, signed licences, Settings page and banner, signing tool; wrong setup codes are now kept in the audit log (they were rolled back) |

@@ -136,11 +136,14 @@ def test_product_name_setting(settings):
 
 def test_run_command_uses_the_port_setting(monkeypatch):
     import app.__main__ as entry
+    from app.core import licence
     from app.core.config import Settings
 
     seen = {}
+    monkeypatch.setattr(licence, "DEVELOPMENT", False)  # restored after the test
     monkeypatch.setattr(entry, "get_settings", lambda: Settings(_env_file=None, port=8720))
     monkeypatch.setattr(entry.uvicorn, "run", lambda *a, **kw: seen.update(kw))
     entry.main()
     assert seen["port"] == 8720 and seen["host"] == "127.0.0.1" and seen["factory"]
+    assert licence.DEVELOPMENT  # python -m app needs no licence
     assert Settings(_env_file=None).port == 8710

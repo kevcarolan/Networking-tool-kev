@@ -115,6 +115,7 @@ async function showApp(user) {
   $$("[data-upgrader]").forEach((el) => (el.hidden = !canUpgrade()));
   $$("[data-perm]").forEach((el) => (el.hidden = !permitted(el.dataset.perm)));
   state.platforms = await api("/api/platforms");
+  showLicenceBanner();
   const first = $$("#nav button").find((b) => !b.hidden);
   if (first) switchView(first.dataset.view);
   clearInterval(state.refreshTimer);
@@ -1990,12 +1991,55 @@ function setupFinishStep() {
       } }, "Finish setup")));
 }
 
+// ---------- licence ----------
+// Everyone sees the banner when new work is blocked; admins also see trial and renewal notices.
+
+async function showLicenceBanner() {
+  const banner = $("#licence-banner");
+  try {
+    const s = await api("/api/licence");
+    const show = s.warning && (!s.active || isAdmin());
+    banner.textContent = show ? s.warning : "";
+    banner.classList.toggle("blocked", !s.active);
+    banner.hidden = !show;
+  } catch { banner.hidden = true; }
+}
+
+async function licencePanel() {
+  const s = await api("/api/licence");
+  const err = errorLine();
+  const text = h("textarea", { class: "pem", placeholder: "-----BEGIN LICENCE----- … -----END LICENCE-----" });
+  const l = s.licence;
+  const box = h("div", { class: "panel" });
+  box.replaceChildren(
+    h("h2", {}, "Licence"),
+    h("p", { class: s.active ? "" : "error" }, s.message),
+    s.warning && s.active && s.mode !== "trial" ? h("p", { class: "muted" }, s.warning) : "",
+    h("dl", { class: "kv" },
+      h("dt", {}, "Devices"), h("dd", {}, s.max_devices == null ? `${s.devices} (no limit)` : `${s.devices} of ${s.max_devices}`),
+      ...(l ? [h("dt", {}, "Licence"), h("dd", {}, `${l.id}${l.kind === "internal" ? " (internal use)" : ""}, issued ${l.issued}`)] : []),
+      h("dt", {}, "Installation ID"), h("dd", {}, h("code", {}, s.install_id))),
+    h("p", { class: "muted" }, "Send the installation ID when you ask for a licence. Paste the licence you receive below."),
+    text, err,
+    h("div", { class: "actions" }, h("button", { type: "button", onclick: async () => {
+      err.hidden = true;
+      try {
+        await api("/api/licence", { method: "POST", body: { text: text.value } });
+        toast("Licence added");
+        showLicenceBanner();
+        loadSettings();
+      } catch (e) { showError(err, e); }
+    } }, "Add licence")));
+  return box;
+}
+
 async function loadSettings() {
   const body = $("#settings-body");
   body.replaceChildren(h("p", { class: "muted" }, "Loading…"));
   try {
-    const [ad, cert] = await Promise.all([adPanel(), certPanel()]);
-    body.replaceChildren(h("section", { class: "card" }, ad), h("section", { class: "card" }, cert));
+    const [lic, ad, cert] = await Promise.all([licencePanel(), adPanel(), certPanel()]);
+    body.replaceChildren(h("section", { class: "card" }, lic), h("section", { class: "card" }, ad),
+      h("section", { class: "card" }, cert));
   } catch (e) {
     body.replaceChildren(h("p", { class: "error" }, e.message));
   }

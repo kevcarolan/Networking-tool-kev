@@ -86,6 +86,9 @@ profile under **Credentials**, then add devices (or bulk-import them, see below)
 To use another port set `NETOPS_PORT` (e.g. `NETOPS_PORT=8720 python -m app`); to reach it
 from another machine also set `NETOPS_HOST=0.0.0.0`.
 
+`python -m app` runs in development mode, so no licence is needed. Installed servers
+run a 60-day trial and then need a licence ([docs/licensing.md](docs/licensing.md)).
+
 Run the tests with `pytest` from `backend/`.
 
 ## Production install

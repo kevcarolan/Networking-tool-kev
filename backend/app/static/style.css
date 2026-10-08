@@ -269,6 +269,8 @@ ol.steps li small { color: var(--muted); font-weight: normal; }
 textarea.pem { width: 100%; box-sizing: border-box; min-height: 120px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
 .panel input:not([type=checkbox]) { width: 100%; box-sizing: border-box; }
 .ok-text { color: var(--ok); }
+.licence-banner { background: var(--warn-bg); color: var(--warn); padding: 8px 16px; font-size: 14px; }
+.licence-banner.blocked { font-weight: 600; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; font-size: 14px; margin: 0; }
 .kv dt { color: var(--muted); }
