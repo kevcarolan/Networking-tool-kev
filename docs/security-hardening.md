@@ -226,6 +226,8 @@ What the installer set up, for your security review:
   can sign in to the server can finish setup. Wrong codes are slowed down like wrong
   passwords and written to the audit log. Once setup is finished the code is deleted and
   the setup pages answer only to signed-in admins. Finish setup straight after installing.
+* **Licence:** checked on the server against a public key built into the code. Nothing is
+  sent anywhere, and no outbound access is needed ([licensing.md](licensing.md)).
 * **Certificates:** the app can't write to `/etc/netops/tls` or reload nginx. A certificate
   added in the browser is only *proposed* (written to `/var/lib/netops/tls/`). A small root
   service (`netops-tls.path` → `/usr/local/sbin/netops-tls-apply`) checks it (a real

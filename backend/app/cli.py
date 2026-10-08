@@ -39,6 +39,9 @@ def _hash_password(_args) -> int:
 
 
 def _import_csv(args) -> int:
+    from fastapi import HTTPException
+
+    from app.core import licence
     from app.core.audit import audit
     from app.core.config import get_settings
     from app.core.db import init_engine, session_scope
@@ -54,6 +57,11 @@ def _import_csv(args) -> int:
     appsettings.apply(settings)
     created = skipped = 0
     with open(args.file, newline="", encoding="utf-8-sig") as fh, session_scope() as db:
+        try:
+            room = licence.room_for(db)
+        except HTTPException as exc:
+            print(exc.detail, file=sys.stderr)
+            return 1
         creds = {c.name: c.id for c in db.scalars(select(Credential))}
         existing = set(db.scalars(select(Device.name)))
         for line_no, row in enumerate(csv.DictReader(fh), start=2):
@@ -67,6 +75,11 @@ def _import_csv(args) -> int:
                                 credential_id=creds.get(cred_name), notes=row.get("notes", ""))
                 if data.name in existing:
                     print(f"line {line_no}: {data.name} already exists, skipped")
+                    skipped += 1
+                    continue
+                if room is not None and created >= room:
+                    print(f"line {line_no}: the licence covers no more devices, skipped",
+                          file=sys.stderr)
                     skipped += 1
                     continue
                 device = Device(**data.model_dump())

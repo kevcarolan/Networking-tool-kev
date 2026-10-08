@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core import licence
 from app.core.audit import audit
 from app.core.auth import User, require, require_upgrader
 from app.core.db import get_db
@@ -171,6 +172,7 @@ def _open_job_for(db: Session, device_id: int) -> UpgradeJob | None:
 def create_job(body: JobIn, request: Request, db: Session = Depends(get_db),
                user: User = Depends(require_upgrader)):
     _live_ok(user, live=body.live)
+    licence.require_active(db, "plan upgrade jobs")
     settings = _settings(request)
     device = db.get(Device, body.device_id)
     image = db.get(FirmwareImage, body.image_id)
@@ -254,6 +256,8 @@ def _action(action: str):
                 db: Session = Depends(get_db), user: User = Depends(require_upgrader)):
         job = _job(db, job_id)
         _live_ok(user, job)
+        if action == "start":  # a job under way can always continue or roll back
+            licence.require_active(db, "start upgrade jobs")
         if action in ("start", "continue", "rollback") and not job.dry_run:
             name = db.get(Device, job.device_id).name
             if (body.confirm if body else "").strip().lower() != name.lower():

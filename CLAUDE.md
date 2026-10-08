@@ -71,7 +71,11 @@ remote); never sync the two automatically.
   always wins. Safety gates (live upgrade platforms, break-glass admin, ports, secrets) stay
   in `netops.env` only. The app only proposes a certificate in
   `<data>/tls/`; the root `netops-tls` path unit (`deploy/netops-tls-apply.sh`) checks and
-  installs it. Tools live in `tools/<name>/` with `models.py`, `service.py`, `api.py`.
+  installs it. Licences (`core/licence.py`, made with `python -m app.licence_tool`, see
+  [docs/licensing.md](docs/licensing.md)): a 60-day trial, then signed licences with an end
+  date and a device count. Without one, only new work is blocked (`licence.require_active`,
+  `licence.room_for`): never backups, checks, or an upgrade job already under way.
+  `python -m app` is development mode, with no licence needed. Tools live in `tools/<name>/` with `models.py`, `service.py`, `api.py`.
 * **Database:** SQLite `data/app.db`, kept up to date by **Alembic** migrations, applied when
   the app or worker starts (`core/migrate.py`, `backend/migrations/`). After changing a model,
   run `alembic revision --autogenerate -m "..."` from `backend/`, review the file (SQLite: batch

@@ -103,6 +103,7 @@ def _check_code(request: Request, code: str, db: Session) -> None:
     if not _code_matches(settings, code):
         throttle.fail(key)
         audit(db, "setup", "setup.code_wrong", f"from {key.split('|')[1]}")
+        db.commit()  # kept although the request fails
         raise HTTPException(403, "That setup code isn't right")
 
 

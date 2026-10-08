@@ -264,6 +264,10 @@ Then:
    the Settings page says why. Reload the page to use the new certificate.
 4. **Finish.** The setup code stops working. Sign in with the admin account.
 
+The server runs a **60-day trial**. Add the licence on the **Settings** page (it shows the
+installation ID to send when you ask for one). Without a licence, after the trial nobody
+can add devices or start upgrades; backups keep running.
+
 Afterwards, admins set the **customer or site name** and the day-to-day defaults (backup
 frequency, retries, history kept, version-check interval, circuit scan schedule, upgrade
 pre-check limits) on the **Settings** page. Changes apply straight away.

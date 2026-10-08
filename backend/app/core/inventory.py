@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core import licence
 from app.core.audit import audit
 from app.core.auth import User, current_user, require, require_admin
 from app.core.db import get_db
@@ -190,6 +191,7 @@ def get_device(device_id: int, db: Session = Depends(get_db), _: User = Depends(
 @router.post("/devices", response_model=DeviceOut, status_code=201)
 def create_device(body: DeviceIn, db: Session = Depends(get_db),
                   user: User = Depends(INVENTORY_MANAGE)):
+    licence.room_for(db)
     _check_credential(db, body.credential_id)
     device = Device(**body.model_dump())
     db.add(device)
