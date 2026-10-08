@@ -1,8 +1,8 @@
 """Database migrations (Alembic), applied when the app or the worker starts.
 
   * a new database: the tables are created from the models and marked as up to date;
-  * a database from before migrations existed (tables, no version): any missing tables
-    are created as before, it is marked as the baseline, then brought up to date;
+  * a database from before migrations existed (tables, no version): any missing baseline
+    tables are created as before, it is marked as the baseline, then brought up to date;
   * otherwise: pending migrations are applied.
 
 Before any migration runs, the database is copied next to it (app.db.before-<revision>),
@@ -26,6 +26,16 @@ log = logging.getLogger(__name__)
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
 BASELINE = "0001_baseline"
+# The tables that existed at the baseline. A database from before migrations may lack some
+# of them (create_all added new tables at every start); only these are created for it.
+# Tables added later are created by their own migrations. Never change this list.
+BASELINE_TABLES = (
+    "audit_events", "backup_runs", "backup_state", "credentials", "ct_circuits",
+    "ct_device_scan", "ct_imports", "ct_live_arp", "ct_live_mac", "ct_mac_last_seen",
+    "ct_scans", "devices", "fw_device_facts", "fw_device_settings", "fw_image_info",
+    "fw_images", "fw_job_checks", "fw_job_circuits", "fw_job_events", "fw_job_requests",
+    "fw_job_snapshots", "fw_job_units", "fw_jobs", "fw_standards", "fw_worker_status", "users",
+)
 
 
 def alembic_config(connection=None) -> Config:
@@ -89,7 +99,9 @@ def upgrade(engine, metadata) -> str:
                 command.stamp(alembic_config(conn), "head")
             return f"new database created at {head}"
         if "alembic_version" not in tables or current_revision(engine) is None:
-            metadata.create_all(engine)  # tables added since, as create_all always did
+            # baseline tables an older release didn't have yet, as create_all always did
+            missing = [metadata.tables[t] for t in BASELINE_TABLES if t not in tables]
+            metadata.create_all(engine, tables=missing)
             with engine.begin() as conn:
                 command.stamp(alembic_config(conn), BASELINE)
             log.info("Existing database marked as %s (from before migrations)", BASELINE)

@@ -62,7 +62,11 @@ remote); never sync the two automatically.
 * Never write the product name into the GUI, reports or messages: use the `product_name`
   setting (`{{product_name}}` in `index.html`), or neutral words such as "inventory".
 * `core/` is shared by every tool: auth, inventory, credentials, platforms, SSH (`core/ssh.py`),
-  audit log. Tools live in `tools/<name>/` with `models.py`, `service.py`, `api.py`.
+  audit log. First-run setup (setup code, first admin, AD, certificate) is `core/setup.py`;
+  AD settings made in the GUI live in the `app_settings` table (`core/appsettings.py`) and
+  a value in `netops.env` always wins. The app only proposes a certificate in
+  `<data>/tls/`; the root `netops-tls` path unit (`deploy/netops-tls-apply.sh`) checks and
+  installs it. Tools live in `tools/<name>/` with `models.py`, `service.py`, `api.py`.
 * **Database:** SQLite `data/app.db`, kept up to date by **Alembic** migrations, applied when
   the app or worker starts (`core/migrate.py`, `backend/migrations/`). After changing a model,
   run `alembic revision --autogenerate -m "..."` from `backend/`, review the file (SQLite: batch

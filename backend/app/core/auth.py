@@ -108,7 +108,13 @@ class LoginThrottle:
 
 class Authenticator:
     def __init__(self, settings: Settings):
-        self.settings = settings
+        self.base_settings = settings
+
+    @property
+    def settings(self) -> Settings:
+        """netops.env plus the AD settings made in the GUI (appsettings.py)."""
+        from app.core import appsettings
+        return appsettings.effective(self.base_settings)
 
     def authenticate(self, username: str, password: str) -> User | None:
         # An empty password would be an anonymous (always successful) LDAP bind.

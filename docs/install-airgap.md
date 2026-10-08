@@ -201,9 +201,12 @@ The installer:
    * the nightly backup timer;
    * the `netops-cli` admin command;
    * the audit rules;
-   * an nginx site template.
-
-It does **not** start the service on a first install.
+   * the nginx site;
+   * the certificate service: it installs a certificate you add on the setup screen
+     (`netops-tls.path`, `/usr/local/sbin/netops-tls-apply`);
+7. on a **first install**: makes a temporary self-signed certificate (30 days) for the
+   server's name and addresses, turns on the nginx site and starts the services. The
+   first visit shows the **setup screen** (section 6).
 
 | Path | What | Owner / mode |
 |---|---|---|
@@ -212,20 +215,13 @@ It does **not** start the service on a first install.
 | `/etc/netops/credential.key` | Key that encrypts device passwords | root:netops 0640 |
 | `/etc/netops/tls/` | nginx certificate and key | root 0700 |
 | `/var/lib/netops/` | Database, config archive, firmware images | netops 0750 |
+| `/var/lib/netops/setup-token` | The setup code (until setup is finished) | netops 0600 |
+| `/var/lib/netops/tls/` | A certificate added on the setup screen, before it is installed | netops 0750 |
 | `/var/backups/netops/` | Nightly backups | root 0700 |
 
 ---
 
 ## 6. First-time configuration
-
-These steps match the numbered **Next steps** that `install.sh` prints at the end.
-
-| Step | What | When |
-|---|---|---|
-| 1–3 | Settings, certificate and nginx, start the service | **Production**: the real server |
-| 3A | Quick test: local admin, self-signed certificate, no AD | **Test machines only**, instead of 1–3 |
-| 4 | Harden the server | **Production**, before you add real device credentials |
-| 5–6 | Add devices; check the firmware parsers | After 3 (or 3A) |
 
 **Before anything else, save the encryption key offline.** Without
 `/etc/netops/credential.key`, the stored device passwords can't be decrypted. It is
@@ -235,77 +231,59 @@ encrypted USB key kept in a safe:
 sudo cat /etc/netops/credential.key
 ```
 
-### 1. Settings
+### 1. The setup screen
 
-`sudo nano /etc/netops/netops.env`
-
-* `NETOPS_LDAP_URL`, `NETOPS_LDAP_DOMAIN`, `NETOPS_LDAP_BASE_DN` and the two group DNs.
-  Always set `NETOPS_LDAP_VIEWER_GROUP`; if it's empty, **every** domain user can sign in.
-* Copy the AD CA certificate to `/etc/netops/ad-ca.pem` (`chmod 0644`) and set
-  `NETOPS_LDAP_CA_FILE=/etc/netops/ad-ca.pem`.
-* **Break-glass admin:** leave `NETOPS_LOCAL_ADMIN_PASSWORD_HASH` empty unless you want
-  a login that works when AD is down. If you do, use a long random password kept in the
-  vault. Generate the hash with `sudo netops-cli hash-password`.
-* Keep `NETOPS_SESSION_HTTPS_ONLY=true`, `NETOPS_API_DOCS=false` and
-  `NETOPS_VIEWERS_CAN_READ_CONFIGS=false`.
-
-### 2. TLS certificate and nginx
+Open `https://<the server's name>/` in a browser. The browser warns about the temporary
+certificate; accept it this once. The **setup screen** asks for the **setup code**, which
+proves you look after the server. Show it on the server:
 
 ```bash
-sudo install -m 0600 netops.crt netops.key /etc/netops/tls/     # full chain in netops.crt
-sudo nano /etc/nginx/sites-available/netops                     # set server_name
-sudo ln -sf /etc/nginx/sites-available/netops /etc/nginx/sites-enabled/netops
-sudo rm -f /etc/nginx/sites-enabled/default
+sudo cat /var/lib/netops/setup-token
+```
+
+Then:
+
+1. **Admin account.** A local account with full rights. It also works when AD is down,
+   so keep the password in the vault. Add AD users and more admins later on the Users page.
+2. **Active Directory** (optional; skip to use local accounts only):
+   * the server (`ldaps://dc1.corp.local`), the domain and the base DN;
+   * the admin, viewer and upgrader group DNs. **Set the viewer group:** if it is empty,
+     every domain user can sign in;
+   * paste the CA certificate that signed the domain controllers' certificates (PEM);
+   * **Test sign-in** with a real account before saving: it shows the role that account
+     would get.
+3. **Certificate** (optional; you can do it later on the Settings page). Either:
+   * **make a request here**: enter the server's DNS name(s). The private key is made on
+     the server and never leaves it. Send the request (`netops.csr`) to your CA, then paste
+     the certificate it issues (with any intermediate) and press Install; or
+   * paste a certificate **and its private key** that you already have, and press Install.
+
+   The server checks the certificate (in date, matches the key, accepted by nginx) and
+   installs it within a few seconds. If anything is wrong it keeps the current one, and
+   the Settings page says why. Reload the page to use the new certificate.
+4. **Finish.** The setup code stops working. Sign in with the admin account.
+
+Settings that need a file edit (rarely) are in `/etc/netops/netops.env`; restart the
+services after changing it (`sudo systemctl restart netops netops-worker`). An AD setting
+made there wins over the setup screen and is shown as "set in netops.env".
+
+### 2. Check the sign-in
+
+* Sign in with an AD account in the admin group, then check that an account in the
+  viewer group can sign in but can't change anything.
+* Admins can change AD and the certificate later: **Settings** in the top bar.
+* Status: `systemctl status netops netops-worker --no-pager` (both "active (running)").
+  If the page doesn't load, check `journalctl -u netops -n 30 --no-pager`.
+
+### 3. Certificate by hand (instead of the setup screen)
+
+If you prefer, put the certificate (full chain) and key in `/etc/netops/tls/` yourself and
+reload nginx:
+
+```bash
+sudo install -m 0600 netops.crt netops.key /etc/netops/tls/
 sudo nginx -t && sudo systemctl reload nginx
 ```
-
-### 3. Start the services and sign in
-
-```bash
-sudo systemctl enable --now netops netops-worker
-systemctl status netops netops-worker --no-pager   # both "active (running)"
-journalctl -u netops -f                  # watch the log while you sign in (Ctrl+C to stop)
-```
-
-Open `https://netops.corp.local`. Sign in with an AD account from `NetOps-Admins`, then
-check that a `NetOps-Viewers` account can sign in but can't change anything.
-
-### 3A. Quick local test (temporary; test machines only, instead of 1–3)
-
-Use this to see the app running on a test machine before AD and a CA certificate are
-ready. It signs in with the local admin and uses a self-signed certificate. **Don't use
-it on the production server.** There, do steps 1–3.
-
-```bash
-# Turn AD off, and create a local admin login. Do the login part in a root shell,
-# so only one thing asks for a password at a time. It asks twice; use 12+ characters.
-sudo sed -i 's|^NETOPS_LDAP_URL=.*|NETOPS_LDAP_URL=|' /etc/netops/netops.env
-sudo sed -i '/^NETOPS_LOCAL_ADMIN_PASSWORD_HASH=/d' /etc/netops/netops.env
-sudo -i
-netops-cli hash-password >> /etc/netops/netops.env
-grep LOCAL_ADMIN /etc/netops/netops.env      # one line starting NETOPS_LOCAL_ADMIN_PASSWORD_HASH='scrypt$
-exit
-
-# Temporary self-signed certificate (browsers will warn about it)
-sudo openssl req -x509 -newkey rsa:2048 -nodes -days 90 -subj "/CN=$(hostname)" \
-  -addext "subjectAltName=DNS:$(hostname),DNS:localhost" \
-  -keyout /etc/netops/tls/netops.key -out /etc/netops/tls/netops.crt
-sudo chmod 600 /etc/netops/tls/netops.key
-
-# Turn on the website and start the app
-sudo ln -sf /etc/nginx/sites-available/netops /etc/nginx/sites-enabled/netops
-sudo rm -f /etc/nginx/sites-enabled/default
-sudo nginx -t && sudo systemctl reload nginx
-sudo systemctl enable --now netops netops-worker
-systemctl status netops netops-worker --no-pager
-```
-
-Open **https://localhost** on the machine (or `https://<its IP>` from another PC), accept
-the certificate warning, and sign in as **admin**. If the service shows **failed**, check
-`journalctl -u netops -n 30 --no-pager`.
-
-To move from 3A to a real setup later: do step 1 (which also replaces the test admin
-hash), then step 2 with the CA certificate, then `sudo systemctl restart netops`.
 
 ### 4. Harden the server
 

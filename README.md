@@ -75,16 +75,14 @@ cd backend
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
 
-# Create a local admin login
-python -m app.cli hash-password            # prints NETOPS_LOCAL_ADMIN_PASSWORD_HASH=...
-export NETOPS_LOCAL_ADMIN_PASSWORD_HASH='scrypt$...'
-
 python -m app               # the web app on http://127.0.0.1:8710
 python -m app.worker        # in a second terminal: runs firmware upgrade jobs
 ```
 
-Open `http://127.0.0.1:8710`, sign in as `admin`, add a credential profile under
-**Credentials**, then add devices (or bulk-import them, see below).
+Open `http://127.0.0.1:8710`. The first visit shows the **setup screen**: enter the setup
+code from `data/setup-token` at the top of the repository (`cat ../data/setup-token`), create the admin account,
+and skip or fill in Active Directory and the certificate. Then sign in, add a credential
+profile under **Credentials**, then add devices (or bulk-import them, see below).
 To use another port set `NETOPS_PORT` (e.g. `NETOPS_PORT=8720 python -m app`); to reach it
 from another machine also set `NETOPS_HOST=0.0.0.0`.
 

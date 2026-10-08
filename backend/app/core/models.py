@@ -79,3 +79,15 @@ class UserAccount(Base):
     updated_by: Mapped[str] = mapped_column(String(200), default="")
     last_login: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     password_changed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class AppSetting(Base):
+    """A setting made in the GUI (first-run setup, Settings page), e.g. the AD server.
+    A value set in netops.env always wins over the one stored here (appsettings.py)."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by: Mapped[str] = mapped_column(String(200), default="")

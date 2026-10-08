@@ -155,7 +155,7 @@ function switchView(view) {
   $$("#nav button").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
   $$(".view").forEach((s) => (s.hidden = s.id !== `view-${view}`));
   ({ backups: loadBackups, firmware: loadFirmware, circuits: loadCircuits, credentials: loadCredentials,
-    audit: loadAudit, users: loadUsers })[view]();
+    audit: loadAudit, users: loadUsers, settings: loadSettings })[view]();
 }
 $$("#nav button").forEach((b) => b.addEventListener("click", () => switchView(b.dataset.view)));
 
@@ -1766,6 +1766,243 @@ async function loadAudit() {
 }
 ["#act-user", "#act-area", "#act-since", "#act-until"].forEach((sel) => $(sel).addEventListener("change", loadAudit));
 
+// ---------- first-run setup and Settings ----------
+// A new install has no way to sign in, so the first visit shows the setup screen. Every
+// step needs the setup code from the server (sudo cat /var/lib/netops/setup-token).
+// Afterwards admins change the same AD and certificate settings on the Settings page.
+
+const setup = { code: "", step: "code", done: new Set() };
+const SETUP_STEPS = [["code", "Setup code"], ["admin", "Admin account"], ["ad", "Active Directory"],
+  ["cert", "Certificate"], ["finish", "Finish"]];
+
+/** The setup API: with the setup code during setup, as the signed-in admin afterwards. */
+function sapi(path, options = {}) {
+  return api(`/api/setup${path}`, { ...options, headers: setup.code ? { "X-Setup-Code": setup.code } : {} });
+}
+
+const field = (label, name, attrs = {}) => h("label", {}, label, h("input", { name, ...attrs }));
+const errorLine = () => h("p", { class: "error", hidden: true });
+function showError(el, e) { el.textContent = e.message || String(e); el.hidden = false; }
+
+function showSetup() {
+  $("#login-view").hidden = true;
+  $("#app-view").hidden = true;
+  $("#setup-view").hidden = false;
+  renderSetup();
+}
+
+function goStep(step) {
+  setup.done.add(setup.step);
+  setup.step = step;
+  renderSetup();
+}
+
+function renderSetup() {
+  $("#setup-steps").replaceChildren(...SETUP_STEPS.map(([id, label]) => h("li", {
+    class: id === setup.step ? "current" : setup.done.has(id) ? "done" : "" }, label)));
+  const steps = { code: setupCodeStep, admin: setupAdminStep, finish: setupFinishStep,
+    ad: () => adPanel({ next: () => goStep("cert") }),
+    cert: () => certPanel({ next: () => goStep("finish") }) };
+  const body = $("#setup-body");
+  body.replaceChildren(h("p", { class: "muted" }, "Loading…"));
+  Promise.resolve(steps[setup.step]()).then((el) => body.replaceChildren(el));
+}
+
+function setupCodeStep() {
+  const err = errorLine();
+  return h("form", { class: "panel", onsubmit: async (ev) => {
+    ev.preventDefault();
+    setup.code = ev.target.code.value.trim();
+    try {
+      await sapi("/check-code", { method: "POST" });
+      goStep("admin");
+    } catch (e) {
+      setup.code = "";
+      showError(err, e);
+    }
+  } },
+  h("p", {}, "This server hasn't been set up yet. To prove you look after it, enter the setup code. ",
+    "On the server, run:"),
+  h("pre", {}, "sudo cat /var/lib/netops/setup-token"),
+  field("Setup code", "code", { required: true, autocomplete: "off", autofocus: true, placeholder: "XXXX-XXXX-XXXX-XXXX-XXXX" }),
+  err, h("div", { class: "actions" }, h("button", { type: "submit", class: "primary" }, "Continue")));
+}
+
+function setupAdminStep() {
+  const err = errorLine();
+  return h("form", { class: "panel", onsubmit: async (ev) => {
+    ev.preventDefault();
+    const f = ev.target;
+    if (f.password.value !== f.repeat.value) return showError(err, "The passwords don't match");
+    try {
+      await sapi("/admin", { method: "POST", body: { username: f.username.value,
+        display_name: f.display_name.value, password: f.password.value } });
+      goStep("ad");
+    } catch (e) {
+      showError(err, e);
+    }
+  } },
+  h("h2", {}, "Admin account"),
+  h("p", { class: "muted" }, "A local account with full rights. It also works when Active Directory is down: ",
+    "keep the password in your vault. You can add AD users and more admins later on the Users page."),
+  field("Username", "username", { required: true, value: "admin", autocomplete: "username" }),
+  field("Display name", "display_name", { placeholder: "e.g. Network team admin" }),
+  field("Password (at least 12 characters)", "password", { type: "password", required: true, minlength: 12, autocomplete: "new-password" }),
+  field("Repeat the password", "repeat", { type: "password", required: true, autocomplete: "new-password" }),
+  err, h("div", { class: "actions" }, h("button", { type: "submit", class: "primary" }, "Create and continue")));
+}
+
+const AD_FIELDS = [
+  ["ldap_url", "Server", "ldaps://dc1.corp.local"],
+  ["ldap_domain", "Domain", "corp.local"],
+  ["ldap_base_dn", "Base DN", "DC=corp,DC=local"],
+  ["ldap_admin_group", "Admin group DN", "CN=NetOps-Admins,OU=Groups,DC=corp,DC=local"],
+  ["ldap_viewer_group", "Viewer group DN (empty: every domain user can sign in)", "CN=NetOps-Viewers,OU=Groups,DC=corp,DC=local"],
+  ["ldap_upgrader_group", "Upgrader group DN (empty: admins run upgrades)", "CN=NetOps-Upgraders,OU=Groups,DC=corp,DC=local"],
+];
+
+/** The Active Directory form, used in setup (with next) and on the Settings page. */
+async function adPanel({ next } = {}) {
+  const ad = await sapi("/ad");
+  const err = errorLine();
+  const result = h("p", { hidden: true });
+  const form = h("form", { class: "panel" });
+  const values = () => {
+    const v = Object.fromEntries(AD_FIELDS.map(([k]) => [k, form[k].value.trim()]));
+    return { ...v, ca_pem: form.ca_pem.value.trim() };
+  };
+  form.replaceChildren(
+    h("h2", {}, "Active Directory"),
+    h("p", { class: "muted" }, "Users sign in with their domain account over LDAPS. The admin, viewer and upgrader groups ",
+      "give permissions to anyone not added on the Users page. ", next ? "Skip this step to use local accounts only." : ""),
+    ...AD_FIELDS.map(([k, label, placeholder]) => {
+      const locked = ad.from_env.includes(k);
+      return field(locked ? `${label} (set in netops.env)` : label, k,
+        { value: ad.values[k] || "", placeholder: `e.g. ${placeholder}`, disabled: locked });
+    }),
+    h("label", {}, `CA certificate that signed the domain controllers' certificates (PEM)${ad.ca_saved ? " - one is saved; paste a new one to replace it" : ""}`,
+      h("textarea", { name: "ca_pem", class: "pem", placeholder: "-----BEGIN CERTIFICATE-----" })),
+    h("h2", {}, "Test with a real sign-in"),
+    h("p", { class: "muted" }, "Uses the settings above before they are saved, and shows what this user would get."),
+    h("div", { class: "grid2" }, field("Username", "test_user", { autocomplete: "off" }),
+      field("Password", "test_password", { type: "password", autocomplete: "off" })),
+    result, err,
+    h("div", { class: "actions" },
+      h("button", { type: "button", onclick: async () => {
+        err.hidden = true;
+        try {
+          const r = await sapi("/ad/test", { method: "POST", body: { ...values(),
+            username: form.test_user.value, password: form.test_password.value } });
+          result.textContent = r.message;
+          result.className = r.ok ? "ok-text" : "error";
+          result.hidden = false;
+        } catch (e) { showError(err, e); }
+      } }, "Test sign-in"),
+      h("button", { type: "submit", class: "primary" }, next ? "Save and continue" : "Save"),
+      next ? h("button", { type: "button", class: "ghost", onclick: next }, "Skip") : null));
+  form.onsubmit = async (ev) => {
+    ev.preventDefault();
+    err.hidden = true;
+    try {
+      await sapi("/ad", { method: "PUT", body: values() });
+      if (next) next(); else toast("Active Directory settings saved");
+    } catch (e) { showError(err, e); }
+  };
+  return form;
+}
+
+function certSummary(c) {
+  if (!c.certificate) return h("p", { class: "muted" }, "No certificate has been saved here yet: the server uses the one ",
+    "the installer made (self-signed, so browsers warn about it).");
+  const i = c.certificate;
+  return h("dl", { class: "kv" },
+    h("dt", {}, "Issued to"), h("dd", {}, i.subject),
+    h("dt", {}, "Names"), h("dd", {}, i.names.join(", ") || "—"),
+    h("dt", {}, "Issued by"), h("dd", {}, i.self_signed ? "itself (self-signed)" : i.issuer),
+    h("dt", {}, "Valid until"), h("dd", {}, fmtTime(i.not_after)),
+    h("dt", {}, "Installed"), h("dd", {}, c.applied || "waiting for the server to install it"));
+}
+
+/** The certificate panel: make a request or upload one; used in setup and on Settings. */
+async function certPanel({ next } = {}) {
+  const c = await sapi("/certificate");
+  const err = errorLine();
+  const csrBox = h("textarea", { class: "pem", readonly: true, hidden: !c.request });
+  csrBox.value = c.request || "";
+  const download = h("a", { class: "button", hidden: !c.request, download: "netops.csr" }, "Download the request");
+  const setDownload = () => { download.href = URL.createObjectURL(new Blob([csrBox.value], { type: "application/pkcs10" })); };
+  if (c.request) setDownload();
+  const names = h("input", { name: "names", value: location.hostname });
+  const certIn = h("textarea", { class: "pem", placeholder: "-----BEGIN CERTIFICATE----- (the server's certificate, then any intermediate)" });
+  const keyIn = h("textarea", { class: "pem", placeholder: "-----BEGIN PRIVATE KEY----- (leave empty if you made the request here)" });
+  const box = h("div", { class: "panel" });
+  box.replaceChildren(
+    h("h2", {}, "Web certificate"),
+    certSummary(c),
+    h("h2", {}, "A: make a key and a request here"),
+    h("p", { class: "muted" }, "The private key is made on the server and never leaves it. Send the request to your CA, then paste the certificate it issues below."),
+    h("label", {}, "DNS names (and IP addresses), separated by commas", names),
+    h("div", { class: "actions" }, h("button", { type: "button", onclick: async () => {
+      err.hidden = true;
+      try {
+        const r = await sapi("/certificate/request", { method: "POST", body: { names: names.value.split(",").map((n) => n.trim()).filter(Boolean) } });
+        csrBox.value = r.request;
+        csrBox.hidden = download.hidden = false;
+        setDownload();
+      } catch (e) { showError(err, e); }
+    } }, "Make the request"), download),
+    csrBox,
+    h("h2", {}, "B: install the certificate"),
+    h("label", {}, "Certificate (PEM)", certIn),
+    h("label", {}, "Private key (PEM) - only if you didn't make the request here", keyIn),
+    err,
+    h("div", { class: "actions" },
+      h("button", { type: "button", class: "primary", onclick: async () => {
+        err.hidden = true;
+        try {
+          await sapi("/certificate", { method: "POST", body: { certificate: certIn.value, key: keyIn.value } });
+          toast("Certificate saved: the server installs it within a few seconds. Reload the page to use it.");
+          if (next) next(); else box.replaceWith(await certPanel());
+        } catch (e) { showError(err, e); }
+      } }, "Install"),
+      next ? h("button", { type: "button", class: next ? "ghost" : "", onclick: next }, "Skip for now") : null));
+  return box;
+}
+
+function setupFinishStep() {
+  const err = errorLine();
+  return h("div", { class: "panel" },
+    h("h2", {}, "Finish"),
+    h("p", {}, "Setup is complete when you press Finish: the setup code stops working, and you sign in with the admin account",
+      " (or an AD account in the admin group)."),
+    h("p", { class: "muted" }, "Active Directory and the certificate can be changed later by an admin, on the Settings page."),
+    err,
+    h("div", { class: "actions" },
+      h("button", { class: "ghost", onclick: () => goStep("admin") }, "Back"),
+      h("button", { class: "primary", onclick: async () => {
+        try {
+          await sapi("/finish", { method: "POST" });
+          setup.code = "";
+          $("#setup-view").hidden = true;
+          showLogin();
+          toast("Setup finished - sign in with the admin account");
+        } catch (e) { showError(err, e); }
+      } }, "Finish setup")));
+}
+
+async function loadSettings() {
+  const body = $("#settings-body");
+  body.replaceChildren(h("p", { class: "muted" }, "Loading…"));
+  try {
+    const [ad, cert] = await Promise.all([adPanel(), certPanel()]);
+    body.replaceChildren(h("section", { class: "card" }, ad), h("section", { class: "card" }, cert));
+  } catch (e) {
+    body.replaceChildren(h("p", { class: "error" }, e.message));
+  }
+}
+
 // ---------- start ----------
 
-api("/api/auth/me").then(showApp).catch(showLogin);
+api("/api/setup/status")
+  .then((s) => (s.needed ? showSetup() : api("/api/auth/me").then(showApp).catch(showLogin)))
+  .catch(showLogin);

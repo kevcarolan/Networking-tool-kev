@@ -128,7 +128,10 @@ def test_product_name_setting(settings):
     settings.product_name = "Acme <Net> Ops"
     with TestClient(create_app(settings)) as c:
         page = c.get("/").text
-    assert page.count("Acme &lt;Net&gt; Ops") == 3 and "NetOps Tools" not in page
+    from app.main import STATIC_DIR
+    places = (STATIC_DIR / "index.html").read_text().count("{{product_name}}")
+    assert places >= 3 and page.count("Acme &lt;Net&gt; Ops") == places
+    assert "NetOps Tools" not in page
 
 
 def test_run_command_uses_the_port_setting(monkeypatch):
