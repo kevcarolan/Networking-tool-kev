@@ -302,7 +302,9 @@ def _cert_info(pem: bytes) -> dict:
 def get_certificate(request: Request, who: str = Depends(setup_or_admin)):
     d = tls_dir(request.app.state.settings)
     crt = d / "netops.crt"
+    status_file = d / "apply-status"  # written by the root service that installs it for nginx
     return {"certificate": _cert_info(crt.read_bytes()) if crt.exists() else None,
+            "applied": status_file.read_text().strip()[:500] if status_file.exists() else "",
             "request_pending": (d / "pending.key").exists(),
             "request": (d / "pending.csr").read_text() if (d / "pending.csr").exists() else ""}
 

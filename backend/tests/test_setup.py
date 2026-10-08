@@ -229,3 +229,11 @@ def test_configured_install_still_signs_in(client):
     assert ADMIN_PASSWORD  # the conftest admin still signs in on configured installs
     assert client.post("/api/auth/login", json={"username": "admin",
                                                 "password": ADMIN_PASSWORD}).status_code == 200
+
+
+def test_certificate_shows_what_the_root_service_reported(fresh):
+    tls = fresh.settings.data_dir / "tls"
+    tls.mkdir(parents=True, exist_ok=True)
+    (tls / "apply-status").write_text("2026-10-08T10:00:00Z refused: the certificate has expired\n")
+    r = fresh.get("/api/setup/certificate", headers=_h(fresh)).json()
+    assert r["applied"].endswith("refused: the certificate has expired")

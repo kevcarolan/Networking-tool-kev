@@ -86,6 +86,7 @@ install -d -m 0755 -o root -g root "$PREFIX" "$PREFIX/releases"
 install -d -m 0750 -o root -g netops "$ETC"
 install -d -m 0700 -o root -g root "$ETC/tls" "$BACKUPS"
 install -d -m 0750 -o netops -g netops "$DATA"
+install -d -m 0750 -o netops -g netops "$DATA/tls"   # certificates proposed by the setup screen
 
 say "Installing release $VERSION"
 CURRENT="$(readlink -f "$PREFIX/current" 2>/dev/null || true)"
@@ -115,7 +116,7 @@ if [[ ! -f "$ETC/netops.env" ]]; then
       "$STAGE/.env.example" > "$ETC/netops.env"
   chown root:netops "$ETC/netops.env"
   chmod 0640 "$ETC/netops.env"
-  echo "Created $ETC/netops.env - edit it before starting the service."
+  echo "Created $ETC/netops.env (AD and the admin are set on the setup screen; edit it only for other settings)."
 fi
 if [[ ! -f "$ETC/credential.key" ]]; then
   (umask 027 && "$STAGE/venv/bin/python" -c \
@@ -131,6 +132,9 @@ install -m 0644 "$STAGE/deploy/netops-backup.service" /etc/systemd/system/netops
 install -m 0644 "$STAGE/deploy/netops-backup.timer" /etc/systemd/system/netops-backup.timer
 install -m 0750 "$STAGE/deploy/netops-backup.sh" /usr/local/sbin/netops-backup
 install -m 0750 "$STAGE/deploy/netops-cli.sh" /usr/local/sbin/netops-cli
+install -m 0750 "$STAGE/deploy/netops-tls-apply.sh" /usr/local/sbin/netops-tls-apply
+install -m 0644 "$STAGE/deploy/netops-tls.path" /etc/systemd/system/netops-tls.path
+install -m 0644 "$STAGE/deploy/netops-tls.service" /etc/systemd/system/netops-tls.service
 if [[ -d /etc/audit/rules.d ]]; then
   install -m 0640 "$STAGE/deploy/hardening/audit-netops.rules" /etc/audit/rules.d/netops.rules
   command -v augenrules >/dev/null && augenrules --load >/dev/null 2>&1 || true
@@ -182,6 +186,7 @@ if have_systemd; then
   systemctl daemon-reload
   systemctl enable --quiet netops-backup.timer
   systemctl start netops-backup.timer
+  systemctl enable --quiet --now netops-tls.path   # installs certificates from the setup screen
   if [[ -n "${NGINX_PORT_CHANGED:-}" ]] && nginx -t 2>/dev/null; then
     systemctl reload nginx || true
   fi
@@ -219,6 +224,29 @@ else
   echo "systemd is not running here: skipped enabling the service and backup timer."
 fi
 
+# First install: start everything, so the first visit shows the setup screen.
+SETUP_STARTED=""
+if [[ -n "$FIRST_INSTALL" ]] && have_systemd && command -v nginx >/dev/null \
+   && [[ -f "$NGINX_SITE" ]]; then
+  say "Starting for the first-run setup"
+  FQDN="$(hostname -f 2>/dev/null || hostname)"
+  if [[ ! -f "$ETC/tls/netops.crt" ]]; then
+    SAN="DNS:$(hostname),DNS:$FQDN"
+    for ip in $(hostname -I 2>/dev/null); do SAN="$SAN,IP:$ip"; done
+    openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj "/CN=$FQDN" \
+      -addext "subjectAltName=$SAN" -keyout "$ETC/tls/netops.key" -out "$ETC/tls/netops.crt" \
+      2>/dev/null
+    chmod 0600 "$ETC/tls/netops.key" "$ETC/tls/netops.crt"
+    echo "Made a temporary self-signed certificate (30 days) for $FQDN - replace it on the setup screen."
+  fi
+  ln -sf "$NGINX_SITE" /etc/nginx/sites-enabled/netops
+  rm -f /etc/nginx/sites-enabled/default
+  nginx -t && systemctl reload-or-restart nginx
+  systemctl enable --quiet --now netops netops-worker
+  health || echo "The app hasn't answered yet: check 'journalctl -u netops'."
+  SETUP_STARTED=1
+fi
+
 # Keep the running release plus the two before it, for rollback.
 find "$PREFIX/releases" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -printf '%T@ %p\n' \
   | sort -rn | awk 'NR>3 {print $2}' | while read -r old; do
@@ -226,7 +254,19 @@ find "$PREFIX/releases" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -printf '%T
     done
 
 say "Done"
-if [[ -n "$FIRST_INSTALL" || -z "$SERVICE_WAS_RUNNING" ]]; then
+if [[ -n "$SETUP_STARTED" ]]; then
+  cat <<EOF
+Next steps (docs/install-airgap.md, section "First-time configuration"):
+  1. Save the encryption key offline:  sudo cat $ETC/credential.key
+  2. Open https://$FQDN/ (accept the warning about the temporary certificate).
+     The setup screen asks for the setup code. Show it with:
+       sudo cat $DATA/setup-token
+     It creates the admin account, connects Active Directory and installs your
+     certificate.
+  3. Production: apply the hardening steps in docs/security-hardening.md
+     before adding real device credentials.
+EOF
+elif [[ -n "$FIRST_INSTALL" || -z "$SERVICE_WAS_RUNNING" ]]; then
   cat <<EOF
 Next steps (docs/install-airgap.md, section "First-time configuration"):
   1. Edit $ETC/netops.env (AD settings; leave the local admin hash empty unless you need it).

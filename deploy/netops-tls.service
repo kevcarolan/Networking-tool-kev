@@ -1,0 +1,7 @@
+[Unit]
+Description=NetOps Tools: install a new web certificate for nginx
+After=nginx.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/netops-tls-apply

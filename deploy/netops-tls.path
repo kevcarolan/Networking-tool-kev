@@ -1,0 +1,11 @@
+# Watches for a certificate saved in the setup screen / Settings page, and starts
+# netops-tls.service to check and install it for nginx (deploy/netops-tls-apply.sh).
+[Unit]
+Description=NetOps Tools: watch for a new web certificate
+
+[Path]
+PathChanged=/var/lib/netops/tls/netops.crt
+Unit=netops-tls.service
+
+[Install]
+WantedBy=paths.target
