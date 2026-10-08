@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core import appsettings
 from app.core import permissions as pm
 from app.core.audit import audit
 from app.core.auth import MIN_PASSWORD, User, account_key, require_admin
@@ -100,7 +101,7 @@ def _get(db: Session, user_id: int) -> UserAccount:
 
 @router.get("/users/meta")
 def users_meta(request: Request, _: User = Depends(require_admin)):
-    s = request.app.state.settings
+    s = appsettings.effective(request.app.state.settings)
     return {"areas": pm.AREAS, "levels": pm.LEVELS,
             "presets": {k: {"label": v["label"], "admin": v["admin"], "perms": v["perms"]}
                         for k, v in pm.PRESETS.items()},
@@ -119,7 +120,7 @@ def list_users(db: Session = Depends(get_db), _: User = Depends(require_admin)):
 @router.post("/users", status_code=201)
 def create_user(body: UserCreate, request: Request, db: Session = Depends(get_db),
                 user: User = Depends(require_admin)):
-    s = request.app.state.settings
+    s = appsettings.effective(request.app.state.settings, db)
     name = account_key(body.username)
     if not _USERNAME.match(name) or name != body.username.strip().lower():
         raise HTTPException(422, "Use the plain username (letters, digits, . _ -), e.g. jsmith "

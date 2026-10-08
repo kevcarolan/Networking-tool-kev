@@ -45,6 +45,22 @@ def test_old_install_is_marked_baseline_then_brought_up_to_date(tmp_path):
     assert migrate.current_revision(engine) == migrate.head_revision()
 
 
+def test_baseline_tables_match_the_saved_schema():
+    import re
+    saved = set(re.findall(r"CREATE TABLE ([a-z_]+)", BASELINE_SQL.read_text()))
+    assert saved == set(migrate.BASELINE_TABLES)
+
+
+def test_old_install_missing_a_baseline_table_gets_it(tmp_path):
+    import_models()
+    engine = _old_install(tmp_path / "app.db")
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE fw_worker_status"))
+    migrate.upgrade(engine, Base.metadata)
+    names = set(inspect(engine).get_table_names())
+    assert {"fw_worker_status", "app_settings"} <= names
+
+
 def test_migrations_match_the_models(tmp_path):
     """Fails when a model changed without a migration: run
     'alembic revision --autogenerate -m "..."' from backend/ and review the result."""
@@ -61,12 +77,13 @@ def test_a_pending_migration_is_applied_after_copying_the_database(tmp_path, mon
     import_models()
     scripts = tmp_path / "migrations"
     shutil.copytree(migrate.MIGRATIONS_DIR, scripts)
-    (scripts / "versions" / "0002_test.py").write_text('''
+    head = migrate.head_revision()
+    (scripts / "versions" / "9999_test.py").write_text('''
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0002_test"
-down_revision = "0001_baseline"
+revision = "9999_test"
+down_revision = "{head}"
 branch_labels = depends_on = None
 
 
@@ -78,7 +95,7 @@ def upgrade():
 def downgrade():
     with op.batch_alter_table("devices") as batch:
         batch.drop_column("test_note")
-''')
+'''.replace("{head}", head))
     monkeypatch.setattr(migrate, "MIGRATIONS_DIR", scripts)
     db = tmp_path / "app.db"
     engine = _old_install(db)
@@ -86,10 +103,10 @@ def downgrade():
         conn.execute(text("INSERT INTO devices (name, address, platform, site, notes, enabled, "
                           "created_at, updated_at) VALUES ('sw1', '10.0.0.1', 'cisco_ios', 'HQ', '', 1, "
                           "'2026-01-01', '2026-01-01')"))
-    assert migrate.upgrade(engine, Base.metadata) == "migrated from 0001_baseline to 0002_test"
+    assert migrate.upgrade(engine, Base.metadata) == "migrated from 0001_baseline to 9999_test"
     cols = {c["name"] for c in inspect(engine).get_columns("devices")}
     assert "test_note" in cols
-    assert (tmp_path / "app.db.before-0002_test").exists()
+    assert (tmp_path / "app.db.before-9999_test").exists()
     with engine.connect() as conn:  # the data survived the table copy
         assert conn.execute(text("SELECT name FROM devices")).scalar() == "sw1"
 
