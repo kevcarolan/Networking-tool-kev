@@ -63,8 +63,10 @@ remote); never sync the two automatically.
   setting (`{{product_name}}` in `index.html`), or neutral words such as "inventory".
 * `core/` is shared by every tool: auth, inventory, credentials, platforms, SSH (`core/ssh.py`),
   audit log. First-run setup (setup code, first admin, AD, certificate) is `core/setup.py`;
-  AD settings made in the GUI live in the `app_settings` table (`core/appsettings.py`) and
-  a value in `netops.env` always wins. The app only proposes a certificate in
+  AD settings and the site name and day-to-day defaults (`appsettings.OPTIONS`) made in the
+  GUI live in the `app_settings` table (`core/appsettings.py`), and a value in `netops.env`
+  always wins. Safety gates (live upgrade platforms, break-glass admin, ports, secrets) stay
+  in `netops.env` only. The app only proposes a certificate in
   `<data>/tls/`; the root `netops-tls` path unit (`deploy/netops-tls-apply.sh`) checks and
   installs it. Licences (`core/licence.py`, made with `python -m app.licence_tool`, see
   [docs/licensing.md](docs/licensing.md)): a 60-day trial, then signed licences with an end

@@ -50,8 +50,11 @@ def _import_csv(args) -> int:
     from app.tools.config_backup.service import ensure_states
     from app.tools.config_backup.models import BackupState
 
+    from app.core import appsettings
+
     settings = get_settings()
     init_engine(settings.database_url)
+    appsettings.apply(settings)
     created = skipped = 0
     with open(args.file, newline="", encoding="utf-8-sig") as fh, session_scope() as db:
         try:

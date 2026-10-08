@@ -60,7 +60,8 @@ class CircuitScanService:
         self.cipher = cipher
         self.collector = collector
         self.clock = clock  # server local time, for the schedule
-        self.schedule = parse_schedule(settings.circuit_scan_schedule)
+        self._schedule_text = settings.circuit_scan_schedule
+        self.schedule = parse_schedule(self._schedule_text)
         self._busy = threading.Lock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -68,8 +69,7 @@ class CircuitScanService:
     # --- scheduling ---------------------------------------------------------
 
     def start(self) -> None:
-        if self.schedule is None:
-            return
+        # Always runs: the schedule can be switched on later on the Settings page.
         self._thread = threading.Thread(target=self._loop, name="circuit-scan", daemon=True)
         self._thread.start()
 
@@ -88,6 +88,12 @@ class CircuitScanService:
 
     def due_trigger(self) -> str | None:
         """'schedule:<slot>' when a scheduled scan is due, else None."""
+        if self.settings.circuit_scan_schedule != self._schedule_text:  # changed on Settings
+            self._schedule_text = self.settings.circuit_scan_schedule
+            try:
+                self.schedule = parse_schedule(self._schedule_text)
+            except ValueError:
+                log.warning("Ignoring circuit scan schedule %r", self._schedule_text)
         if self.schedule is None:
             return None
         now = self.clock()
