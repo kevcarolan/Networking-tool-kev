@@ -1,0 +1,204 @@
+# Admin guide
+
+For admins: setting the platform up, keeping it healthy, and deciding who can do what.
+
+## 1. First-run setup
+
+The first visit to a new server shows the **setup screen**. Every step needs the **setup
+code**, which only someone with access to the server can read:
+
+```bash
+sudo cat /var/lib/netops/setup-token
+```
+
+Wrong codes are slowed down and written to the activity log. The steps:
+
+1. **Admin account.** A local account with every right. It still works when Active
+   Directory is down, so keep its password in your vault.
+2. **Active Directory** (optional):
+   * **Server, domain and base DN:** `ldaps://dc1.corp.local`, `corp.local`,
+     `DC=corp,DC=local`. Users sign in as `jsmith`, `jsmith@corp.local` or `CORP\jsmith`.
+     The server signs in as the user, so no AD service account is needed.
+   * **Groups** (full DNs):
+     * **admin**: everything;
+     * **viewer**: view only;
+     * **upgrader**: may run upgrade jobs.
+
+     **Set the viewer group**: if it is empty, every domain user can sign in and look.
+   * **CA certificate:** the one that signed the domain controllers' certificates.
+   * **Test sign-in:** try a real account before saving. It shows the access that account
+     would get.
+3. **Certificate** (optional; you can do it later on the Settings page). Either:
+   * make a **request** here: the key is made on the server and never leaves it. Send the
+     request (`netops.csr`) to your CA, then paste the certificate it issues (with any
+     intermediate certificates); or
+   * paste a certificate **and its key** that you already have.
+
+   The server checks the certificate before installing it:
+   * it is in date;
+   * it matches the key;
+   * the web server accepts it.
+
+   If any check fails, it keeps the current certificate and the Settings page shows why.
+   Reload the page to use the new certificate.
+4. **Finish.** The setup code is deleted. Sign in with the admin account.
+
+## 2. The Settings page
+
+**Settings** (admins only) in the top bar. Every change is in the activity report.
+
+### Licence
+
+* **State:** trial (with the days left), licensed (with the customer and end date), or ended.
+* **Devices:** how many are in the inventory, and how many the licence covers.
+* **Installation ID:** send it when you ask for a licence or a renewal.
+* **Adding a licence:** paste the licence text and press **Add licence**. A new licence
+  replaces the old one straight away.
+
+| State | What works |
+|---|---|
+| Trial (60 days) or licensed | Everything (up to the licence's devices) |
+| Trial over, or licence ended | Everything **except** adding devices and planning or starting upgrade jobs. Backups, version checks, circuit scans and viewing go on. An upgrade under way can always continue or roll back. Nothing is deleted |
+
+Admins see a notice from 30 days before the licence ends.
+
+### Site and defaults
+
+| Setting | What it does |
+|---|---|
+| Customer or site name | Shown next to the product name, and on upgrade reports |
+| Backup every (minutes), for new devices | The schedule new devices start with; each device's own schedule is on Config backups |
+| Retry a failed backup or version check after | How soon a failed device is tried again |
+| Keep backup and check history for | Run history only; every config version is always kept |
+| Read each device's software version every | The Firmware version report |
+| Circuit location scan | When every switch's MAC and ARP tables are read: `sun 02:00`, `daily 02:00`, or empty for none |
+| Viewers may read device configs | Configs contain password hashes and keys, so the default is no |
+| Upgrade pre-check limits | When CPU or memory use gives a warning in an upgrade pre-check (a warning never blocks) |
+| Fresh backup before an upgrade | An upgrade takes a new config backup first if the last one is older than this |
+
+A setting shown as **"Set in netops.env"** is fixed in the server's settings file and wins
+over this page. To manage it here instead, comment that line out with `#` in
+`/etc/netops/netops.env`, then run `sudo systemctl restart netops netops-worker`.
+
+### Active Directory and the certificate
+
+The same forms as the setup screen. Change and test AD at any time, and renew the
+certificate here before it expires.
+
+### Only in netops.env
+
+Some settings need someone with root on the server. They are kept out of the browser on
+purpose:
+* which platforms may run **live** upgrades (`NETOPS_UPGRADE_LIVE_PLATFORMS`);
+* the break-glass admin;
+* ports, worker counts and timeouts.
+
+Edit `/etc/netops/netops.env`, then run `sudo systemctl restart netops netops-worker`.
+
+## 3. Users and permissions
+
+**Users** page: add AD users (they sign in with their AD password) or local users (for
+anyone without AD; at least 12 characters). Give each a level per area, or start from a
+preset:
+
+| Preset | Devices | Backups | Firmware | Upgrades | Circuits |
+|---|---|---|---|---|---|
+| Viewer | view | view | view | view | view |
+| Backup operator | view | run | view | view | view |
+| Upgrader | view | configs | view | live | view |
+| Administrator | everything, plus Users, Activity and Settings | | | | |
+
+* AD users who aren't on the Users page get access from the AD groups.
+* A change applies straight away.
+* A disabled user is signed out at their next click.
+
+All the levels are explained in [users.md](../users.md).
+
+**Activity** shows who did what: sign-ins, backups run, configs viewed, upgrade jobs and
+their results, overrides, and changes to devices, users and settings. Export it as CSV.
+
+## 4. Devices and credentials
+
+1. **Credentials** page: add a **credential profile** for each kind of account:
+   * a **read-only backup account** (for example `switch-backup`), used by backups,
+     version checks and circuit scans;
+   * a **privileged upgrade account**, set per device in its upgrade settings and used
+     only by upgrade jobs.
+
+   Passwords are encrypted on the server and never shown again.
+2. Add devices on **Config backups › Add device**, or many at once from a CSV file on the
+   server:
+   ```bash
+   sudo netops-cli import-csv /tmp/devices.csv
+   ```
+   The columns are `name,address,platform,site,credential,frequency_minutes,notes`.
+   There is an example in `docs/devices-example.csv`.
+3. Check each new platform with one device first: **Backup now**, then **Firmware › Check now**.
+
+## 5. Live upgrades
+
+Every upgrade job can run as a **dry run**: it logs in and checks for real, but only
+records the steps that would change the device. Live upgrades are **off** until you
+switch them on, platform by platform:
+
+1. Run the platform through the lab tests ([upgrade-lab-tests.md](../upgrade-lab-tests.md)).
+2. Add it to `NETOPS_UPGRADE_LIVE_PLATFORMS` in `/etc/netops/netops.env` (for example
+   `cisco_ios,cisco_nxos`), then restart the services.
+3. Give the engineers **Upgrade jobs: live** on the Users page.
+
+A live job also needs:
+* a change window;
+* the device name typed to confirm Start, Continue and Roll back;
+* passing pre-checks, or overrides that each give a reason.
+
+The full procedure is in [upgrades.md](../upgrades.md).
+
+## 6. Monitoring
+
+* **Health:** point your monitoring at `https://<server>/api/health`. It answers
+  `{"ok": true}` when the web app is up.
+* **Logs:** sign-ins, failed sign-ins and every change go to the service log. Forward them
+  to your syslog server with `deploy/hardening/rsyslog-forward.conf`
+  ([security-hardening.md](../security-hardening.md) §9).
+* **Daily look:** the **Config backups** tiles show failing and never-backed-up devices,
+  with the reason (wrong password, unreachable, timeout…).
+
+## 7. Backing up the server
+
+* A backup is made every night at 02:30, in `/var/backups/netops/` (kept for 14 days). It
+  holds the database, the config archive and `netops.env`.
+* **Copy that folder off the server**: a backup that only exists on the server doesn't
+  help if you lose the server.
+* The **encryption key** is not in the backup, on purpose. Keep it in your vault. You need
+  it to restore onto a new server.
+* Test a restore after installing, then every quarter:
+  [install-airgap.md](../install-airgap.md) §9.
+
+## 8. Upgrading the platform
+
+* **Online:** `cd ~/netops && git pull && sudo deploy/install-online.sh`.
+* **Air-gapped:** build, carry across and verify the new bundle, then run
+  `sudo bash netops-bundle-<new>/install.sh`.
+
+The installer:
+* takes a backup, switches to the new version and checks that it is healthy;
+* switches back by itself if it isn't;
+* updates the database by itself, keeping a copy first;
+* won't restart while a live device upgrade is running.
+
+Settings, the key and the licence are kept. See [install-airgap.md](../install-airgap.md) §7.
+
+## 9. Troubleshooting
+
+| Symptom | Check |
+|---|---|
+| The page doesn't load, or shows 502 | `systemctl status netops`; `journalctl -u netops -n 50` |
+| AD sign-in fails | Settings › Active Directory › **Test sign-in** shows the error. Then check the server's time (`chronyc tracking`), the CA certificate, and the firewall to the DCs on TCP 636 |
+| The certificate wasn't installed | The Settings page shows the reason. Usually the certificate doesn't match the key, or is missing the intermediate certificate |
+| Device backups fail | The reason is on Config backups: wrong account, the device's SSH access list, or the server's firewall to the device |
+| "The upgrade worker isn't running" | `systemctl status netops-worker`; `journalctl -u netops-worker -n 50` |
+| Can't add devices or start upgrades | The trial or licence has ended: Settings › Licence |
+| A setting is greyed out ("Set in netops.env") | See *Site and defaults* above |
+| Forgot the admin password | Another admin resets it on the Users page. If there is no other admin, set a break-glass admin in `netops.env` (`sudo netops-cli hash-password`), restart, and sign in with it |
+
+More: [install-airgap.md](../install-airgap.md) §10.

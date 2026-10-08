@@ -18,11 +18,11 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 ### Product
 - [ ] Product name and branding (GUI title, logo, docs). The name is now one setting,
   `NETOPS_PRODUCT_NAME`; still to do: choose the name, a logo, and rename the docs
-- [ ] Licence terms (EULA, or open source plus support)
+- [ ] Licence terms: draft agreement in [legal/EULA-draft.md](legal/EULA-draft.md); decisions listed at its end, then a solicitor's review
 - [ ] Owner: make the licence signing key and commit its public key ([licensing.md](licensing.md#one-time-make-the-signing-key))
 - [x] First-run setup screen (admin account, AD settings, certificate) instead of editing `netops.env`; AD and the certificate stay on a Settings page for admins
 - [ ] Installer for internet-connected and air-gapped sites
-- [ ] Customer documentation (install, admin guide, user guide)
+- [x] Customer documentation: install guide, admin guide, user guide ([customer/](customer/README.md))
 - [x] Licence keys: 60-day trial, signed licences (end date, devices, optional installation), read-only for new work without one ([licensing.md](licensing.md))
 - [ ] Optional: multi-site support
 
@@ -68,6 +68,8 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 
 ## Open questions
 
+- Licence agreement: per installation or per site? Managed-service use? Support terms, warranty, liability cap, governing law ([legal/EULA-draft.md](legal/EULA-draft.md))
+
 - Product name?
 - Licence model: sold, subscription, or open source with paid support?
 - FortiGate backups: is masking the secrets acceptable, or should the backup use FortiGate's own encrypted backup file instead?
@@ -88,4 +90,5 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-07 | Networking-tool-kev | Multi-vendor PRs A-C merged; app port 8000 replaced by 8710 for development and Docker (`NETOPS_PORT`) |
 | 2026-10-07 | Networking-tool-kev | Alembic migrations added (baseline, startup upgrade, db-status, installer roll back of the database) |
 | 2026-10-08 | Networking-tool-kev | First-run setup screen (setup code, admin, AD with test sign-in, certificate request or upload) and admin Settings page; root certificate service; installer starts the services on a first install; fixed legacy databases failing once a later migration adds a table |
+| 2026-10-08 | Networking-tool-kev | Customer documentation (install, admin and user guides) and a draft licence agreement; open-source licences checked (no GPL; LGPL ldap3, paramiko, scp) |
 | 2026-10-08 | Networking-tool-kev | Licence keys: trial, signed licences, Settings page and banner, signing tool; wrong setup codes are now kept in the audit log (they were rolled back) |
