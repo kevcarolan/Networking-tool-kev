@@ -1,0 +1,103 @@
+# User guide
+
+For everyone who signs in. What you see depends on the permissions an admin gave you, so
+some pages or buttons may be missing for you.
+
+## Signing in
+
+* **Domain account:** sign in with your normal username and password (`jsmith`,
+  `jsmith@corp.local` or `CORP\jsmith`).
+* **Local account:** sign in with the username an admin gave you. Change your password
+  with **Change password** (top right). It needs at least 12 characters.
+* You are signed out after 12 hours (an admin can change this), and straight away if an admin
+  disables your account.
+
+A coloured line under the top bar is a notice from the server, for example that the
+licence has ended. While a licence has ended, nobody can add devices or start upgrades,
+but everything else works. Tell your admin.
+
+## Config backups
+
+The device list shows each device's backup status:
+* **OK**;
+* **Failing**, with the reason (wrong password, unreachable, timeout, a command the device
+  refused, no credential set);
+* **Never backed up**;
+* **Disabled**.
+
+The tiles at the top count each status.
+
+* **Backup now:** back up one device straight away (needs **Backups: run**).
+* **History:** every config version, when it changed, and what changed (needs
+  **Backups: configs**, because configs contain password hashes and keys). You can view
+  or download any version.
+* A failed device is tried again automatically, sooner than its normal schedule.
+
+## Firmware
+
+* **Versions:** for every device, its model, serial, software version, boot mode and free
+  flash, compared with the approved **standard**:
+  * **on standard**;
+  * **behind**;
+  * **ahead**;
+  * **no standard set**.
+
+  **Check now** reads one device again. **Export CSV** gives you the whole report.
+* **Standards:** the approved version for each platform and model, for example `C9300-*`.
+* **Image library:** the firmware images, with their MD5 and SHA-512 checksums. Images are
+  downloaded from the vendor by your team and uploaded here. The server never downloads
+  anything.
+
+## Upgrade jobs
+
+Every upgrade goes through a job: the same checks and steps every time, and a full record
+of who did what and why.
+
+1. **New upgrade job:** choose:
+   * the device;
+   * the image (only images for its platform and model are offered);
+   * the upgrade path;
+   * **dry run** or **live**;
+   * the change reference and the window.
+2. **Run pre-checks** any time before the window. They log in and check, among other things:
+   * the version;
+   * free space;
+   * alarms;
+   * the HA or stack state;
+   * a recent backup.
+
+   A failed blocker stops the job until it is fixed, or overridden with a reason.
+3. **Stage image** (optional): copies the image to the device and checks its checksum
+   there. Nothing is reloaded.
+4. **Start** in the window. For a live job, type the device name to confirm. The steps
+   run one by one, and the **post-checks** compare the device with how it was before,
+   including the circuits seen on its ports.
+5. **Stop after this step** pauses safely between steps. A reload is never interrupted.
+   If post-checks fail, you can fix and re-check, override with a reason, or **Roll back**.
+
+* **Report:** a printable record of the job, for the change ticket.
+* **Dry run:** does everything except the changes, which it lists as "DRY RUN - would …".
+  Use it to rehearse.
+
+Details per platform: [upgrades.md](../upgrades.md).
+
+## Circuits
+
+The master circuit list: every end device or service and the switch port it uses.
+
+* **Upload spreadsheet** (needs **Circuits: manage**): you see a preview of what's new,
+  changed and removed before you make it the live list.
+* **On the network:** where each circuit was really seen in the switches' MAC and ARP
+  tables:
+  * **Matches the list**;
+  * **Moved**;
+  * **Found**;
+  * **Not seen**;
+  * **Several ports**.
+* **Scan network now** reads the tables straight away. Otherwise they are read on the
+  schedule an admin sets, and at every upgrade.
+* **Exports:** the list as CSV, or an updated spreadsheet with the switch and port taken
+  from the network.
+
+Upgrade jobs save the circuits on the device before and after, and warn about any that
+haven't come back. Details: [circuits.md](../circuits.md).

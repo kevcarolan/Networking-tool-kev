@@ -18,6 +18,7 @@ See [docs/design.md](docs/design.md) for the platform design and roadmap, and
 [docs/upgrades.md](docs/upgrades.md) for how to run an upgrade job, and
 [docs/upgrade-lab-tests.md](docs/upgrade-lab-tests.md) for the lab sign-off before live use.
 Progress, decisions and open questions are tracked in [docs/PROGRESS.md](docs/PROGRESS.md).
+Guides for customers (install, admin, user) are in [docs/customer/](docs/customer/README.md).
 
 | Supported platform | Key | Method |
 |---|---|---|
