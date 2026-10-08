@@ -254,3 +254,23 @@ ol.steps li small { color: var(--muted); font-weight: normal; }
 #user-form .grid2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 #user-form select, #user-form input:not([type=checkbox]), #user-form textarea { width: 100%; min-width: 0; box-sizing: border-box; }
 #user-form fieldset { min-width: 0; }
+
+/* First-run setup and Settings */
+.setup-card { width: 100%; max-width: 680px; padding: 28px; display: grid; gap: 12px; }
+.setup-card h1 { margin: 0; }
+.setup-steps { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; padding: 0; margin: 4px 0 8px; }
+.setup-steps li { padding: 3px 10px; border-radius: 12px; font-size: 13px; background: var(--idle-bg); color: var(--idle); }
+.setup-steps li.current { background: var(--accent); color: var(--accent-text); }
+.setup-steps li.done { background: var(--ok-bg); color: var(--ok); }
+.settings { display: grid; gap: 16px; max-width: 760px; }
+.settings > section, .panel { display: grid; gap: 10px; }
+.settings > section { padding: 16px 20px; }
+.settings h2, .setup-card h2 { margin: 0; font-size: 17px; }
+textarea.pem { width: 100%; box-sizing: border-box; min-height: 120px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+.panel input:not([type=checkbox]) { width: 100%; box-sizing: border-box; }
+.ok-text { color: var(--ok); }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; font-size: 14px; margin: 0; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 600px) { .setup-card { padding: 18px; } .kv { grid-template-columns: 1fr; } }

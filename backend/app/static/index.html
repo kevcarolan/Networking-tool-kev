@@ -21,6 +21,16 @@
     </form>
   </section>
 
+  <!-- First-run setup (a new install has no way to sign in yet) -->
+  <section id="setup-view" class="login" hidden>
+    <div class="card setup-card">
+      <h1>{{product_name}}</h1>
+      <p class="muted">First-run setup</p>
+      <ol id="setup-steps" class="setup-steps"></ol>
+      <div id="setup-body"></div>
+    </div>
+  </section>
+
   <!-- App shell -->
   <div id="app-view" hidden>
     <header class="topbar">
@@ -32,6 +42,7 @@
         <button data-view="credentials" data-perm="inventory:manage">Credentials</button>
         <button data-view="users" data-admin>Users</button>
         <button data-view="audit" data-admin>Activity</button>
+        <button data-view="settings" data-admin>Settings</button>
       </nav>
       <span class="spacer"></span>
       <span id="whoami" class="muted"></span>
@@ -233,6 +244,11 @@
           </table>
           <p id="users-empty" class="empty" hidden>No users added yet. Until you add someone, AD users get their permissions from the AD groups.</p>
         </div>
+      </section>
+
+      <!-- Settings (admins): Active Directory and the web certificate -->
+      <section id="view-settings" class="view" hidden>
+        <div id="settings-body" class="settings"></div>
       </section>
 
       <!-- Activity (audit log) -->
