@@ -327,7 +327,8 @@ def cancel_job(job_id: int, body: ReasonIn, request: Request, db: Session = Depe
 def report_html(job_id: int, request: Request, db: Session = Depends(get_db),
                 _: User = Depends(UPGRADES_VIEW)):
     job = job_detail(db, _job(db, job_id), _settings(request))
-    return Response(render_html(job, _settings(request).product_name), media_type="text/html", headers={
+    s = _settings(request)
+    return Response(render_html(job, s.product_name, s.site_name), media_type="text/html", headers={
         # The report has its own inline styles and no scripts.
         "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
         "Content-Disposition": f'inline; filename="upgrade-job-{job_id}.html"'})

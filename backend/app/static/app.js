@@ -111,6 +111,8 @@ async function showApp(user) {
   $("#app-view").hidden = false;
   $("#whoami").textContent = `${user.display_name || user.username}${isAdmin() ? " (admin)" : ""}`;
   $("#change-password").hidden = user.source !== "local";
+  $("#site-name").textContent = user.site_name || "";
+  $("#site-name").hidden = !user.site_name;
   $$("[data-admin]").forEach((el) => (el.hidden = !isAdmin()));
   $$("[data-upgrader]").forEach((el) => (el.hidden = !canUpgrade()));
   $$("[data-perm]").forEach((el) => (el.hidden = !permitted(el.dataset.perm)));
@@ -1990,12 +1992,56 @@ function setupFinishStep() {
       } }, "Finish setup")));
 }
 
+/** Site name and day-to-day defaults; a value set in netops.env is shown but locked. */
+async function optionsPanel() {
+  const options = await sapi("/options");
+  const err = errorLine();
+  const inputs = {};
+  const rows = options.map((o) => {
+    const attrs = { name: o.key, disabled: o.locked };
+    let input;
+    if (o.kind === "bool") {
+      input = h("input", { ...attrs, type: "checkbox", checked: o.value });
+    } else if (o.kind === "int") {
+      input = h("input", { ...attrs, type: "number", min: o.low, max: o.high, value: o.value });
+    } else {
+      input = h("input", { ...attrs, value: o.value, maxlength: o.high });
+    }
+    inputs[o.key] = { o, input };
+    const note = o.locked ? "Set in netops.env" : (o.help || "");
+    const extra = o.kind !== "str" && !o.locked ? `${note ? note + ". " : ""}Default ${o.kind === "bool" ? (o.default ? "yes" : "no") : o.default}` : note;
+    return o.kind === "bool"
+      ? h("label", { class: "check" }, input, " ", o.label, extra ? h("span", { class: "muted" }, ` (${extra})`) : "")
+      : h("label", {}, o.label, input, extra ? h("span", { class: "muted" }, extra) : "");
+  });
+  const box = h("div", { class: "panel" });
+  box.replaceChildren(
+    h("h2", {}, "Site and defaults"),
+    ...rows, err,
+    h("div", { class: "actions" }, h("button", { type: "button", onclick: async () => {
+      err.hidden = true;
+      const body = {};
+      for (const [key, { o, input }] of Object.entries(inputs)) {
+        if (o.locked) continue;
+        body[key] = o.kind === "bool" ? input.checked : o.kind === "int" ? Number(input.value) : input.value;
+      }
+      try {
+        await sapi("/options", { method: "PUT", body });
+        $("#site-name").textContent = body.site_name || "";
+        $("#site-name").hidden = !body.site_name;
+        toast("Settings saved");
+      } catch (e) { showError(err, e); }
+    } }, "Save")));
+  return box;
+}
+
 async function loadSettings() {
   const body = $("#settings-body");
   body.replaceChildren(h("p", { class: "muted" }, "Loading…"));
   try {
-    const [ad, cert] = await Promise.all([adPanel(), certPanel()]);
-    body.replaceChildren(h("section", { class: "card" }, ad), h("section", { class: "card" }, cert));
+    const [opts, ad, cert] = await Promise.all([optionsPanel(), adPanel(), certPanel()]);
+    body.replaceChildren(h("section", { class: "card" }, opts), h("section", { class: "card" }, ad),
+      h("section", { class: "card" }, cert));
   } catch (e) {
     body.replaceChildren(h("p", { class: "error" }, e.message));
   }
