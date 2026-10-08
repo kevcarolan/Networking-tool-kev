@@ -95,7 +95,12 @@ internet-connected machine, transfer it, and install it with systemd and nginx. 
 [docs/install-airgap.md](docs/install-airgap.md), then harden the server with
 [docs/security-hardening.md](docs/security-hardening.md).
 
-The two options below are for servers that can reach the internet.
+**Server with internet access (systemd + nginx, recommended):** clone the repository on the
+server and run `sudo deploy/install-online.sh`. It builds the same bundle on the server and
+installs it the same way, and the same command upgrades it later. See
+[docs/install-online.md](docs/install-online.md).
+
+The Docker option below is for trials and labs.
 
 ### Linux server with Docker
 
@@ -116,9 +121,7 @@ somewhere safe.** Without it, the stored device passwords cannot be decrypted.
 
 ### Linux server without Docker (systemd + nginx)
 
-Use the same bundle and installer as the air-gapped install: they work just as well on
-a connected server. Run `deploy/airgap/build-bundle.sh`, then follow
-[docs/install-airgap.md](docs/install-airgap.md) from step 5.
+See [docs/install-online.md](docs/install-online.md): `sudo deploy/install-online.sh`.
 
 ## Active Directory setup
 

@@ -1,0 +1,6 @@
+# Ubuntu packages the server needs (their dependencies are added automatically).
+# Used by deploy/airgap/build-bundle.sh (downloaded into the bundle) and by
+# deploy/install-online.sh (installed from Ubuntu's own repositories).
+python3-venv git sqlite3 nginx openssl
+# Hardening (docs/security-hardening.md)
+nftables chrony auditd aide apparmor-utils rsyslog-gnutls apt-offline open-vm-tools

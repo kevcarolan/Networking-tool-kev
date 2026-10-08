@@ -36,6 +36,9 @@ Design docs: [docs/design.md](docs/design.md) (platform and backup tool),
 * Login is Active Directory over LDAPS and/or local NetOps users, plus a break-glass local admin.
 * Target server: **Ubuntu 26.04** (Python 3.14, nginx, systemd), often **air-gapped**, installed
   from an offline bundle (`deploy/airgap/`, [docs/install-airgap.md](docs/install-airgap.md)).
+  Connected servers run `deploy/install-online.sh`, which builds the same bundle on the server
+  and runs the same `install.sh` ([docs/install-online.md](docs/install-online.md)); the
+  Ubuntu package list for both is `deploy/os-packages.txt`.
   Any new Python or Ubuntu dependency must work with `build-bundle.sh` (wheels only, no
   compiling) and be added to it. The bundle installs only on the Ubuntu release it was built on.
   Security is a priority: see [docs/security-hardening.md](docs/security-hardening.md) before
