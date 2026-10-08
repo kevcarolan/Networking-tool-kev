@@ -16,6 +16,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 - [x] PR C: FortiGate (standalone, HA cluster) and PAN-OS (standalone, HA pair), image sent through their API ([upgrades.md](upgrades.md#paths-per-platform)); lab tests section 10
 
 ### Product
+- [x] Per-customer settings: customer or site name (header, reports) and day-to-day defaults on the Settings page; safety gates stay in `netops.env`
 - [ ] Product name and branding (GUI title, logo, docs). The name is now one setting,
   `NETOPS_PRODUCT_NAME`; still to do: choose the name, a logo, and rename the docs
 - [ ] Licence terms: draft agreement in [legal/EULA-draft.md](legal/EULA-draft.md); decisions listed at its end, then a solicitor's review
@@ -59,6 +60,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-08 | The app only proposes a certificate; a root path unit checks it and installs it for nginx, keeping the old one if `nginx -t` fails | The app stays without root and can't write to `/etc` or reload nginx |
 | 2026-10-08 | AD settings from the GUI are stored in the database (`app_settings`); a value in `netops.env` wins and is shown as locked | Existing installs keep working unchanged; a site can still keep AD settings root-only |
 | 2026-10-08 | A first install starts the services with a 30-day self-signed certificate | The setup screen needs HTTPS before a real certificate exists |
+| 2026-10-08 | The Settings page holds the site name and day-to-day defaults; live upgrade platforms, the break-glass admin, ports and secrets stay in `netops.env` | Admins tune their site without root; switching on live upgrades still needs someone with root on the server |
 | 2026-10-08 | The online installer builds the air-gapped bundle on the server and runs the same `install.sh` | One install, upgrade and roll-back path to test and support; the bundle doubles as the record for the change ticket |
 
 ## Open questions
@@ -86,4 +88,5 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-07 | Networking-tool-kev | Alembic migrations added (baseline, startup upgrade, db-status, installer roll back of the database) |
 | 2026-10-08 | Networking-tool-kev | First-run setup screen (setup code, admin, AD with test sign-in, certificate request or upload) and admin Settings page; root certificate service; installer starts the services on a first install; fixed legacy databases failing once a later migration adds a table |
 | 2026-10-08 | Networking-tool-kev | Customer documentation (install, admin and user guides) and a draft licence agreement; open-source licences checked (no GPL; LGPL ldap3, paramiko, scp) |
+| 2026-10-08 | Networking-tool-kev | Per-customer settings on the Settings page (site name, defaults), applied live in the web app and the worker; circuit scan follows the schedule setting |
 | 2026-10-08 | Networking-tool-kev | Online installer (`deploy/install-online.sh`), shared Ubuntu package list; tested end to end in an Ubuntu container (bundle built, verified and installed) |

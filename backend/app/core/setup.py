@@ -238,6 +238,52 @@ def save_ad(body: AdIn, request: Request, db: Session = Depends(get_db),
     return _ad_view(settings, db)
 
 
+# --- site and defaults --------------------------------------------------------------
+
+def _options_view(settings: Settings) -> list[dict]:
+    locked = settings.record_env()
+    default = Settings.model_fields
+    return [{"key": o.key, "label": o.label, "kind": o.kind.__name__, "low": o.low,
+             "high": o.high, "help": o.help, "value": getattr(settings, o.key),
+             "default": default[o.key].default, "locked": o.key in locked}
+            for o in appsettings.OPTIONS]
+
+
+@router.get("/options")
+def get_options(request: Request, db: Session = Depends(get_db),
+                who: str = Depends(setup_or_admin)):
+    settings: Settings = request.app.state.settings
+    appsettings.apply(settings, db)
+    return _options_view(settings)
+
+
+@router.put("/options")
+def save_options(body: dict, request: Request, db: Session = Depends(get_db),
+                 who: str = Depends(setup_or_admin)):
+    settings: Settings = request.app.state.settings
+    locked = settings.record_env()
+    by_key = {o.key: o for o in appsettings.OPTIONS}
+    values, changed = {}, []
+    for key, value in body.items():
+        option = by_key.get(key)
+        if option is None:
+            raise HTTPException(422, f"Unknown setting '{key}'")
+        if key in locked:
+            continue  # netops.env wins; the GUI shows it as locked
+        try:
+            values[key] = appsettings.check_option(option, value)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+        if values[key] != appsettings.check_option(option, getattr(settings, key)):
+            changed.append(f"{key}={values[key]}")
+    appsettings.save(db, values, who)
+    db.flush()
+    appsettings.apply(settings, db)
+    if changed:
+        audit(db, who, "settings.options", ", ".join(changed))
+    return _options_view(settings)
+
+
 @router.post("/ad/test")
 def test_ad(body: AdTest, request: Request, who: str = Depends(setup_or_admin)):
     """Sign in to AD with these settings (not saved yet) and show what the user would get."""

@@ -289,8 +289,8 @@ def logout(request: Request):
 
 
 @router.get("/me")
-def me(user: User = Depends(current_user)):
-    return user.out()
+def me(request: Request, user: User = Depends(current_user)):
+    return {**user.out(), "site_name": request.app.state.settings.site_name}
 
 
 class PasswordChange(BaseModel):

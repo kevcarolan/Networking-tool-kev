@@ -264,9 +264,17 @@ Then:
    the Settings page says why. Reload the page to use the new certificate.
 4. **Finish.** The setup code stops working. Sign in with the admin account.
 
-Settings that need a file edit (rarely) are in `/etc/netops/netops.env`; restart the
-services after changing it (`sudo systemctl restart netops netops-worker`). An AD setting
-made there wins over the setup screen and is shown as "set in netops.env".
+Afterwards, admins set the **customer or site name** and the day-to-day defaults (backup
+frequency, retries, history kept, version-check interval, circuit scan schedule, upgrade
+pre-check limits) on the **Settings** page. Changes apply straight away.
+
+Settings that need a file edit (rarely) are in `/etc/netops/netops.env`: the safety gates
+(which platforms may run live upgrades, the break-glass admin) and the technical ones (ports,
+worker counts, timeouts). Restart the services after changing it
+(`sudo systemctl restart netops netops-worker`). A setting made in `netops.env` wins over
+the Settings page and is shown there as "set in netops.env". On a server installed before
+the Settings page, the defaults are still in `netops.env`: comment a line out (`#`) and
+restart to manage it on the Settings page instead.
 
 ### 2. Check the sign-in
 

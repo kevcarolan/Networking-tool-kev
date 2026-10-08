@@ -19,6 +19,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 
 from sqlalchemy import select, update
 
+from app.core import appsettings
 from app.core.config import Settings, get_settings
 from app.core.crypto import CredentialCipher
 from app.core.db import init_engine, session_scope, utcnow
@@ -141,6 +142,7 @@ class UpgradeWorker:
                 self.service.watch_abort_timers()
                 now = time.monotonic()  # wall-clock based, never the engine's (test) clock
                 if now - last_beat >= beat_every:
+                    appsettings.apply(self.settings)  # changes made on the Settings page
                     self.heartbeat()
                     last_beat = now
             except Exception:  # noqa: BLE001 - keep the worker alive (e.g. database locked)
