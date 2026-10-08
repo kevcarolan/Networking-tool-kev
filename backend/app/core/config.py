@@ -6,6 +6,7 @@ import secrets
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import PrivateAttr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -16,6 +17,12 @@ class Settings(BaseSettings):
 
     # Product name shown in the browser title, the page header and reports.
     product_name: str = "NetOps Tools"
+    # The customer or site, shown next to the product name and in reports (Settings page)
+    site_name: str = ""
+
+    # The settings given in netops.env or the environment (recorded before the Settings
+    # page fills in its own values; see app/core/appsettings.py)
+    _from_env: frozenset[str] | None = PrivateAttr(default=None)
 
     # Where 'python -m app' listens (development and trials). Not 8000, which other
     # local tools often use. The installed service (systemd + nginx) also uses 8710.
@@ -96,6 +103,12 @@ class Settings(BaseSettings):
     circuit_scan_workers: int = 5
 
 
+    def record_env(self) -> frozenset[str]:
+        """The settings given in netops.env or the environment (not defaults)."""
+        if self._from_env is None:
+            self._from_env = frozenset(self.model_fields_set)
+        return self._from_env
+
     @property
     def database_url(self) -> str:
         return f"sqlite:///{self.data_dir / 'app.db'}"
@@ -110,6 +123,7 @@ class Settings(BaseSettings):
 
     def prepare(self) -> "Settings":
         """Create the data directory and fill in generated secrets."""
+        self.record_env()
         self.data_dir.mkdir(parents=True, exist_ok=True)
         if self.credential_key_file is None:
             self.credential_key_file = self.data_dir / "credential.key"
