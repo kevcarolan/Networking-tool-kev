@@ -221,6 +221,17 @@ What the installer set up, for your security review:
   are encrypted in the database with that key, so a copy of the database alone exposes nothing.
 * **Audit events** (logins, failed logins, every change) are written to the database
   and to the service log, which §9 forwards to your log server.
+* **The setup screen** (first visit only) needs the **setup code** from
+  `/var/lib/netops/setup-token`, which only root and `netops` can read. So only someone who
+  can sign in to the server can finish setup. Wrong codes are slowed down like wrong
+  passwords and written to the audit log. Once setup is finished the code is deleted and
+  the setup pages answer only to signed-in admins. Finish setup straight after installing.
+* **Certificates:** the app can't write to `/etc/netops/tls` or reload nginx. A certificate
+  added in the browser is only *proposed* (written to `/var/lib/netops/tls/`). A small root
+  service (`netops-tls.path` → `/usr/local/sbin/netops-tls-apply`) checks it (a real
+  certificate, in date, matches its key, no links), copies it into place, and keeps it only
+  if `nginx -t` accepts it; otherwise it puts the old one back. The result is shown on the
+  Settings page and logged to syslog.
 
 ## 8. HTTPS and app settings
 
@@ -231,7 +242,9 @@ What the installer set up, for your security review:
   * sets the client address itself, so clients can't fake it in the audit log.
 * Distribute your internal CA to admin browsers, so nobody gets used to clicking
   through certificate warnings.
-* In `/etc/netops/netops.env`:
+* On the **Settings** page (AD) or in `/etc/netops/netops.env` (everything else). An AD
+  setting in `netops.env` wins over the Settings page and can't be changed there; use that
+  if you want AD settings changed only by someone with root on the server:
 
   | Setting | Value | Why |
   |---|---|---|

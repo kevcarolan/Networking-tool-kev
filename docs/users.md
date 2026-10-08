@@ -5,9 +5,14 @@ Admins manage who can sign in and what each person can do on the **Users** page.
 
 ## Who can sign in
 
+The **first admin** is made on the setup screen, the first time anyone opens the server
+([install-airgap.md](install-airgap.md) §6). It is a normal local user (step 2 below)
+with every right. Active Directory is set on the setup screen too, and later on the
+**Settings** page (admins only).
+
 NetOps checks, in this order:
 
-1. **The break-glass admin** (`NETOPS_LOCAL_ADMIN_USER` and its password hash in
+1. **The break-glass admin** (optional: `NETOPS_LOCAL_ADMIN_USER` and its password hash in
    `/etc/netops/netops.env`). It always has every right, so you can't lock yourself out.
 2. **A user added on the Users page.** They get **exactly** the permissions set there.
    * **Active Directory:** they sign in with their normal AD password (`jsmith`,

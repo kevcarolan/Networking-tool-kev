@@ -19,7 +19,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 - [ ] Product name and branding (GUI title, logo, docs). The name is now one setting,
   `NETOPS_PRODUCT_NAME`; still to do: choose the name, a logo, and rename the docs
 - [ ] Licence terms (EULA, or open source plus support)
-- [ ] First-run setup screen (admin account, AD settings, certificate) instead of editing `netops.env`
+- [x] First-run setup screen (admin account, AD settings, certificate) instead of editing `netops.env`; AD and the certificate stay on a Settings page for admins
 - [ ] Installer for internet-connected and air-gapped sites
 - [ ] Customer documentation (install, admin guide, user guide)
 - [ ] Optional: multi-site support, licence keys
@@ -55,12 +55,18 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-07 | Check Point upgrades stay in SmartConsole / Central Deployment; the tool does backups, versions and ARP for Check Point | Upgrading from the tool would need an expert-shell account on every gateway; production sites already upgrade from the management server |
 | 2026-10-07 | The app uses port 8710 everywhere (`NETOPS_PORT`, `python -m app`, Docker, systemd/nginx) | 8000 clashes with other local tools the owner runs |
 | 2026-10-07 | Alembic migrations run automatically at start (locked, database copied first); new databases are created from the models and marked current; old installs are marked as the baseline | No manual step for engineers installing an upgrade; a failed upgrade can always go back |
+| 2026-10-08 | The setup screen needs a one-time setup code read from the server (`/var/lib/netops/setup-token`); installs that already have an admin or AD in `netops.env` skip setup | Between install and setup the page is open to anyone on the network; the code proves the person has the server |
+| 2026-10-08 | The app only proposes a certificate; a root path unit checks it and installs it for nginx, keeping the old one if `nginx -t` fails | The app stays without root and can't write to `/etc` or reload nginx |
+| 2026-10-08 | AD settings from the GUI are stored in the database (`app_settings`); a value in `netops.env` wins and is shown as locked | Existing installs keep working unchanged; a site can still keep AD settings root-only |
+| 2026-10-08 | A first install starts the services with a 30-day self-signed certificate | The setup screen needs HTTPS before a real certificate exists |
 
 ## Open questions
 
 - Product name?
 - Licence model: sold, subscription, or open source with paid support?
 - FortiGate backups: is masking the secrets acceptable, or should the backup use FortiGate's own encrypted backup file instead?
+- Setup screen: also add product name, syslog forwarding or the upgrade live-platform list later, or keep those in `netops.env`?
+- The migration fix (legacy installs now create only the baseline tables) also applies to the work version once it has migrations; copy it across?
 - The AlliedWare Plus circuit-location fix (ports named `port1.0.x` were treated as port-channels) also applies to the work version; copy it across?
 
 ## Session log
@@ -75,3 +81,4 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-07 | Networking-tool-kev | Decided: Check Point upgrades stay in SmartConsole |
 | 2026-10-07 | Networking-tool-kev | Multi-vendor PRs A-C merged; app port 8000 replaced by 8710 for development and Docker (`NETOPS_PORT`) |
 | 2026-10-07 | Networking-tool-kev | Alembic migrations added (baseline, startup upgrade, db-status, installer roll back of the database) |
+| 2026-10-08 | Networking-tool-kev | First-run setup screen (setup code, admin, AD with test sign-in, certificate request or upload) and admin Settings page; root certificate service; installer starts the services on a first install; fixed legacy databases failing once a later migration adds a table |
