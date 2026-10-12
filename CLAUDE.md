@@ -118,8 +118,10 @@ remote); never sync the two automatically.
 * Device access is always injectable (`fetcher=` / `fw_collector=` in `create_app`), so tests
   never touch SSH. Parser tests use real sample output in `app/demo/samples.py` (alias
   `tests/firmware_samples.py`); the newer vendors' samples (`app/demo/vendor_samples.py`) are
-  from vendor documentation until
-  replaced by lab captures.
+  from vendor documentation until replaced by lab captures (`netops-cli capture <device>`,
+  `tools/firmware_upgrade/capture.py`; `capture.parse_file()` reads a capture back). A new
+  show command a driver or check sends must pass `capture.is_read_only`; the capture refuses
+  anything else.
 
 ## Working rules
 

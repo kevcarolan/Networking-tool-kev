@@ -5,6 +5,9 @@
   python -m app.cli backup <device-name>     # run one backup now and print the result
   python -m app.cli firmware-check <device-name> [--raw]
                                              # read one device's version and show what was parsed
+  python -m app.cli capture <device-name> [--account backup] [--raw] [--out FILE]
+                                             # save every read-only command the tools send
+                                             # to the device, for parser checks (lab tests)
   python -m app.cli upgrades-running         # list upgrade jobs that are mid-step
                                              # (exit code 3 if a LIVE one is: don't restart
                                              # the worker now)
@@ -20,6 +23,8 @@ import argparse
 import csv
 import getpass
 import sys
+from datetime import datetime
+from pathlib import Path
 
 from sqlalchemy import select
 
@@ -168,6 +173,57 @@ def _firmware_check(args) -> int:
     return 0
 
 
+def _capture(args) -> int:
+    import os
+
+    from app.core.config import get_settings
+    from app.core.crypto import CredentialCipher
+    from app.core.db import init_engine, session_scope
+    from app.core.models import Credential, Device
+    from app.core.ssh import classify_error, run_commands, target_for
+    from app.tools.firmware_upgrade import capture
+    from app.tools.firmware_upgrade import checks as ck
+    from app.tools.firmware_upgrade.models import DeviceUpgradeSettings
+
+    settings = get_settings()
+    init_engine(settings.database_url)
+    with session_scope() as db:
+        device = db.scalar(select(Device).where(Device.name == args.name))
+        if device is None:
+            print(f"No device named {args.name}", file=sys.stderr)
+            return 1
+        cred, account = None, "backup"
+        s = db.get(DeviceUpgradeSettings, device.id)
+        if args.account == "upgrade" and s and s.upgrade_credential_id:
+            cred, account = db.get(Credential, s.upgrade_credential_id), "upgrade"
+        elif args.account == "upgrade":
+            print("No upgrade account set for this device: using the backup account "
+                  "(some health checks may need the upgrade account)", file=sys.stderr)
+        try:
+            target = target_for(device, CredentialCipher(settings.credential_key_file),
+                                settings.ssh_timeout, settings.command_timeout, credential=cred)
+        except Exception as exc:  # noqa: BLE001
+            print(f"failed: {classify_error(exc)[1]}", file=sys.stderr)
+            return 2
+        platform, name = device.platform, device.name
+    th = ck.Thresholds(settings.upgrade_cpu_warn, settings.upgrade_mem_warn)
+    try:
+        text, lines = capture.capture(target, platform, run_commands, account, th, raw=args.raw)
+    except Exception as exc:  # noqa: BLE001
+        print(f"failed: {classify_error(exc)[1]}", file=sys.stderr)
+        return 2
+    out = Path(args.out) if args.out else (
+        settings.data_dir / "captures" / f"{name}-{datetime.now():%Y%m%d-%H%M}.txt")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        fh.write(text)
+    for line in lines:
+        print(line)
+    print(f"\nSaved to {out}" + ("" if args.out else f"  (show it with: sudo cat {out})"))
+    return 0
+
+
 def _upgrades_running(_args) -> int:
     from app.core.config import get_settings
     from app.core.db import init_engine, session_scope
@@ -225,6 +281,12 @@ def main(argv=None) -> int:
     p.add_argument("name")
     p.add_argument("--raw", action="store_true", help="also print the raw command output")
     p.set_defaults(func=_firmware_check)
+    p = sub.add_parser("capture", help="save every read-only command's output from a device")
+    p.add_argument("name")
+    p.add_argument("--account", choices=("upgrade", "backup"), default="upgrade")
+    p.add_argument("--raw", action="store_true", help="keep IP and MAC addresses")
+    p.add_argument("--out", help="file to write (default: the data folder's captures/)")
+    p.set_defaults(func=_capture)
     sub.add_parser("upgrades-running").set_defaults(func=_upgrades_running)
     sub.add_parser("db-status").set_defaults(func=_db_status)
     args = parser.parse_args(argv)

@@ -42,6 +42,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 - [ ] Lab-test the upgrade paths and the MAC/ARP parsing ([upgrade-lab-tests.md](upgrade-lab-tests.md))
 - [x] Email alerts through the customer's mail server: failing backups, upgrade results, licence, upgrade worker ([customer/admin-guide.md](customer/admin-guide.md#email-alerts))
 - [x] Demo mode: `python -m app.demo`, the product on a simulated 25-device network ([demo.md](demo.md))
+- [x] Lab capture: `netops-cli capture <device>` saves every read-only command's output, with what the tools read from it ([upgrade-lab-tests.md](upgrade-lab-tests.md#capturing-a-device))
 
 ## Decisions
 
@@ -82,6 +83,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-12 | Spreadsheet exports keep formula-like text as text | Text from sign-in names, uploaded sheets and device output ends up in exports opened in Excel |
 | 2026-10-12 | Devices and credentials gets two more levels: *addresses* (add devices, change a device's address or credential profile) and *credentials* (manage the profiles); *manage* keeps only device details | The owner: whoever sets the address decides where a device account's password goes, so it is given per user on the Users page |
 | 2026-10-12 | The network simulator and sample outputs moved from `tests/` to `app/demo/` (tests keep the old names) | One simulator for the tests and the demo, so the demo shows exactly what the tests check |
+| 2026-10-12 | Captures replace IP and MAC addresses with consistent stand-ins by default, and never include the running configuration | Captures are sent outside the customer's network for parser fixes; the tables still match up, so the readers can be tested |
 
 ## Open questions
 
@@ -118,3 +120,4 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-12 | Networking-tool-kev | Email alerts (Settings › Email alerts, test email, sent once each, tried again after a failure); firewall template allows the mail relay |
 | 2026-10-12 | Networking-tool-kev | Security review (sign-in, setup/licence/display, device access, deployment, browser): fixed a root escalation through the certificate status file, the sign-in throttle bypass, sign-in with a trusted domain's name, root git in the backup script, the online installer trusting a user's clone, unchecked SSH host keys, sessions that never ended, formula injection in exports, failed sign-ins missing from the activity report, and smaller upload and licence gaps |
 | 2026-10-12 | Networking-tool-kev | Demo mode (`python -m app.demo`): 25 simulated devices, failing backups, circuits, live upgrades in about 40 s, wall display; sign-in now returns the site name (it only showed after a reload) |
+| 2026-10-12 | Networking-tool-kev | Lab capture tool (`netops-cli capture`); blocks anything but read-only commands, including `| redirect` and `| tee` |

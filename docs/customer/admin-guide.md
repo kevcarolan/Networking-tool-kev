@@ -271,6 +271,7 @@ Settings, the key and the licence are kept. See [install-airgap.md](../install-a
 | The page doesn't load, or shows 502 | `systemctl status netops`; `journalctl -u netops -n 50` |
 | AD sign-in fails | Settings › Active Directory › **Test sign-in** shows the error. Then check the server's time (`chronyc tracking`), the CA certificate, and the firewall to the DCs on TCP 636 |
 | The certificate wasn't installed | The Settings page shows the reason. Usually the certificate doesn't match the key, or is missing the intermediate certificate |
+| A device's version, model or a check result is read wrong | Run `sudo netops-cli capture <device>` and send the file (`/var/lib/netops/captures/`) to support. It holds only read-only command output, with IP and MAC addresses replaced |
 | Device backups fail | The reason is on Config backups: wrong account, the device's SSH access list, or the server's firewall to the device |
 | "The device's SSH key has changed" | The device was replaced or reinstalled: an admin clicks **Forget** next to the key in its edit dialog. If it wasn't, investigate before forgetting it |
 | "Your session has expired" | Sign-ins last at most `NETOPS_SESSION_MAX_AGE_HOURS` (12 by default), even while in use: sign in again |
