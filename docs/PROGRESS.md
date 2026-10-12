@@ -19,6 +19,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 - [x] Per-customer settings: customer or site name (header, reports) and day-to-day defaults on the Settings page; safety gates stay in `netops.env`
 - [ ] Product name and branding (GUI title, logo, docs). The name is now one setting,
   `NETOPS_PRODUCT_NAME`; still to do: choose the name, a logo, and rename the docs
+- [x] Licence modules: the licence unlocks tools (backups, firmware, upgrades, circuits, syslog); locked tabs greyed out ([licensing.md](licensing.md))
 - [ ] Licence terms: draft agreement in [legal/EULA-draft.md](legal/EULA-draft.md); decisions listed at its end, then a solicitor's review
 - [ ] Owner: make the licence signing key and commit its public key ([licensing.md](licensing.md#one-time-make-the-signing-key))
 - [x] First-run setup screen (admin account, AD settings, certificate) instead of editing `netops.env`; AD and the certificate stay on a Settings page for admins
@@ -91,12 +92,14 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-12 | Email alerts: each recipient ticks the kinds they get (backups, upgrades, licence, worker, syslog); syslog alerts at Critical and worse by default, at most one email every 5 minutes | The owner asked for syslog alerts to be optional per recipient; a storm of messages must not become hundreds of emails |
 | 2026-10-12 | The circuit list is compared with the network every night at 03:00 by default (was Sundays 02:00) | The owner: nightly, late at night |
 | 2026-10-12 | Syslog over TLS (6514) is built in, off by default, switched on in netops.env; it reuses the web certificate through systemd LoadCredential, with optional device certificates | The owner: syslog may cross other networks; a port is a netops.env setting, and the key must stay root-only |
+| 2026-10-12 | One full install; the licence lists the tools it unlocks (backups, firmware, upgrades, circuits, syslog); one licence per customer, replaced to add a tool | The owner: unlock parts of one product rather than separate products; one licence keeps one end date and one device count |
 
 ## Open questions
 
 - Licence agreement: per installation or per site? Managed-service use? Support terms, warranty, liability cap, governing law ([legal/EULA-draft.md](legal/EULA-draft.md))
 
 - Product name?
+- Editions: which sets of modules to sell, and their names and prices (any set works without code changes)
 - Syslog next steps: a wall display tile for Critical and worse messages?
 - Later: two servers (main and standby) with copies of the data and the syslog files
 - Syslog forwarding is plain UDP (`rsyslog-forward.conf`); offer TLS forwarding for sites whose log server supports it?
@@ -133,3 +136,4 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-12 | Networking-tool-kev | Syslog: receiver service on 514 (rate limit per sender, disk guard), daily store, Syslog page with severity buttons, timeline and download, Help with suggested configs for every platform, Logs button per device, demo history with BGP, PSU, failover, BPDU guard and brute-force incidents |
 | 2026-10-12 | Networking-tool-kev | Email alerts per recipient, syslog alerts (Critical and worse, gathered), nightly circuit scan by default |
 | 2026-10-12 | Networking-tool-kev | Syslog over TLS: third listener (6514), web certificate via systemd, optional device certificates, TLS examples in the device help, receiver restarted on a new certificate |
+| 2026-10-12 | Networking-tool-kev | Licence modules: one install, the licence unlocks Config backups, Firmware, Upgrade jobs, Circuits and Syslog; locked tabs greyed out with a padlock; scheduled work and alerts follow the licence; signing tool --modules |

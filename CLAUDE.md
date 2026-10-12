@@ -79,7 +79,11 @@ remote); never sync the two automatically.
   scheduler checks state every minute and sends each new event once (`alerts_sent` table);
   the mailer is injectable (`create_app(mailer=)`), tests never send mail. Licences (`core/licence.py`, made with `python -m app.licence_tool`, see
   [docs/licensing.md](docs/licensing.md)): a 60-day trial, then signed licences with an end
-  date and a device count. Without one, only new work is blocked (`licence.require_active`,
+  date, a device count and the tools it unlocks (`licence.MODULES`: backups, firmware,
+  upgrades, circuits, syslog; one full install, the licence unlocks parts of it). A tool's
+  router gets `Depends(licence.module(...))`, its scheduler checks `licence.has_module`,
+  and the GUI greys out its tab (`data-module`). The trial and older licences unlock
+  everything. Without a licence, only new work is blocked (`licence.require_active`,
   `licence.room_for`): never backups, checks, or an upgrade job already under way.
   `python -m app` is development mode, with no licence needed. Tools live in `tools/<name>/` with `models.py`, `service.py`, `api.py`.
 * **Database:** SQLite `data/app.db`, kept up to date by **Alembic** migrations, applied when

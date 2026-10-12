@@ -50,6 +50,10 @@ Wrong codes are slowed down and written to the activity log. The steps:
 ### Licence
 
 * **State:** trial (with the days left), licensed (with the customer and end date), or ended.
+* **Tools unlocked:** the tools the licence covers (Config backups, Firmware, Upgrade jobs,
+  Circuits, Syslog). Others are greyed out with a padlock in the top bar, and their
+  scheduled work doesn't run. To add one, ask your supplier for a new licence that
+  includes it.
 * **Devices:** how many are in the inventory, and how many the licence covers.
 * **Installation ID:** send it when you ask for a licence or a renewal.
 * **Adding a licence:** paste the licence text and press **Add licence**. A new licence

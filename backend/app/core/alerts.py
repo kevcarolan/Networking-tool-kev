@@ -180,19 +180,22 @@ def _sent(db: Session) -> set[str]:
 
 
 def due(db: Session, cfg: Config, now: datetime | None = None, syslog_dir=None) -> list[Alert]:
+    from app.core import licence
+
     now = now or utcnow()
     since = cfg.enabled_at or now
     done = _sent(db)
+    modules = set(licence.status(db)["modules"])  # only the tools the licence unlocks
     out = []
-    if cfg.backup_hours and cfg.wanted("backups"):
+    if cfg.backup_hours and cfg.wanted("backups") and "backups" in modules:
         out += _backups(db, cfg, now, done)
-    if cfg.wanted("upgrades"):
+    if cfg.wanted("upgrades") and "upgrades" in modules:
         out += _upgrades(db, since, done)
     if cfg.wanted("licence"):
         out += _licence(db, done)
-    if cfg.wanted("worker"):
+    if cfg.wanted("worker") and "upgrades" in modules:
         out += _worker(db, now, done)
-    if syslog_dir is not None:
+    if syslog_dir is not None and "syslog" in modules:
         out += _syslog(db, cfg, syslog_dir)
     return out
 

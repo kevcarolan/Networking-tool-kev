@@ -307,3 +307,9 @@ table.recipients td, table.recipients th { text-align: center; padding: 4px 6px;
 table.recipients td:first-child, table.recipients th:first-child { text-align: left; }
 table.recipients input[type=email] { min-width: 220px; }
 .panel h3 { margin: 6px 0 0; font-size: 15px; }
+
+/* Tools the licence doesn't unlock */
+#nav button.locked { opacity: .45; }
+#nav button.locked::after { content: " 🔒"; font-size: 11px; }
+.locked-card { max-width: 620px; padding: 24px; display: grid; gap: 8px; }
+.locked-card h2 { margin: 0; }

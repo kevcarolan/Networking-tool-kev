@@ -86,6 +86,10 @@ class FirmwareService:
                         or f.last_attempt + (retry if f.last_status == FAILED else every) <= now)]
 
     def tick(self) -> int:
+        from app.core import licence
+
+        if not licence.has_module("firmware"):
+            return 0  # not in the licence: no scheduled version checks
         return sum(self.submit(device_id) for device_id in self.due_device_ids())
 
     def submit(self, device_id: int) -> bool:

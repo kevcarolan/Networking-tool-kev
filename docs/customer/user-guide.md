@@ -16,6 +16,8 @@ A coloured line under the top bar is a notice from the server, for example that 
 licence has ended. While a licence has ended, nobody can add devices or start upgrades,
 but everything else works. Tell your admin.
 
+A tab with a padlock is a tool your licence doesn't include. Clicking it tells you so.
+
 ## Config backups
 
 The device list shows each device's backup status:

@@ -94,6 +94,34 @@ function can(area, level) {
 }
 // data-perm="area:level" (or several, separated by |: any one is enough)
 const permitted = (spec) => spec.split("|").some((p) => { const [a, l] = p.split(":"); return can(a, l); });
+// Tools the licence unlocks (app/core/licence.py MODULES); everything until the licence is read.
+const hasModule = (m) => !state.licence || state.licence.modules.includes(m);
+const VIEW_MODULE = { firmware: "firmware", circuits: "circuits", syslog: "syslog" };
+
+/** Locked tools: greyed out in the top bar, other controls of theirs hidden. */
+function applyModules() {
+  $$("[data-module]").forEach((el) => {
+    const ok = hasModule(el.dataset.module);
+    if (el.closest("#nav")) {
+      el.classList.toggle("locked", !ok);
+      el.title = ok ? "" : "Not in your licence";
+    } else if (!ok) {
+      el.hidden = true;
+    }
+  });
+  $("#bk-unlicensed").hidden = hasModule("backups");
+}
+
+function showLocked(view) {
+  const l = state.licence;
+  const name = l.module_labels[VIEW_MODULE[view]];
+  $("#locked-title").textContent = `${name} isn't in your licence`;
+  $("#locked-text").textContent = `This tool is installed but not unlocked. Ask your supplier to add ${name} to the licence; ` +
+    "an admin adds the new licence on the Settings page, and it unlocks straight away.";
+  $("#locked-have").textContent = `Your licence unlocks: ${l.modules.map((m) => l.module_labels[m]).join(", ") || "no tools"}.`;
+  $$(".view").forEach((s) => (s.hidden = s.id !== "view-locked"));
+}
+
 const canRunJob = (j) => canUpgrade() && (j.dry_run || can("upgrades", "live"));
 
 // ---------- auth ----------
@@ -118,8 +146,10 @@ async function showApp(user) {
   $$("[data-upgrader]").forEach((el) => (el.hidden = !canUpgrade()));
   $$("[data-perm]").forEach((el) => (el.hidden = !permitted(el.dataset.perm)));
   state.platforms = await api("/api/platforms");
+  state.licence = await api("/api/licence").catch(() => null);
+  applyModules();
   showLicenceBanner();
-  const first = $$("#nav button").find((b) => !b.hidden);
+  const first = $$("#nav button").find((b) => !b.hidden && !b.classList.contains("locked"));
   if (first) switchView(first.dataset.view);
   clearInterval(state.refreshTimer);
   state.refreshTimer = setInterval(() => {
@@ -157,6 +187,7 @@ $("#logout").addEventListener("click", async () => {
 function switchView(view) {
   state.view = view;
   $$("#nav button").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
+  if (VIEW_MODULE[view] && !hasModule(VIEW_MODULE[view])) return showLocked(view);
   $$(".view").forEach((s) => (s.hidden = s.id !== `view-${view}`));
   ({ backups: loadBackups, firmware: loadFirmware, circuits: loadCircuits, syslog: loadSyslog, credentials: loadCredentials,
     audit: loadAudit, users: loadUsers, settings: loadSettings })[view]();
@@ -234,11 +265,12 @@ function deviceRow(r) {
   } else {
     result = h("span", { class: `badge ${st}` }, STATUS_LABEL[st] || st);
   }
-  const actions = [h("button", { class: "small", onclick: () => openDetail(r) }, "History")];
-  if (can("backups", "run")) {
+  const actions = [];
+  if (hasModule("backups")) actions.push(h("button", { class: "small", onclick: () => openDetail(r) }, "History"));
+  if (can("backups", "run") && hasModule("backups")) {
     actions.push(h("button", { class: "small", disabled: b.busy, onclick: () => runNow(d) }, "Backup now"));
   }
-  if (can("syslog", "view")) {
+  if (can("syslog", "view") && hasModule("syslog")) {
     actions.push(h("button", { class: "small", title: "This device's syslog messages",
       onclick: () => { sl.pick = String(d.id); switchView("syslog"); } }, "Logs"));
   }
@@ -2046,6 +2078,8 @@ async function licencePanel() {
     h("p", { class: s.active ? "" : "error" }, s.message),
     s.warning && s.active && s.mode !== "trial" ? h("p", { class: "muted" }, s.warning) : "",
     h("dl", { class: "kv" },
+      h("dt", {}, "Tools unlocked"), h("dd", {}, h("span", { class: "chips" }, Object.entries(s.module_labels).map(([m, label]) =>
+        h("span", { class: `chip ${s.modules.includes(m) ? "" : "off"}`, title: s.modules.includes(m) ? "Unlocked" : "Not in the licence" }, label)))),
       h("dt", {}, "Devices"), h("dd", {}, s.max_devices == null ? `${s.devices} (no limit)` : `${s.devices} of ${s.max_devices}`),
       ...(l ? [h("dt", {}, "Licence"), h("dd", {}, `${l.id}${l.kind === "internal" ? " (internal use)" : ""}, issued ${l.issued}`)] : []),
       h("dt", {}, "Installation ID"), h("dd", {}, h("code", {}, s.install_id))),
@@ -2056,8 +2090,7 @@ async function licencePanel() {
       try {
         await api("/api/licence", { method: "POST", body: { text: text.value } });
         toast("Licence added");
-        showLicenceBanner();
-        loadSettings();
+        setTimeout(() => location.reload(), 800);  // the tools it unlocks appear straight away
       } catch (e) { showError(err, e); }
     } }, "Add licence")));
   return box;

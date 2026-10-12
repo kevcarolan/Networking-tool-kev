@@ -38,9 +38,9 @@
       <span id="site-name" class="site-name muted" hidden></span>
       <nav id="nav">
         <button data-view="backups" class="active" data-perm="backups:view">Config backups</button>
-        <button data-view="firmware" data-perm="firmware:view|upgrades:view">Firmware</button>
-        <button data-view="circuits" data-perm="circuits:view">Circuits</button>
-        <button data-view="syslog" data-perm="syslog:view">Syslog</button>
+        <button data-view="firmware" data-perm="firmware:view|upgrades:view" data-module="firmware">Firmware</button>
+        <button data-view="circuits" data-perm="circuits:view" data-module="circuits">Circuits</button>
+        <button data-view="syslog" data-perm="syslog:view" data-module="syslog">Syslog</button>
         <button data-view="credentials" data-perm="inventory:credentials">Credentials</button>
         <button data-view="users" data-admin>Users</button>
         <button data-view="audit" data-admin>Activity</button>
@@ -57,6 +57,7 @@
     <main>
       <!-- Config backups -->
       <section id="view-backups" class="view">
+        <p id="bk-unlicensed" class="licence-banner" hidden>Config backups aren't in your licence: the devices are listed here for the other tools, but nothing is backed up.</p>
         <div id="summary" class="tiles"></div>
         <div class="toolbar">
           <input id="search" type="search" placeholder="Search name, address, site…">
@@ -89,7 +90,7 @@
           <button data-tab="versions" class="active" data-perm="firmware:view">Versions</button>
           <button data-tab="standards" data-perm="firmware:view">Standards</button>
           <button data-tab="images" data-perm="firmware:view">Image library</button>
-          <button data-tab="jobs" data-perm="upgrades:view">Upgrade jobs</button>
+          <button data-tab="jobs" data-perm="upgrades:view" data-module="upgrades">Upgrade jobs</button>
         </div>
 
         <div id="fw-versions" class="fw-pane">
@@ -214,6 +215,15 @@
             <tbody></tbody>
           </table>
           <p id="ct-empty" class="empty" hidden></p>
+        </div>
+      </section>
+
+      <!-- A tool the licence doesn't unlock -->
+      <section id="view-locked" class="view" hidden>
+        <div class="card locked-card">
+          <h2 id="locked-title"></h2>
+          <p id="locked-text"></p>
+          <p id="locked-have" class="muted"></p>
         </div>
       </section>
 
@@ -454,10 +464,10 @@
       <button id="detail-close" class="ghost">Close</button>
     </div>
     <div class="tabs" id="detail-tabs">
-      <button data-tab="runs" class="active">Backup history</button>
-      <button data-tab="versions" data-perm="backups:configs">Config versions</button>
-      <button data-tab="circuits" data-perm="circuits:view">Circuits</button>
-      <button data-tab="upgrades" data-perm="upgrades:view">Upgrade history</button>
+      <button data-tab="runs" class="active" data-module="backups">Backup history</button>
+      <button data-tab="versions" data-perm="backups:configs" data-module="backups">Config versions</button>
+      <button data-tab="circuits" data-perm="circuits:view" data-module="circuits">Circuits</button>
+      <button data-tab="upgrades" data-perm="upgrades:view" data-module="upgrades">Upgrade history</button>
     </div>
     <div id="detail-runs" class="detail-pane"></div>
     <div id="detail-versions" class="detail-pane" hidden></div>

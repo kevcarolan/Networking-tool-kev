@@ -107,6 +107,7 @@ class Receiver:
         self.counts = {"received": 0, "stored": 0, "dropped_rate": 0, "dropped_unknown": 0,
                        "dropped_full": 0, "received_tls": 0}
         self.tls_error = ""  # why syslog over TLS isn't listening, or ""
+        self.licensed = True  # Syslog is in the licence (checked every minute)
         self._buckets: dict[str, list[float]] = {}  # sender -> [tokens, last time]
         self._stop = asyncio.Event()
 
@@ -162,7 +163,9 @@ class Receiver:
         free = shutil.disk_usage(self.store.dir if self.store.dir.exists() else
                                  self.store.dir.parent).free
         today = self.store.size(dt.datetime.now(dt.UTC).date())
-        if free < s.syslog_keep_free_mb * 2**20:
+        if not self.licensed:
+            reason = "Syslog isn't in the licence"
+        elif free < s.syslog_keep_free_mb * 2**20:
             reason = f"less than {s.syslog_keep_free_mb} MB of disk is free"
         elif today > s.syslog_max_gb * 2**30:
             reason = f"today's messages alone are over the {s.syslog_max_gb} GB limit"
@@ -175,11 +178,12 @@ class Receiver:
 
     def housekeeping(self) -> None:
         """Settings from the Settings page, the inventory's addresses, the limits."""
-        from app.core import appsettings
+        from app.core import appsettings, licence
         from app.core.db import session_scope
         from app.tools.syslog.sources import device_addresses
 
         appsettings.apply(self.settings)
+        self.licensed = licence.has_module("syslog")
         if self.settings.syslog_inventory_only:
             with session_scope() as db:
                 self.allowed = set(device_addresses(db))
