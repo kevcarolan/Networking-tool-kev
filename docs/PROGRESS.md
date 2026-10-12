@@ -39,6 +39,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 - [x] Firmware: version report, standards, image library, upgrade jobs for every platform
 - [x] Circuits: Excel import, live location from MAC/ARP tables
 - [ ] Lab-test the upgrade paths and the MAC/ARP parsing ([upgrade-lab-tests.md](upgrade-lab-tests.md))
+- [x] Lab capture: `netops-cli capture <device>` saves every read-only command's output, with what the tools read from it ([upgrade-lab-tests.md](upgrade-lab-tests.md#capturing-a-device))
 
 ## Decisions
 
@@ -72,6 +73,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-09 | No remote collectors: devices are reached over SSH from the server inside each company's network | The owner: production sites can reach their devices from a central management server |
 | 2026-10-09 | Several customers on one server is kept as an idea, not built | Not needed while each company runs its own server |
 | 2026-10-09 | A read-only wall display on its own port (8443) with a per-screen key, rather than a signed-in session | A wall screen can't sign in every few hours; the separate port and key let the firewall and admins limit it to the screens |
+| 2026-10-12 | Captures replace IP and MAC addresses with consistent stand-ins by default, and never include the running configuration | Captures are sent outside the customer's network for parser fixes; the tables still match up, so the readers can be tested |
 
 ## Open questions
 
@@ -102,3 +104,4 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-08 | Networking-tool-kev | Licence keys: trial, signed licences, Settings page and banner, signing tool; wrong setup codes are now kept in the audit log (they were rolled back) |
 | 2026-10-08 | Networking-tool-kev | Online installer (`deploy/install-online.sh`), shared Ubuntu package list; tested end to end in an Ubuntu container (bundle built, verified and installed) |
 | 2026-10-09 | Networking-tool-kev | Wall display: overview and upgrades pages rotating, own nginx site on 8443 (checked with a real nginx: refused on the main port, only the display there), per-screen links on the Settings page |
+| 2026-10-12 | Networking-tool-kev | Lab capture tool (`netops-cli capture`); blocks anything but read-only commands, including `| redirect` and `| tee` |

@@ -9,9 +9,37 @@ for live use** (`NETOPS_UPGRADE_LIVE_PLATFORMS`).
 
 Work through one section per platform. Tick each line, note the NetOps job number, and
 keep the job reports with the sign-off. If something doesn't behave as described, send
-the job report (it includes the device output), plus
-`sudo netops-cli firmware-check <device> --raw`. The fix is usually a one-line change in
-the platform's driver (`backend/app/tools/firmware_upgrade/drivers/`).
+the job report (it includes the device output), plus a **capture** of the device (below).
+The fix is usually a one-line change in the platform's driver
+(`backend/app/tools/firmware_upgrade/drivers/`).
+
+### Capturing a device
+
+One command saves the output of **every read-only command the tools send** to a device:
+* the version check;
+* the upgrade pre-checks, including the platform's own;
+* the MAC, ARP and neighbour tables used for circuits.
+
+```bash
+sudo netops-cli capture <device>                 # uses the device's upgrade account
+sudo netops-cli capture <device> --account backup
+sudo cat /var/lib/netops/captures/<device>-<date>.txt
+```
+
+* It only ever sends `show`, `display`, `get` and `dir` style commands; anything else is
+  refused. It never includes the running configuration.
+* The top of the file says **what the tools read** from the output: the version, model and
+  free space, each health check's result, and the MAC, ARP and uplink counts. Compare those
+  with the device. A line that is wrong, or says "COULD NOT READ", is a reader to fix.
+* **Addresses:** IP and MAC addresses are replaced with stand-ins. The same address always
+  gets the same stand-in, so the tables still match up. Hostnames, interface names and
+  serial numbers stay, so check the file before you send it outside your organisation.
+  `--raw` keeps the real addresses.
+
+Do one capture per platform and software train, early in the lab work. It is the quickest
+way to find a reader that doesn't match the real output. Each capture also becomes a test
+sample: `capture.parse_file()` reads it back, command by command, into
+`tests/vendor_samples.py` or `tests/firmware_samples.py`.
 
 ## 0. Before you start
 
@@ -19,6 +47,7 @@ the platform's driver (`backend/app/tools/firmware_upgrade/drivers/`).
 - [ ] The Upgrade jobs tab shows no "worker isn't running" banner.
 - [ ] The lab devices are in NetOps, with a backup account and an **upgrade account** (Upgrade settings).
 - [ ] Firmware › Versions › Check now reads the model and version of each device correctly.
+- [ ] A capture of each lab device: `sudo netops-cli capture <device>` (see above).
 - [ ] The SCP server is enabled on each device (see upgrades.md).
 - [ ] The firewall allows SSH, and HTTPS to the FTDs, FortiGates and PAN-OS firewalls, from the server (`FDM_HOSTS`).
 - [ ] The images are uploaded with the vendor checksum (they show "verified").
@@ -145,13 +174,14 @@ device each. Commands and accounts: [vendors.md](vendors.md).
       line changes on every run.)
 - [ ] The backup holds the whole configuration, including secrets where the vendor shows
       them (FortiGate: masked on purpose).
-- [ ] **Version check:** `sudo netops-cli firmware-check <device> --raw` shows the right
-      version, model and serial, and the HA or cluster role on firewalls.
+- [ ] **Capture:** `sudo netops-cli capture <device>` (see "Capturing a device" above). Its
+      summary shows the right version, model and serial, the HA or cluster role on
+      firewalls, and sensible MAC/ARP counts on switches. Send the file either way: it
+      replaces the documentation sample.
 - [ ] **Circuits** (switches): the 7a tests above. Also check that a port-channel or LAG and
       an LLDP uplink to another switch are *not* used as a circuit's location.
-- If anything is read wrong, send the `--raw` output (and the MAC table and LLDP output for
-  circuits). Replace the sample in `backend/tests/vendor_samples.py` with the real output and
-  fix the reader so the test passes.
+- If anything is read wrong, the capture file has every output needed. Replace the sample in
+  `backend/tests/vendor_samples.py` with the real output and fix the reader so the test passes.
 
 ## 8. Operations
 
