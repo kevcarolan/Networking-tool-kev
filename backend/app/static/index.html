@@ -38,6 +38,7 @@
       <span id="site-name" class="site-name muted" hidden></span>
       <nav id="nav">
         <button data-view="backups" class="active" data-perm="backups:view">Config backups</button>
+        <button data-view="inventory">Inventory</button>
         <button data-view="firmware" data-perm="firmware:view|upgrades:view" data-module="firmware">Firmware</button>
         <button data-view="circuits" data-perm="circuits:view" data-module="circuits">Circuits</button>
         <button data-view="syslog" data-perm="syslog:view" data-module="syslog">Syslog</button>
@@ -215,6 +216,33 @@
             <tbody></tbody>
           </table>
           <p id="ct-empty" class="empty" hidden></p>
+        </div>
+      </section>
+
+      <!-- Network inventory -->
+      <section id="view-inventory" class="view" hidden>
+        <div id="inv-summary" class="tiles"></div>
+        <div class="toolbar">
+          <input id="inv-search" type="search" placeholder="Search any column…">
+          <select id="inv-type" aria-label="Type"><option value="">All types</option></select>
+          <select id="inv-site" aria-label="Site"><option value="">All sites</option></select>
+          <select id="inv-status" aria-label="Status"><option value="">All statuses</option></select>
+          <select id="inv-managed" aria-label="Managed">
+            <option value="">Managed and inventory only</option>
+            <option value="yes">Managed by the tools</option>
+            <option value="no">Inventory only</option>
+          </select>
+          <span class="spacer"></span>
+          <button id="inv-columns" title="Choose and order the columns you see">Columns</button>
+          <a class="button" href="/api/inventory/export.csv" download>CSV</a>
+          <a class="button" href="/api/inventory/export.xlsx" download>Excel</a>
+          <button id="inv-import" data-perm="inventory:manage">Import</button>
+          <button id="inv-fields" data-admin title="Add your own columns for everyone">Custom columns</button>
+          <button id="inv-add" class="primary" data-perm="inventory:manage">+ Add item</button>
+        </div>
+        <div class="table-wrap">
+          <table id="inv-table"><thead></thead><tbody></tbody></table>
+          <p id="inv-empty" class="empty" hidden></p>
         </div>
       </section>
 
@@ -437,6 +465,14 @@
   </dialog>
 
   <!-- Device detail -->
+  <dialog id="inv-dialog" class="wide">
+    <div class="detail-head">
+      <h2 id="inv-dialog-title"></h2>
+      <button id="inv-dialog-close" class="ghost" type="button">Close</button>
+    </div>
+    <div id="inv-dialog-body" class="form"></div>
+  </dialog>
+
   <dialog id="sl-help-dialog" class="wide">
     <div class="detail-head">
       <h2>Send syslog to this server</h2>

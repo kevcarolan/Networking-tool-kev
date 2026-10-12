@@ -35,6 +35,22 @@ The tiles at the top count each status.
   or download any version.
 * A failed device is tried again automatically, sooner than its normal schedule.
 
+## Inventory
+
+Everything on the network in one list, not only the devices the tools manage: servers,
+racks, UPSs, PDUs, patch panels and so on.
+
+* **Managed** rows are the devices the tools back up and check. Their model, serial
+  number and version come from the device (shown in grey). **Inventory only** rows are
+  just recorded.
+* Search any column, filter by type, site, status or managed, and click a name to see or
+  change the details.
+* **Columns**: choose which columns you see and their order (remembered for you).
+* **CSV** / **Excel**: export everything. **Import** (needs *Devices and credentials:
+  manage*) shows what would change before it changes anything.
+
+More: [inventory.md](../inventory.md).
+
 ## Firmware
 
 * **Versions:** for every device, its model, serial, software version, boot mode and free

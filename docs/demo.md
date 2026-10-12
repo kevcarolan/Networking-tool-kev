@@ -29,6 +29,9 @@ prints a link for the **wall display**: open it in a second window or on a big s
   building management, wireless). After the first scan, one has **moved** port and one is
   **not seen**.
 * **A wall display** called "Demo wall".
+* **An inventory** of 42 items: the 25 devices with their rack places, plus racks, UPSs,
+  PDUs, patch panels, servers, a storage array and a spare switch. There is a custom
+  column *Power feed*, a faulty UPS at Branch-North, and a spare switch in the stores.
 * **Syslog:** three days of messages from every device, at every severity, then a new one
   every few seconds (try **Live**). Some incidents run through them:
   * BGP between dc1-spine1 and dc1-leaf3 drops (hold timer expired) and comes back;

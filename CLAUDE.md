@@ -19,6 +19,7 @@ one database.
 | Firmware (version report, image library, upgrade jobs) | `backend/app/tools/firmware_upgrade/` | Built for every platform; needs lab testing ([docs/upgrades.md](docs/upgrades.md), [docs/upgrade-lab-tests.md](docs/upgrade-lab-tests.md)) |
 | Circuits (circuit list from Excel, live location from MAC/ARP tables) | `backend/app/tools/circuits/` | Done; live locations need lab testing ([docs/circuits.md](docs/circuits.md)) |
 | Syslog (receiver on 514, one file per day, search page, device setup help) | `backend/app/tools/syslog/` | Done ([docs/syslog.md](docs/syslog.md)) |
+| Network inventory (every device plus racks, servers, UPSs…; custom columns, import/export) | `backend/app/tools/inventory/` | Done ([docs/inventory.md](docs/inventory.md)) |
 | Users and activity (per-area permissions, activity report) | `backend/app/core/users.py`, `permissions.py` | Done ([docs/users.md](docs/users.md)) |
 
 Design docs: [docs/design.md](docs/design.md) (platform and backup tool),
@@ -127,6 +128,12 @@ remote); never sync the two automatically.
   address, matched to the inventory in `sources.py`. Suggested device configs per platform
   are in `howto.py`: add one for every new platform (a test checks). The demo fills it from
   `app/demo/syslog.py`.
+* Inventory (`tools/inventory/`): table `assets`, one row per thing; a row with `device_id`
+  is managed and every device gets one (`fields.sync_devices`, which also links an existing
+  row by name or address). Built-in columns are `fields.STANDARD` (page, import and export
+  all read it); admins' columns are `asset_fields`, their values JSON in `assets.custom`
+  under `x_<key>`. Values from the device (`Field.auto`) are shown where a row is empty.
+  Only `devices` count for the licence. Part of every licence.
 * Device access is always injectable (`fetcher=` / `fw_collector=` in `create_app`), so tests
   never touch SSH. Parser tests use real sample output in `app/demo/samples.py` (alias
   `tests/firmware_samples.py`); the newer vendors' samples (`app/demo/vendor_samples.py`) are

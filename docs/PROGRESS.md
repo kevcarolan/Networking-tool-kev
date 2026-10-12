@@ -29,6 +29,8 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 - [x] Wall display for NOC screens: overview and upgrades pages, own port (8443), per-screen links ([customer/admin-guide.md](customer/admin-guide.md#wall-displays))
 - [x] Security review of the whole product, with fixes (see the session log of 2026-10-12)
 - [x] Syslog: a central receiver (UDP/TCP 514) with a search page (device, severity, period, text, timeline), retention by days and size, suggested device configs per platform, demo messages ([syslog.md](syslog.md))
+- [x] Network inventory: every device plus anything else (racks, servers, UPSs…), admins' custom columns, per-person columns, import/export ([inventory.md](inventory.md))
+- [ ] Rack view: a picture of each rack from the inventory's Rack, Position and Height (owner: build later)
 - [ ] Later: one overview of several servers (the display feed is the starting point); several customers on one server kept as an idea
 
 ### Platform (inherited)
@@ -93,8 +95,19 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-12 | The circuit list is compared with the network every night at 03:00 by default (was Sundays 02:00) | The owner: nightly, late at night |
 | 2026-10-12 | Syslog over TLS (6514) is built in, off by default, switched on in netops.env; it reuses the web certificate through systemd LoadCredential, with optional device certificates | The owner: syslog may cross other networks; a port is a netops.env setting, and the key must stay root-only |
 | 2026-10-12 | One full install; the licence lists the tools it unlocks (backups, firmware, upgrades, circuits, syslog); one licence per customer, replaced to add a tool | The owner: unlock parts of one product rather than separate products; one licence keeps one end date and one device count |
+| 2026-10-12 | The inventory is one list (table `assets`): managed rows are linked to devices, inventory-only rows aren't and don't count for the licence | Everything in one place, and the tools keep working from `devices` |
+| 2026-10-12 | Admins add custom columns for everyone at the site; each person chooses and orders the columns they see (kept in their browser) | The owner: every customer's inventory is different |
 
 ## Open questions
+
+**Owner's to-do, in this order (remind the owner each session):**
+1. Testing of what is built (next).
+2. Product name (suggestions given 2026-10-12: NetKeep, Switchyard, Backplane, NetSteward,
+   Patchbay, OpsLedger, Uplinq, Rackwise, NetHarbour, Configra; check trademarks and
+   domains), then branding.
+3. Licence terms, editions and pricing: last.
+4. The licence signing key (`python -m app.licence_tool keygen`), any time before the first
+   customer licence.
 
 - Licence agreement: per installation or per site? Managed-service use? Support terms, warranty, liability cap, governing law ([legal/EULA-draft.md](legal/EULA-draft.md))
 
@@ -137,3 +150,4 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-12 | Networking-tool-kev | Email alerts per recipient, syslog alerts (Critical and worse, gathered), nightly circuit scan by default |
 | 2026-10-12 | Networking-tool-kev | Syslog over TLS: third listener (6514), web certificate via systemd, optional device certificates, TLS examples in the device help, receiver restarted on a new certificate |
 | 2026-10-12 | Networking-tool-kev | Licence modules: one install, the licence unlocks Config backups, Firmware, Upgrade jobs, Circuits and Syslog; locked tabs greyed out with a padlock; scheduled work and alerts follow the licence; signing tool --modules |
+| 2026-10-12 | Networking-tool-kev | Network inventory: assets table (migration 0005), devices linked automatically with model/serial/version from the device, inventory-only items, Manage this device, admins' custom columns, per-person columns, CSV/Excel export, import with preview; demo inventory of 42 items |

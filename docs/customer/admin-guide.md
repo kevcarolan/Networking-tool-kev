@@ -219,6 +219,19 @@ their results, overrides, and changes to devices, users and settings. Export it 
    report with the old and new values: whoever can edit devices decides where an
    account's password is sent.
 
+### The inventory
+
+**Inventory** lists every device plus anything else you record (servers, racks, UPSs…).
+Only devices the tools manage count towards the licence.
+
+* **Custom columns** (admins): add columns for everyone at the site, e.g. *Power feed*
+  as a pick-list.
+* **Import** a spreadsheet of your existing inventory first: when you then add the
+  devices on Config backups, they are linked to their rows by name or address.
+* **Manage this device…** in an item's form turns a recorded switch into a managed one.
+
+Details: [inventory.md](../inventory.md).
+
 ## 5. Live upgrades
 
 Every upgrade job can run as a **dry run**: it logs in and checks for real, but only
