@@ -101,10 +101,17 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 ## Open questions
 
 **Owner's to-do, in this order (remind the owner each session):**
-1. Testing of what is built (next).
-2. Product name (suggestions given 2026-10-12: NetKeep, Switchyard, Backplane, NetSteward,
-   Patchbay, OpsLedger, Uplinq, Rackwise, NetHarbour, Configra; check trademarks and
-   domains), then branding.
+1. Testing of what is built (next): the demo on the owner's computer, [try-it.md](try-it.md).
+2. Product name, then branding. Not decided yet (owner, 2026-10-12). Checked on the web:
+   * ruled out: NetKeeper / NetKeeper Pro (live US trademark NETKEEPER, reg. 4944745, network
+     management software), NetWeb (two companies), Backplane, Rackwise, Uplinq, Configra,
+     Portwarden (existing products); NetKeep is close to the NETKEEPER mark (risky);
+   * the owner likes NetLantern (no product found; "Lantern" is a known VPN tool, a
+     different field);
+   * looked clear: NetHarbour, OpsLedger, Netcairn, Wirebook, Switchkeep, NetSteward,
+     Lanward, Netquay, Opsbay, Netvale;
+   * still to do: domains (.com, .co.uk) and the UK/EU/US trademark registers, then a
+     trademark attorney's clearance search.
 3. Licence terms, editions and pricing: last.
 4. The licence signing key (`python -m app.licence_tool keygen`), any time before the first
    customer licence.
@@ -151,3 +158,4 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-12 | Networking-tool-kev | Syslog over TLS: third listener (6514), web certificate via systemd, optional device certificates, TLS examples in the device help, receiver restarted on a new certificate |
 | 2026-10-12 | Networking-tool-kev | Licence modules: one install, the licence unlocks Config backups, Firmware, Upgrade jobs, Circuits and Syslog; locked tabs greyed out with a padlock; scheduled work and alerts follow the licence; signing tool --modules |
 | 2026-10-12 | Networking-tool-kev | Network inventory: assets table (migration 0005), devices linked automatically with model/serial/version from the device, inventory-only items, Manage this device, admins' custom columns, per-person columns, CSV/Excel export, import with preview; demo inventory of 42 items |
+| 2026-10-12 | Networking-tool-kev | Demo launchers (run-demo.bat / run-demo.sh), a try-it guide with a test checklist, the demo runs on Windows (no fcntl needed); product names checked on the web |
