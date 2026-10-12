@@ -106,3 +106,13 @@ class DisplayScreen(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_seen_from: Mapped[str] = mapped_column(String(100), default="")
+
+
+class AlertSent(Base):
+    """An email alert that has been sent (alerts.py), so each event is sent only once."""
+
+    __tablename__ = "alerts_sent"
+
+    key: Mapped[str] = mapped_column(String(200), primary_key=True)  # e.g. job:12:completed
+    sent_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    subject: Mapped[str] = mapped_column(String(300), default="")
