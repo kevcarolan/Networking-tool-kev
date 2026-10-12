@@ -39,6 +39,7 @@
       <nav id="nav">
         <button data-view="backups" class="active" data-perm="backups:view">Config backups</button>
         <button data-view="inventory">Inventory</button>
+        <button data-view="sites">Sites</button>
         <button data-view="firmware" data-perm="firmware:view|upgrades:view" data-module="firmware">Firmware</button>
         <button data-view="circuits" data-perm="circuits:view" data-module="circuits">Circuits</button>
         <button data-view="syslog" data-perm="syslog:view" data-module="syslog">Syslog</button>
@@ -200,21 +201,18 @@
             <option value="live:no_address">Network: no MAC or IP</option>
           </select>
           <span class="spacer"></span>
+          <button id="ct-columns" title="Choose and order the columns you see">Columns</button>
           <a class="button" href="/api/circuits/export.csv" download>Export CSV</a>
           <a class="button" href="/api/circuits/export-updated.xlsx" download
              title="The list with DEVICE and PORT filled in from the network">Updated sheet</a>
           <button id="ct-history">Import history</button>
           <button id="ct-scan" data-perm="circuits:manage" title="Read the MAC and ARP tables of every device now">Scan network now</button>
+          <button id="ct-template" title="A blank sheet with the column names, to fill in and upload">Blank template</button>
+          <button id="ct-fields" data-admin title="Add your own columns for everyone">Custom columns</button>
           <button id="ct-upload" class="primary" data-perm="circuits:manage">Upload spreadsheet</button>
         </div>
         <div class="table-wrap">
-          <table id="ct-table">
-            <thead><tr>
-              <th></th><th>Service</th><th>Device</th><th>Type / make</th><th>MAC</th><th>Location</th>
-              <th>IP</th><th>VLAN</th><th>Switch / port (list)</th><th>On the network</th><th>Drawing</th>
-            </tr></thead>
-            <tbody></tbody>
-          </table>
+          <table id="ct-table"><thead></thead><tbody></tbody></table>
           <p id="ct-empty" class="empty" hidden></p>
         </div>
       </section>
@@ -236,6 +234,7 @@
           <button id="inv-columns" title="Choose and order the columns you see">Columns</button>
           <a class="button" href="/api/inventory/export.csv" download>CSV</a>
           <a class="button" href="/api/inventory/export.xlsx" download>Excel</a>
+          <button id="inv-template" title="A blank sheet with the column names, to fill in and import">Blank template</button>
           <button id="inv-import" data-perm="inventory:manage">Import</button>
           <button id="inv-fields" data-admin title="Add your own columns for everyone">Custom columns</button>
           <button id="inv-add" class="primary" data-perm="inventory:manage">+ Add item</button>
@@ -243,6 +242,29 @@
         <div class="table-wrap">
           <table id="inv-table"><thead></thead><tbody></tbody></table>
           <p id="inv-empty" class="empty" hidden></p>
+        </div>
+      </section>
+
+      <section id="view-sites" class="view" hidden>
+        <div id="site-summary" class="tiles"></div>
+        <div id="site-unlisted" class="notice" hidden></div>
+        <div class="toolbar">
+          <input id="site-search" type="search" placeholder="Search any column…">
+          <select id="site-type" aria-label="Type"><option value="">All types</option></select>
+          <select id="site-region" aria-label="Region"><option value="">All regions</option></select>
+          <select id="site-status" aria-label="Status"><option value="">All statuses</option></select>
+          <span class="spacer"></span>
+          <button id="site-columns" title="Choose and order the columns you see">Columns</button>
+          <a class="button" href="/api/sites/export.csv" download>CSV</a>
+          <a class="button" href="/api/sites/export.xlsx" download>Excel</a>
+          <button id="site-template" title="A blank sheet with the column names, to fill in and import">Blank template</button>
+          <button id="site-import" data-perm="inventory:manage">Import</button>
+          <button id="site-fields" data-admin title="Add your own columns for everyone">Custom columns</button>
+          <button id="site-add" class="primary" data-perm="inventory:manage">+ Add site</button>
+        </div>
+        <div class="table-wrap">
+          <table id="site-table"><thead></thead><tbody></tbody></table>
+          <p id="site-empty" class="empty" hidden></p>
         </div>
       </section>
 
@@ -473,6 +495,14 @@
     <div id="inv-dialog-body" class="form"></div>
   </dialog>
 
+  <dialog id="site-dialog" class="wide">
+    <div class="detail-head">
+      <h2 id="site-dialog-title"></h2>
+      <button id="site-dialog-close" class="ghost" type="button">Close</button>
+    </div>
+    <div id="site-dialog-body" class="form"></div>
+  </dialog>
+
   <dialog id="sl-help-dialog" class="wide">
     <div class="detail-head">
       <h2>Send syslog to this server</h2>
@@ -559,13 +589,23 @@
       <button id="ct-upload-close" class="ghost">Close</button>
     </div>
     <form id="ct-upload-form" class="form">
-      <p class="muted">Choose the master circuit list workbook (.xlsx). It is checked and shown here
-        first; the live list only changes when you click <b>Make this the live list</b>.</p>
-      <label>Workbook <input name="file" type="file" accept=".xlsx,.xlsm" required></label>
+      <p class="muted">Choose the master circuit list: an Excel workbook (.xlsx) or a CSV file, such as
+        a filled-in <b>Blank template</b>. It is checked and shown here first; the live list only
+        changes when you click <b>Make this the live list</b>.</p>
+      <label>File <input name="file" type="file" accept=".xlsx,.xlsm,.csv" required></label>
       <p class="error" hidden></p>
       <div class="dialog-actions"><button class="primary" value="check">Check file</button></div>
     </form>
     <div id="ct-preview" hidden></div>
+  </dialog>
+
+  <!-- Circuits: columns, custom columns, blank template -->
+  <dialog id="ct-dialog" class="wide">
+    <div class="detail-head">
+      <h2 id="ct-dialog-title"></h2>
+      <button id="ct-dialog-close" class="ghost" type="button">Close</button>
+    </div>
+    <div id="ct-dialog-body" class="form"></div>
   </dialog>
 
   <!-- Circuit import history -->

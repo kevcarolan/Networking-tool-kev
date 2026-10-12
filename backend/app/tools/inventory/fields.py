@@ -68,11 +68,13 @@ STANDARD: tuple[Field, ...] = (
 BY_KEY = {f.key: f for f in STANDARD}
 
 
-def custom_fields(db: Session) -> list[Field]:
-    from app.tools.inventory.models import AssetField
+def custom_fields(db: Session, model=None) -> list[Field]:
+    """The admins' columns: the inventory's (AssetField) or another list's (``model``)."""
+    if model is None:
+        from app.tools.inventory.models import AssetField as model
 
     return [Field(f"x_{c.key}", c.label, "Custom", c.kind, tuple(json.loads(c.choices or "[]")))
-            for c in db.scalars(select(AssetField).order_by(AssetField.position, AssetField.id))]
+            for c in db.scalars(select(model).order_by(model.position, model.id))]
 
 
 def all_fields(db: Session) -> list[Field]:

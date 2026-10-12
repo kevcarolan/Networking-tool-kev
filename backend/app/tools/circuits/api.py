@@ -6,19 +6,22 @@ from collections import defaultdict
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
-from sqlalchemy import delete, select
+from pydantic import BaseModel
+from pydantic import Field as PField
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.core import exports
 from app.core.audit import audit
-from app.core.auth import User, require
+from app.core.auth import User, require, require_admin
 from app.core.db import get_db, session_scope, utcnow
 from app.core.models import Device
-from app.tools.circuits.importer import (FIELDS, CircuitImportError, diff, match_switches,
-                                         parse_workbook, row_key)
+from app.tools.circuits.importer import (_HEADERS, FIELDS, LABELS, CircuitImportError, _norm_header,
+                                         diff, match_switches, parse_csv, parse_workbook,
+                                         row_key)
 from app.tools.circuits import live
-from app.tools.circuits.models import (ACTIVE, PENDING, SUPERSEDED, Circuit, CircuitImport,
-                                       CircuitScan)
+from app.tools.circuits.models import (ACTIVE, PENDING, SUPERSEDED, Circuit, CircuitField,
+                                       CircuitImport, CircuitScan)
 from app.tools.circuits.store import LiveIndex
 
 router = APIRouter(prefix="/api/circuits", tags=["circuits"])
@@ -26,14 +29,17 @@ router = APIRouter(prefix="/api/circuits", tags=["circuits"])
 CIRCUITS_VIEW = require("circuits", "view")
 CIRCUITS_MANAGE = require("circuits", "manage")
 
-CSV_HEADERS = {
-    "ip_partition": "IP Partition", "service": "Service", "eng_prefix": "Engineering prefix",
-    "device_name": "Device Name", "device_type": "Device Type", "manufacturer": "Manufacturer",
-    "mac": "Hardware Mac Address", "floor": "Floor Level", "room": "Room / Area",
-    "ip": "IP Address", "mask": "Subnet Mask", "gateway": "Default Gateway", "vlan": "VLAN",
-    "conn_type": "TYPE", "port": "PORT", "switch": "DEVICE", "drawing_number": "Drawing Number",
-    "drawing_ref": "Device Drawing Reference",
-}
+CSV_HEADERS = LABELS
+
+
+def _custom(db: Session) -> list[CircuitField]:
+    """The columns admins added, in order."""
+    return list(db.scalars(select(CircuitField).order_by(CircuitField.position, CircuitField.id)))
+
+
+def _custom_headers(db: Session) -> dict[str, str]:
+    """Normalised column name -> x_<key>, for reading uploads."""
+    return {_norm_header(f.label): f"x_{f.key}" for f in _custom(db)}
 
 
 def _active(db: Session) -> CircuitImport | None:
@@ -53,6 +59,7 @@ def _matches(db: Session, rows) -> dict[str, tuple[str, list[int]]]:
 def _row_out(c: Circuit, matches: dict, names: dict[int, str], idx: LiveIndex | None = None) -> dict:
     status, ids = matches.get(c.switch_norm, ("none", []))
     out = {f: getattr(c, f) for f in FIELDS}
+    out.update({f"x_{k}": v for k, v in json.loads(c.custom or "{}").items()})
     doc_id = ids[0] if status == "matched" else None
     out.update(id=c.id, row_no=c.row_no, port_norm=c.port_norm, warnings=c.warnings,
                match=status if c.switch_norm else "none",
@@ -125,14 +132,14 @@ def list_circuits(db: Session = Depends(get_db), _: User = Depends(CIRCUITS_VIEW
 
 @router.get("/export.csv")
 def export_csv(db: Session = Depends(get_db), _: User = Depends(CIRCUITS_VIEW)):
-    imp = _active(db)
+    custom = [f"x_{f.key}" for f in _custom(db)]
     out = io.StringIO()
     w = exports.csv_writer(out)
-    w.writerow([CSV_HEADERS[f] for f in FIELDS] + ["Matched inventory device", "Warnings"]
-               + LIVE_HEADERS)
+    w.writerow([CSV_HEADERS[f] for f in FIELDS] + [f.label for f in _custom(db)]
+               + ["Matched inventory device", "Warnings"] + LIVE_HEADERS)
     for r in _export_rows(db):
-        w.writerow([r[f] for f in FIELDS] + [r["switch_device_name"] or r["match"],
-                                              r["warnings"]] + _live_cells(r))
+        w.writerow([r[f] for f in FIELDS] + [r.get(k, "") for k in custom]
+                   + [r["switch_device_name"] or r["match"], r["warnings"]] + _live_cells(r))
     return Response(out.getvalue(), media_type="text/csv", headers={
         "Content-Disposition": 'attachment; filename="circuit-list.csv"'})
 
@@ -172,8 +179,9 @@ def export_updated(db: Session = Depends(get_db), _: User = Depends(CIRCUITS_VIE
     wb = Workbook()
     ws = wb.active
     ws.title = "Circuits"
-    ws.append([CSV_HEADERS[f] for f in FIELDS] + ["Documented DEVICE", "Documented PORT"]
-              + LIVE_HEADERS)
+    custom = _custom(db)
+    ws.append([CSV_HEADERS[f] for f in FIELDS] + [f.label for f in custom]
+              + ["Documented DEVICE", "Documented PORT"] + LIVE_HEADERS)
     for cell in ws[1]:
         cell.font = Font(bold=True)
     for r in _export_rows(db):
@@ -182,14 +190,123 @@ def export_updated(db: Session = Depends(get_db), _: User = Depends(CIRCUITS_VIE
         if found:
             values["switch"], values["port"] = r["live_switch"], r["live_port"]
             values["vlan"] = r["vlan"] or r["live_vlan"]
-        exports.append_row(ws, [values[f] for f in FIELDS] + [r["switch"], r["port"]]
-                           + _live_cells(r))
+        exports.append_row(ws, [values[f] for f in FIELDS]
+                           + [r.get(f"x_{f.key}", "") for f in custom]
+                           + [r["switch"], r["port"]] + _live_cells(r))
     ws.freeze_panes = "A2"
     buf = io.BytesIO()
     wb.save(buf)
     return Response(buf.getvalue(), headers={
         "Content-Disposition": 'attachment; filename="circuit-list-updated.xlsx"'},
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        media_type=exports.XLSX_TYPE)
+
+
+# --- the columns: the built-in ones, the admins' own, and blank templates -----------------------
+
+# Columns in exports that an upload ignores: a custom column can't take these names.
+_EXPORT_ONLY = ["Matched inventory device", "Warnings", "Documented DEVICE", "Documented PORT",
+                *LIVE_HEADERS]
+
+
+def _fields(db: Session) -> list[dict]:
+    return [{"key": f, "label": LABELS[f], "custom": False} for f in FIELDS] + [
+        {"key": f"x_{c.key}", "label": c.label, "custom": True} for c in _custom(db)]
+
+
+@router.get("/meta")
+def meta(db: Session = Depends(get_db), user: User = Depends(CIRCUITS_VIEW)):
+    return {"fields": _fields(db), "can_manage": user.can("circuits", "manage")}
+
+
+class FieldIn(BaseModel):
+    label: str = PField(min_length=1, max_length=100)
+
+
+def _check_label(db: Session, label: str, exclude: int | None = None) -> str:
+    label = label.strip()
+    norm = _norm_header(label)
+    if not norm:
+        raise HTTPException(422, "Give the column a name with letters or digits")
+    taken = set(_HEADERS) | {_norm_header(x) for x in _EXPORT_ONLY} | {
+        _norm_header(c.label) for c in _custom(db) if c.id != exclude}
+    if norm in taken:
+        raise HTTPException(422, f"There is already a column called {label} (or the import "
+                                 "reads that name as a built-in column)")
+    return label
+
+
+@router.post("/fields", status_code=201)
+def add_field(body: FieldIn, db: Session = Depends(get_db), user: User = Depends(require_admin)):
+    label = _check_label(db, body.label)
+    base = key = "_".join(_norm_header(label).split())[:40]
+    n = 2
+    while db.scalar(select(CircuitField.id).where(CircuitField.key == key)):
+        key, n = f"{base}_{n}", n + 1
+    position = (db.scalar(select(func.max(CircuitField.position))) or 0) + 1
+    db.add(CircuitField(key=key, label=label, position=position))
+    db.flush()
+    audit(db, user.username, "circuits.column_add", label)
+    return {"key": f"x_{key}"}
+
+
+def _field(db: Session, key: str) -> CircuitField:
+    f = db.scalar(select(CircuitField).where(CircuitField.key == key.removeprefix("x_")))
+    if f is None:
+        raise HTTPException(404, "No such column")
+    return f
+
+
+@router.put("/fields/{key}")
+def rename_field(key: str, body: FieldIn, db: Session = Depends(get_db),
+                 user: User = Depends(require_admin)):
+    f = _field(db, key)
+    old, f.label = f.label, _check_label(db, body.label, exclude=f.id)
+    audit(db, user.username, "circuits.column_change", f"{old} -> {f.label}")
+    return {"key": f"x_{f.key}"}
+
+
+@router.delete("/fields/{key}", status_code=204)
+def delete_field(key: str, db: Session = Depends(get_db), user: User = Depends(require_admin)):
+    f = _field(db, key)
+    for c in db.scalars(select(Circuit).where(Circuit.custom.like(f'%"{f.key}"%'))):
+        values = json.loads(c.custom or "{}")
+        values.pop(f.key, None)
+        c.custom = json.dumps(values)
+    db.delete(f)
+    audit(db, user.username, "circuits.column_delete", f.label)
+    return Response(status_code=204)
+
+
+TEMPLATE_NOTES = [
+    "Fill in one row per circuit on the first sheet, under the column names, then upload the file "
+    "on the Circuits page (Upload spreadsheet).",
+    "Keep the column names as they are. Columns can be in any order, and you can delete the ones "
+    "you don't use.",
+    "Each row needs a Hardware Mac Address or an IP Address: the tools find the circuit on the "
+    "network from it.",
+    "DEVICE and PORT are the switch and port the circuit is documented on (e.g. ACC-SW01, Gi1/0/5). "
+    "They can be left empty: the network scan fills in where each circuit is.",
+    "VLAN: a number from 1 to 4094. MAC: any format (0011.2233.4455, 00:11:22:33:44:55, ...).",
+    "The upload replaces the whole list: rows not in the file are removed from it. You see what "
+    "changes before it is made live.",
+]
+
+
+@router.get("/template.{fmt}")
+def template(fmt: str, columns: str = Query("", max_length=4000), db: Session = Depends(get_db),
+             _: User = Depends(CIRCUITS_VIEW)):
+    """A blank circuit list to fill in: the chosen columns (``columns``: keys separated by
+    commas), or every column. The MAC and IP address columns are always in it."""
+    if fmt not in ("csv", "xlsx"):
+        raise HTTPException(404, "Use template.csv or template.xlsx")
+    fields = {f["key"]: f["label"] for f in _fields(db)}
+    keys = [k for k in dict.fromkeys(c.strip() for c in columns.split(",")) if k in fields] \
+        or list(fields)
+    for needed in ("ip", "mac"):
+        if needed not in keys:
+            keys.insert(0, needed)
+    return exports.template(fmt, [fields[k] for k in keys], "circuit-list-template",
+                            TEMPLATE_NOTES, sheet="Circuits")
 
 
 @router.get("/for-device/{device_id}")
@@ -285,7 +402,7 @@ def get_import(import_id: int, db: Session = Depends(get_db), _: User = Depends(
 @router.put("/imports/upload", status_code=201)
 async def upload(request: Request, filename: str = Query(..., max_length=255),
                  user: User = Depends(CIRCUITS_MANAGE)):
-    """Upload a spreadsheet (raw .xlsx body). It is checked and kept as a pending
+    """Upload a spreadsheet (raw .xlsx or .csv body). It is checked and kept as a pending
     import with a preview; nothing changes until it is committed."""
     limit = request.app.state.settings.circuits_max_upload_mb * 2**20
     body = bytearray()
@@ -293,10 +410,17 @@ async def upload(request: Request, filename: str = Query(..., max_length=255),
         body += chunk
         if len(body) > limit:
             raise HTTPException(413, f"File is larger than {limit // 2**20} MB")
-    if not filename.lower().endswith((".xlsx", ".xlsm")):
-        raise HTTPException(422, "Upload an Excel workbook (.xlsx)")
+    name = filename.lower()
+    if name.endswith((".xlsx", ".xlsm")):
+        parse = parse_workbook
+    elif name.endswith(".csv"):
+        parse = parse_csv
+    else:
+        raise HTTPException(422, "Upload an Excel workbook (.xlsx) or a CSV file")
+    with session_scope() as db:
+        custom = _custom_headers(db)
     try:
-        parsed = await run_in_threadpool(parse_workbook, bytes(body))
+        parsed = await run_in_threadpool(parse, bytes(body), custom=custom)
     except CircuitImportError as exc:
         raise HTTPException(422, str(exc)) from None
     return await run_in_threadpool(_store_pending, parsed, filename, user.username)
@@ -314,7 +438,8 @@ def _store_pending(parsed, filename: str, username: str) -> dict:
         db.flush()
         db.add_all(Circuit(import_id=imp.id, row_no=r.row_no, switch_norm=r.switch_norm,
                            port_norm=r.port_norm, mac_norm=r.mac_norm,
-                           warnings="; ".join(r.warnings), **r.values) for r in parsed.rows)
+                           warnings="; ".join(r.warnings), custom=json.dumps(r.custom),
+                           **r.values) for r in parsed.rows)
         db.flush()
 
         new_rows = _rows(db, imp.id)
@@ -323,11 +448,19 @@ def _store_pending(parsed, filename: str, username: str) -> dict:
         matches = _matches(db, new_rows)
         unmatched = sorted({k for k, (s, _) in matches.items() if s == "unmatched"})
         ambiguous = sorted({k for k, (s, _) in matches.items() if s == "ambiguous"})
-        values = lambda c: {f: getattr(c, f) for f in FIELDS}  # noqa: E731
+        labels = {f["key"]: f["label"] for f in _fields(db)}
+        compared = list(labels)
+
+        def values(c):
+            custom = json.loads(c.custom or "{}")
+            return {**{f: getattr(c, f) for f in FIELDS},
+                    **{k: custom.get(k[2:], "") for k in compared if k.startswith("x_")}}
+
         summary = {
             "header_row": parsed.header_row,
             "columns": parsed.columns,
-            "missing_columns": [f for f in FIELDS if f not in parsed.columns],
+            "labels": labels,
+            "missing_columns": [label for k, label in labels.items() if k not in parsed.columns],
             "switches": len(matches),
             "unmatched_switches": unmatched,
             "ambiguous_switches": ambiguous,
@@ -336,7 +469,8 @@ def _store_pending(parsed, filename: str, username: str) -> dict:
             "warnings_sample": [{"row": c.row_no, "warnings": c.warnings}
                                 for c in new_rows if c.warnings][:100],
             "diff": diff([(row_key(values(c), c.mac_norm), values(c)) for c in old_rows],
-                         [(row_key(values(c), c.mac_norm), values(c)) for c in new_rows]),
+                         [(row_key(values(c), c.mac_norm), values(c)) for c in new_rows],
+                         fields=compared),
             "replaces_import": active.id if active else None,
         }
         imp.summary = json.dumps(summary, default=str)

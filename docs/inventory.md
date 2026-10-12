@@ -53,6 +53,16 @@ Find it under **Inventory** in the top bar.
   3. A file with errors isn't imported: fix the rows it lists and choose the file again.
   4. Columns it doesn't know are listed. An admin can add them as custom columns first.
 * An export imported back changes nothing, so you can export, edit in Excel and import.
+* **Blank template** gives a sheet with only the column names, as CSV or Excel: **the
+  columns I see** or **every column**. *Name* is always in it. The Excel version has
+  pick-lists for *Type*, *Status* and pick-list custom columns, and a second sheet on how
+  to fill it in. Fill it in and **Import** it.
+
+## Sites
+
+The **Sites** page lists the sites themselves (data centres, offices, branches...). An item
+is at a site when its *Site* is the site's **name or code**. See [sites.md](sites.md). In
+the item form, *Site* suggests the names on the site list.
 
 ## Who can do what
 

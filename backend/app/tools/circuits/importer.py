@@ -1,9 +1,11 @@
-"""Reads the master circuit list spreadsheet (.xlsx), and the rules for
-linking a row to a NetOps device and interface.
+"""Reads the master circuit list (an .xlsx workbook or a CSV file), and the rules for
+linking a row to a device and interface.
 
 The header is found by its column names (not by position), so column order and
-the coloured band rows above it don't matter."""
+the coloured band rows above it don't matter. Columns an admin adds (``ct_fields``)
+are read by their name too; their values are kept in ``Circuit.custom``."""
 
+import csv
 import io
 import ipaddress
 import re
@@ -15,6 +17,16 @@ FIELDS = (
     "mac", "floor", "room", "ip", "mask", "gateway", "vlan", "conn_type", "port", "switch",
     "drawing_number", "drawing_ref",
 )
+
+# The column names in exports and blank templates (each is also a header the import knows).
+LABELS = {
+    "ip_partition": "IP Partition", "service": "Service", "eng_prefix": "Engineering prefix",
+    "device_name": "Device Name", "device_type": "Device Type", "manufacturer": "Manufacturer",
+    "mac": "Hardware Mac Address", "floor": "Floor Level", "room": "Room / Area",
+    "ip": "IP Address", "mask": "Subnet Mask", "gateway": "Default Gateway", "vlan": "VLAN",
+    "conn_type": "TYPE", "port": "PORT", "switch": "DEVICE", "drawing_number": "Drawing Number",
+    "drawing_ref": "Device Drawing Reference",
+}
 
 # Header text (normalised: lower case, letters/digits only, single spaces) -> field
 _HEADERS = {
@@ -54,13 +66,14 @@ class ParsedRow:
     port_norm: str
     mac_norm: str
     warnings: list[str] = field(default_factory=list)
+    custom: dict[str, str] = field(default_factory=dict)  # custom column key -> value
 
 
 @dataclass
 class ParsedSheet:
     sheet: str
     header_row: int
-    columns: dict[str, str]  # field -> header text found
+    columns: dict[str, str]  # field (or x_<custom key>) -> header text found
     rows: list[ParsedRow]
 
 
@@ -167,14 +180,24 @@ def _validate(v: dict[str, str]) -> list[str]:
 
 # --- reading the workbook ---------------------------------------------------
 
-def _find_header(rows: list[tuple]) -> tuple[int, dict[int, str], dict[str, str]] | None:
+def _find_header(rows: list[tuple], custom: dict[str, str] | None = None
+                 ) -> tuple[int, dict[int, str], dict[str, str]] | None:
+    """The header row: one with at least MIN_HEADER_MATCHES known column names, or one
+    where every name is known (a blank template with only a few columns ticked).
+    ``custom`` maps a custom column's normalised name to ``x_<key>``."""
+    known = {**_HEADERS, **(custom or {})}
     for idx, row in enumerate(rows):
-        mapping, found = {}, {}
+        mapping, found, unknown = {}, {}, 0
         for col, cell in enumerate(row):
-            fld = _HEADERS.get(_norm_header(cell))
+            name = _norm_header(cell)
+            fld = known.get(name)
             if fld and fld not in found:
                 mapping[col], found[fld] = fld, _cell(cell)
-        if len(found) >= MIN_HEADER_MATCHES:
+            elif name and not fld:
+                unknown += 1
+        standard = sum(1 for f in found if not f.startswith("x_"))
+        if standard >= MIN_HEADER_MATCHES or (
+                not unknown and len(found) >= 2 and ("mac" in found or "ip" in found)):
             return idx, mapping, found
     return None
 
@@ -195,7 +218,49 @@ def _check_unpacked_size(data: bytes) -> None:
             "Excel without unused rows, columns or pictures")
 
 
-def parse_workbook(data: bytes, max_rows: int = 50000) -> ParsedSheet:
+_NOT_FOUND = ("No sheet has the circuit list header (e.g. 'Device Name', 'IP Address', 'VLAN', "
+              "'PORT', 'DEVICE') in its first 15 rows")
+
+
+def _read_sheet(title: str, head: list[tuple], rows_after, custom: dict[str, str] | None,
+                max_rows: int) -> ParsedSheet | None:
+    """One sheet: ``head`` is its first 15 rows, ``rows_after(n)`` its rows from row n
+    (1-based). None when the sheet has no circuit list header."""
+    found = _find_header(head, custom)
+    if not found:
+        return None
+    header_idx, mapping, columns = found
+    missing = [f for f in REQUIRED if f not in columns]
+    if missing:
+        raise CircuitImportError(f"Sheet '{title}': columns {', '.join(missing)} not found")
+    if "mac" not in columns and "ip" not in columns:
+        raise CircuitImportError(
+            f"Sheet '{title}': neither 'Hardware Mac Address' nor 'IP Address' "
+            "was found - one of them is needed to find each circuit")
+    rows = []
+    start = header_idx + 2  # 1-based row number of the first data row
+    for row_no, raw in enumerate(rows_after(start), start):
+        values = {f: "" for f in FIELDS}
+        extra = {}
+        for col, fld in mapping.items():
+            if col < len(raw):
+                if fld.startswith("x_"):
+                    extra[fld[2:]] = _cell(raw[col])[:500]
+                else:
+                    values[fld] = _cell(raw[col])
+        if not any(values.values()) and not any(extra.values()):
+            continue
+        if len(rows) >= max_rows:
+            raise CircuitImportError(f"More than {max_rows} rows - is this the right sheet?")
+        rows.append(ParsedRow(
+            row_no=row_no, values=values, switch_norm=normalize_switch(values["switch"]),
+            port_norm=normalize_port(values["port"]), mac_norm=normalize_mac(values["mac"]),
+            warnings=_validate(values), custom={k: v for k, v in extra.items() if v}))
+    return ParsedSheet(sheet=title, header_row=header_idx + 1, columns=columns, rows=rows)
+
+
+def parse_workbook(data: bytes, max_rows: int = 50000,
+                   custom: dict[str, str] | None = None) -> ParsedSheet:
     from openpyxl import load_workbook
 
     _check_unpacked_size(data)
@@ -206,39 +271,40 @@ def parse_workbook(data: bytes, max_rows: int = 50000) -> ParsedSheet:
     try:
         for ws in wb.worksheets:
             head = [tuple(r) for r in ws.iter_rows(min_row=1, max_row=15, values_only=True)]
-            found = _find_header(head)
-            if not found:
-                continue
-            header_idx, mapping, columns = found
-            missing = [f for f in REQUIRED if f not in columns]
-            if missing:
-                raise CircuitImportError(
-                    f"Sheet '{ws.title}': columns {', '.join(missing)} not found")
-            if "mac" not in columns and "ip" not in columns:
-                raise CircuitImportError(
-                    f"Sheet '{ws.title}': neither 'Hardware Mac Address' nor 'IP Address' "
-                    "was found - one of them is needed to find each circuit")
-            rows = []
-            start = header_idx + 2  # 1-based row number of the first data row
-            for row_no, raw in enumerate(ws.iter_rows(min_row=start, values_only=True), start):
-                values = {f: "" for f in FIELDS}
-                for col, fld in mapping.items():
-                    if col < len(raw):
-                        values[fld] = _cell(raw[col])
-                if not any(values.values()):
-                    continue
-                if len(rows) >= max_rows:
-                    raise CircuitImportError(f"More than {max_rows} rows - is this the right sheet?")
-                rows.append(ParsedRow(
-                    row_no=row_no, values=values, switch_norm=normalize_switch(values["switch"]),
-                    port_norm=normalize_port(values["port"]), mac_norm=normalize_mac(values["mac"]),
-                    warnings=_validate(values)))
-            return ParsedSheet(sheet=ws.title, header_row=header_idx + 1, columns=columns,
-                               rows=rows)
+            parsed = _read_sheet(ws.title, head,
+                                 lambda n, ws=ws: ws.iter_rows(min_row=n, values_only=True),
+                                 custom, max_rows)
+            if parsed:
+                return parsed
     finally:
         wb.close()
-    raise CircuitImportError("No sheet has the circuit list header (e.g. 'Device Name', "
-                       "'IP Address', 'VLAN', 'PORT', 'DEVICE') in its first 15 rows")
+    raise CircuitImportError(_NOT_FOUND)
+
+
+def parse_csv(data: bytes, max_rows: int = 50000,
+              custom: dict[str, str] | None = None) -> ParsedSheet:
+    """A CSV file: comma, semicolon or tab separated (Excel uses ';' in some countries),
+    UTF-8 or Windows text."""
+    if data[:2] == b"PK":
+        raise CircuitImportError("This is an Excel workbook: name it .xlsx, or save it as CSV")
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = data.decode("cp1252", errors="replace")
+    first = next((line for line in text.splitlines() if line.strip()), "")
+    delimiter = max(",;\t", key=first.count) if first else ","
+    try:
+        table = []
+        for row in csv.reader(io.StringIO(text), delimiter=delimiter):
+            table.append(tuple(row))
+            if len(table) > max_rows + 20:
+                break
+    except csv.Error as exc:
+        raise CircuitImportError(f"Not a readable CSV file ({exc})") from None
+    parsed = _read_sheet("CSV", table[:15], lambda n: table[n - 1:], custom, max_rows)
+    if parsed is None:
+        raise CircuitImportError(_NOT_FOUND.replace("No sheet has", "The file doesn't have"))
+    return parsed
 
 
 # --- comparing two versions of the list -------------------------------------
@@ -252,8 +318,9 @@ def row_key(values: dict[str, str], mac_norm: str) -> str:
     return f"port:{normalize_switch(values.get('switch', ''))}/{normalize_port(values.get('port', ''))}"
 
 
-def diff(old: list[tuple[str, dict]], new: list[tuple[str, dict]], sample: int = 50) -> dict:
-    """Compare (key, values) lists. Duplicate keys are compared in order."""
+def diff(old: list[tuple[str, dict]], new: list[tuple[str, dict]], sample: int = 50,
+         fields: tuple[str, ...] | list[str] = FIELDS) -> dict:
+    """Compare (key, values) lists on ``fields``. Duplicate keys are compared in order."""
     def index(rows):
         out, seen = {}, {}
         for key, values in rows:
@@ -267,9 +334,9 @@ def diff(old: list[tuple[str, dict]], new: list[tuple[str, dict]], sample: int =
     removed = [k for k in o if k not in n]
     changed = []
     for k in n.keys() & o.keys():
-        fields = [f for f in FIELDS if (o[k].get(f) or "") != (n[k].get(f) or "")]
-        if fields:
-            changed.append((k, fields))
+        diffs = [f for f in fields if (o[k].get(f) or "") != (n[k].get(f) or "")]
+        if diffs:
+            changed.append((k, diffs))
 
     def label(values):
         return values.get("device_name") or values.get("mac") or \

@@ -332,3 +332,10 @@ table.recipients input[type=email] { min-width: 220px; }
 .col-list li:hover { background: var(--bg); }
 .col-list .spacer { flex: 1; }
 .inv-plan { max-height: 40vh; overflow: auto; font-size: 13px; }
+
+/* A note above a table, e.g. site names the inventory uses that aren't on the site list */
+.notice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; padding: 8px 12px;
+  border: 1px solid var(--border); border-left: 4px solid var(--warn); border-radius: var(--radius);
+  background: var(--warn-bg); color: var(--text); }
+.count-link { cursor: pointer; color: var(--accent); }
+.count-link:hover { text-decoration: underline; }

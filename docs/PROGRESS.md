@@ -30,6 +30,9 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 - [x] Security review of the whole product, with fixes (see the session log of 2026-10-12)
 - [x] Syslog: a central receiver (UDP/TCP 514) with a search page (device, severity, period, text, timeline), retention by days and size, suggested device configs per platform, demo messages ([syslog.md](syslog.md))
 - [x] Network inventory: every device plus anything else (racks, servers, UPSs…), admins' custom columns, per-person columns, import/export ([inventory.md](inventory.md))
+- [x] Circuit list like the inventory: admins' custom columns (read from uploads by name), per-person columns, CSV uploads, blank templates ([circuits.md](circuits.md)); blank templates for the inventory too
+- [x] Sites: the list of sites with counts of items, devices, failing backups and firmware behind; site detail with everything at the site; custom columns, import/export, blank template ([sites.md](sites.md))
+- [ ] Full install test on Ubuntu (owner, after the demo)
 - [ ] Rack view: a picture of each rack from the inventory's Rack, Position and Height (owner: build later)
 - [ ] Later: one overview of several servers (the display feed is the starting point); several customers on one server kept as an idea
 
@@ -97,12 +100,17 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-12 | One full install; the licence lists the tools it unlocks (backups, firmware, upgrades, circuits, syslog); one licence per customer, replaced to add a tool | The owner: unlock parts of one product rather than separate products; one licence keeps one end date and one device count |
 | 2026-10-12 | The inventory is one list (table `assets`): managed rows are linked to devices, inventory-only rows aren't and don't count for the licence | Everything in one place, and the tools keep working from `devices` |
 | 2026-10-12 | Admins add custom columns for everyone at the site; each person chooses and orders the columns they see (kept in their browser) | The owner: every customer's inventory is different |
+| 2026-10-12 | Ubuntu only: no Windows or Mac builds or installers of the full product (the demo still runs anywhere Python does) | The owner: the product is deployed on Ubuntu servers |
+| 2026-10-12 | Circuit list custom columns are text, read from uploads by their name; a header row with only known names is accepted (a blank template with few columns) | Circuit lists come from spreadsheets; checks belong in the sheet, and a template must import whatever columns were chosen |
+| 2026-10-12 | Sites are a list of their own (table `sites`); items and devices keep a Site text, matched to a site's name or code; renaming a site rewrites that text | The owner: a site list cross-referenced with the inventory, without changing how devices and backups store their site |
 
 ## Open questions
 
 **Owner's to-do, in this order (remind the owner each session):**
-1. Testing of what is built (next): the demo on the owner's computer, [try-it.md](try-it.md).
-2. Product name, then branding. Not decided yet (owner, 2026-10-12). Checked on the web:
+1. Testing of what is built (next): the demo on the owner's computer, [try-it.md](try-it.md),
+   now including Sites and the circuit columns.
+2. Full install test on Ubuntu ([install-online.md](install-online.md)), after the demo.
+3. Product name, then branding. Not decided yet (owner, 2026-10-12). Checked on the web:
    * ruled out: NetKeeper / NetKeeper Pro (live US trademark NETKEEPER, reg. 4944745, network
      management software), NetWeb (two companies), Backplane, Rackwise, Uplinq, Configra,
      Portwarden (existing products); NetKeep is close to the NETKEEPER mark (risky);
@@ -112,14 +120,16 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
      Lanward, Netquay, Opsbay, Netvale;
    * still to do: domains (.com, .co.uk) and the UK/EU/US trademark registers, then a
      trademark attorney's clearance search.
-3. Licence terms, editions and pricing: last.
-4. The licence signing key (`python -m app.licence_tool keygen`), any time before the first
+4. Licence terms, editions and pricing: last.
+5. The licence signing key (`python -m app.licence_tool keygen`), any time before the first
    customer licence.
+6. Rack view (later).
 
 - Licence agreement: per installation or per site? Managed-service use? Support terms, warranty, liability cap, governing law ([legal/EULA-draft.md](legal/EULA-draft.md))
 
 - Product name?
 - Editions: which sets of modules to sell, and their names and prices (any set works without code changes)
+- Sites next steps: a map, or a site tile on the wall display? Should the circuit list link circuits to sites (it has floor and room, no site)?
 - Syslog next steps: a wall display tile for Critical and worse messages?
 - Later: two servers (main and standby) with copies of the data and the syslog files
 - Syslog forwarding is plain UDP (`rsyslog-forward.conf`); offer TLS forwarding for sites whose log server supports it?
@@ -159,3 +169,5 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-12 | Networking-tool-kev | Licence modules: one install, the licence unlocks Config backups, Firmware, Upgrade jobs, Circuits and Syslog; locked tabs greyed out with a padlock; scheduled work and alerts follow the licence; signing tool --modules |
 | 2026-10-12 | Networking-tool-kev | Network inventory: assets table (migration 0005), devices linked automatically with model/serial/version from the device, inventory-only items, Manage this device, admins' custom columns, per-person columns, CSV/Excel export, import with preview; demo inventory of 42 items |
 | 2026-10-12 | Networking-tool-kev | Demo launchers (run-demo.bat / run-demo.sh), a try-it guide with a test checklist, the demo runs on Windows (no fcntl needed); product names checked on the web |
+| 2026-10-12 | Networking-tool-kev | Circuit list: admins' custom columns (migration 0006), per-person columns, CSV uploads, blank templates (CSV/Excel, the columns you see or all); blank templates for the inventory |
+| 2026-10-12 | Networking-tool-kev | Sites tab (migration 0007): site list with counts from the inventory, site detail, sites the inventory uses but aren't listed, renames carried to items and devices, custom columns, import/export, blank template; demo has four sites |

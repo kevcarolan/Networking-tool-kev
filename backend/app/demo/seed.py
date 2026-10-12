@@ -172,17 +172,18 @@ def circuit_workbook() -> bytes:
     wb = Workbook()
     ws = wb.active
     ws.title = "Circuits"
-    ws.append([None] * len(HEADER))
-    ws.append(BANDS)
-    ws.append(HEADER)
+    ws.append([None] * (len(HEADER) + 1))
+    ws.append(BANDS + ["PATCHING"])
+    ws.append(HEADER + ["Patch panel"])  # a custom column (seed adds it first)
     for d in DEVICES:
         if d.platform != "cisco_ios":
             continue
-        for r in circuits_for(int(d.name[-1])):
+        no = int(d.name[-1])
+        for k, r in enumerate(circuits_for(no)):
             ws.append(["DEMO", r["service"], None, r["name"], "End device", "Various",
                        r["mac"].replace(".", ""), "Ground Floor", "Comms room", r["ip"],
                        "255.255.255.0", r["ip"].rsplit(".", 1)[0] + ".1", r["vlan"], "STATIC",
-                       r["port"], d.name, None, None])
+                       r["port"], d.name, None, None, f"HQ-PP-0{1 + no % 2} port {k + 1}"])
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -222,10 +223,12 @@ def seed(client, settings, net) -> dict:
         _ok(client.post("/api/firmware/standards", json={
             "platform": platform, "model_pattern": pattern, "target_version": version,
             "image_id": image_id, "notes": "Demo standard"}))
+    _ok(client.post("/api/circuits/fields", json={"label": "Patch panel"}))
     imp = _ok(client.put("/api/circuits/imports/upload", params={"filename": "circuits.xlsx"},
                          content=circuit_workbook())).json()
     _ok(client.post(f"/api/circuits/imports/{imp['id']}/commit"))
     inventory(client)
+    sites(client)
     screen = _ok(client.post("/api/displays", json={"name": "Demo wall"})).json()
     return {"display_key": screen["key"], "ids": ids}
 
@@ -278,6 +281,31 @@ def inventory(client) -> None:
         _ok(client.post("/api/inventory/assets", json={"values": {
             "name": name, "type": kind, "site": site, "rack": rack, "rack_position": u,
             "rack_units": height or None, **more}}))
+
+
+# The site list: four of the five sites the devices use. "Warehouse" is left off, so the Sites
+# page shows how it points out a site the inventory uses that isn't on the list.
+SITES = [
+    {"name": "Head office", "code": "HQ", "type": "office", "region": "North", "city": "Northtown",
+     "address": "1 Example Street", "postcode": "NT1 1AA", "country": "United Kingdom",
+     "contact": "Facilities desk", "phone": "+44 1632 960000", "access": "Mon-Fri 07:00-19:00, badge",
+     "circuits": "2 x 1 Gb/s internet, 10 Gb/s to DC1"},
+    {"name": "Data centre 1", "code": "DC1", "type": "data centre", "region": "North", "city": "Northtown",
+     "address": "Unit 4, Example Park", "country": "United Kingdom", "contact": "DC operations",
+     "phone": "+44 1632 960001", "access": "24x7, booked visits only", "x_power_supply": "A+B"},
+    {"name": "Branch North", "code": "Branch-North", "type": "branch", "region": "North",
+     "city": "Upton", "country": "United Kingdom", "x_power_supply": "A"},
+    {"name": "Branch South", "code": "Branch-South", "type": "branch", "region": "South",
+     "city": "Southby", "country": "United Kingdom", "status": "closing",
+     "notes": "Moving to the new office next spring", "x_power_supply": "A"},
+]
+
+
+def sites(client) -> None:
+    _ok(client.post("/api/sites/fields", json={"label": "Power supply", "kind": "choice",
+                                               "choices": ["A", "A+B", "A+B+generator"]}))
+    for values in SITES:
+        _ok(client.post("/api/sites", json={"values": values}))
 
 
 def _ok(r):
