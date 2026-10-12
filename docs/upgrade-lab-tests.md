@@ -1,7 +1,7 @@
 # Upgrade lab tests (sign-off before production)
 
 NetOps' upgrade procedures have been tested against a **network simulator**
-(`backend/tests/fake_network.py`). It reproduces the commands, prompts, reloads,
+(`backend/app/demo/simnet.py`). It reproduces the commands, prompts, reloads,
 failovers and the FDM API as documented by the vendors. Real devices and software
 releases differ in details: prompt wording, output format, and the FDM API version. So
 **every platform and path has to pass these tests on lab kit before it is switched on
@@ -39,7 +39,7 @@ sudo cat /var/lib/netops/captures/<device>-<date>.txt
 Do one capture per platform and software train, early in the lab work. It is the quickest
 way to find a reader that doesn't match the real output. Each capture also becomes a test
 sample: `capture.parse_file()` reads it back, command by command, into
-`tests/vendor_samples.py` or `tests/firmware_samples.py`.
+`app/demo/vendor_samples.py` or `app/demo/samples.py`.
 
 ## 0. Before you start
 
@@ -181,7 +181,7 @@ device each. Commands and accounts: [vendors.md](vendors.md).
 - [ ] **Circuits** (switches): the 7a tests above. Also check that a port-channel or LAG and
       an LLDP uplink to another switch are *not* used as a circuit's location.
 - If anything is read wrong, the capture file has every output needed. Replace the sample in
-  `backend/tests/vendor_samples.py` with the real output and fix the reader so the test passes.
+  `backend/app/demo/vendor_samples.py` with the real output and fix the reader so the test passes.
 
 ## 8. Operations
 

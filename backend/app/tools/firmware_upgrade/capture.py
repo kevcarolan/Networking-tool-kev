@@ -5,7 +5,7 @@ outputs in one text file, with what the tools read from them.
 
 Used to check the version, health-check, upgrade pre-check and MAC/ARP readers against
 a real device, and to replace the samples taken from vendor documentation
-(tests/vendor_samples.py). Only read-only commands are ever sent (``is_read_only``); the
+(app/demo/vendor_samples.py). Only read-only commands are ever sent (``is_read_only``); the
 running configuration is not included. IP and MAC addresses are replaced with stand-ins,
 the same address always by the same stand-in so tables still match up (``--raw`` keeps
 them).

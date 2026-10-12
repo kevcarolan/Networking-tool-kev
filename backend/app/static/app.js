@@ -113,6 +113,7 @@ async function showApp(user) {
   $("#change-password").hidden = user.source !== "local";
   $("#site-name").textContent = user.site_name || "";
   $("#site-name").hidden = !user.site_name;
+  $("#demo-banner").hidden = !user.demo;
   $$("[data-admin]").forEach((el) => (el.hidden = !isAdmin()));
   $$("[data-upgrader]").forEach((el) => (el.hidden = !canUpgrade()));
   $$("[data-perm]").forEach((el) => (el.hidden = !permitted(el.dataset.perm)));
