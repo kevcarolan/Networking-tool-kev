@@ -202,3 +202,9 @@ def test_scan_now_is_admin_only(app, client, admin, switch):
     client.post("/api/auth/logout")
     client.post("/api/auth/login", json={"username": "v", "password": "x"})
     assert client.post("/api/circuits/scan", json={}).status_code == 403
+
+
+def test_the_circuit_list_is_compared_every_night_by_default():
+    from app.core.config import Settings
+
+    assert parse_schedule(Settings(_env_file=None).circuit_scan_schedule) == (None, 3, 0)

@@ -2161,6 +2161,22 @@ async function alertsPanel() {
     .map(([v, l]) => h("option", { value: v, selected: a.smtp_security === v }, l)));
   f.smtp_password = h("input", { type: "password", autocomplete: "new-password", placeholder: a.has_password ? "saved (leave empty to keep it)" : "" });
   f.clear_password = h("input", { type: "checkbox" });
+  f.syslog_level = h("select", {}, ...[[0, "Emergency only"], [1, "Alert and worse"], [2, "Critical and worse"], [3, "Error and worse"]]
+    .map(([v, l]) => h("option", { value: v, selected: a.syslog_level === v }, l)));
+  // One row per recipient: the address and a tick for each kind of alert they get.
+  const kinds = Object.entries(a.kinds);
+  const rows = h("tbody");
+  const recipientsTable = h("div", { class: "table-wrap" }, h("table", { class: "recipients" },
+    h("thead", {}, h("tr", {}, h("th", {}, "Email address"), ...kinds.map(([, label]) => h("th", {}, label)), h("th", {}))), rows));
+  const addRecipient = (r = { address: "", kinds: ["backups", "upgrades", "licence", "worker"] }) => {
+    const tr = h("tr", {},
+      h("td", {}, h("input", { type: "email", value: r.address, placeholder: "noc@corp.local", "aria-label": "Email address" })),
+      ...kinds.map(([k, label]) => h("td", {}, h("input", { type: "checkbox", "data-kind": k, checked: r.kinds.includes(k), "aria-label": label }))),
+      h("td", {}, h("button", { type: "button", class: "small ghost", title: "Remove", onclick: () => tr.remove() }, "✕")));
+    rows.append(tr);
+  };
+  a.recipients.forEach(addRecipient);
+  if (!a.recipients.length) addRecipient();
   const box = h("div", { class: "panel" });
   box.replaceChildren(
     h("h2", {}, "Email alerts"),
@@ -2173,11 +2189,19 @@ async function alertsPanel() {
     h("label", {}, "Password", f.smtp_password),
     a.has_password ? h("label", { class: "check" }, f.clear_password, " Remove the saved password") : "",
     text("mail_from", "From address", { placeholder: "e.g. netops@corp.local" }),
-    text("mail_to", "Send to (comma separated)", { placeholder: "e.g. noc@corp.local, oncall@corp.local" }),
-    text("backup_hours", "Backups: alert when failing for more than (hours, 0 = never)", { type: "number", min: 0, max: 720 }),
-    check("upgrades", "Upgrades: when a job completes, fails, rolls back or needs attention"),
-    check("licence", "Licence: 30 and 7 days before it ends, and when it has ended"),
-    check("worker", "Upgrade worker: stopped for more than 10 minutes"),
+    h("h3", {}, "What is sent"),
+    h("ul", { class: "muted" },
+      h("li", {}, "Backups: a device's backup has been failing for longer than the hours below."),
+      h("li", {}, "Upgrades: a job completes, fails, rolls back or needs attention."),
+      h("li", {}, "Licence: 30 and 7 days before it ends, and when it has ended."),
+      h("li", {}, "Upgrade worker: stopped for more than 10 minutes."),
+      h("li", {}, "Syslog: device messages at the level below or worse, gathered into one email.")),
+    text("backup_hours", "Backups: alert when failing for more than (hours)", { type: "number", min: 1, max: 720 }),
+    h("label", {}, "Syslog: messages at", f.syslog_level),
+    text("syslog_minutes", "Syslog: at most one email every (minutes)", { type: "number", min: 1, max: 60 }),
+    h("h3", {}, "Who gets what"),
+    recipientsTable,
+    h("div", { class: "actions" }, h("button", { type: "button", class: "small", onclick: () => addRecipient() }, "+ Add recipient")),
     a.last_error ? h("p", { class: "error" }, `Last error: ${a.last_error}`) : "",
     err, result,
     h("div", { class: "actions" },
@@ -2185,8 +2209,10 @@ async function alertsPanel() {
         err.hidden = true;
         const body = { enabled: f.enabled.checked, smtp_host: f.smtp_host.value.trim(), smtp_port: Number(f.smtp_port.value),
           smtp_security: f.smtp_security.value, smtp_user: f.smtp_user.value.trim(), mail_from: f.mail_from.value.trim(),
-          mail_to: f.mail_to.value, backup_hours: Number(f.backup_hours.value), upgrades: f.upgrades.checked,
-          licence: f.licence.checked, worker: f.worker.checked };
+          backup_hours: Number(f.backup_hours.value), syslog_level: Number(f.syslog_level.value),
+          syslog_minutes: Number(f.syslog_minutes.value),
+          recipients: $$("tr", rows).map((tr) => ({ address: $("input[type=email]", tr).value.trim(),
+            kinds: $$("input[data-kind]", tr).filter((c) => c.checked).map((c) => c.dataset.kind) })).filter((r) => r.address) };
         if (f.smtp_password.value) body.smtp_password = f.smtp_password.value;
         else if (f.clear_password.checked) body.smtp_password = "";
         try { await api("/api/alerts", { method: "PUT", body }); toast("Email alerts saved"); loadSettings(); } catch (e) { showError(err, e); }

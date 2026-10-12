@@ -87,13 +87,17 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-12 | Captures replace IP and MAC addresses with consistent stand-ins by default, and never include the running configuration | Captures are sent outside the customer's network for parser fixes; the tables still match up, so the readers can be tested |
 | 2026-10-12 | Syslog is kept in one SQLite file per day, written only by its own receiver service | Quick search by device, severity and time; old days go by deleting files; the web app can restart without losing messages |
 | 2026-10-12 | The syslog sender is the packet's source address, matched to the inventory; the server never changes device logging itself (configs are suggested on a Help page) | The host name in a message can be anything; device changes need an admin |
+| 2026-10-12 | Syslog files stay out of the nightly server backup | The owner: the backup is fine as it is; a standby server with copies is the plan for later |
+| 2026-10-12 | Email alerts: each recipient ticks the kinds they get (backups, upgrades, licence, worker, syslog); syslog alerts at Critical and worse by default, at most one email every 5 minutes | The owner asked for syslog alerts to be optional per recipient; a storm of messages must not become hundreds of emails |
+| 2026-10-12 | The circuit list is compared with the network every night at 03:00 by default (was Sundays 02:00) | The owner: nightly, late at night |
 
 ## Open questions
 
 - Licence agreement: per installation or per site? Managed-service use? Support terms, warranty, liability cap, governing law ([legal/EULA-draft.md](legal/EULA-draft.md))
 
 - Product name?
-- Syslog next steps: email alerts or a wall display tile for Critical and worse messages? Syslog over TLS (port 6514)? Keep the Syslog files in the nightly backup?
+- Syslog next steps: a wall display tile for Critical and worse messages? Syslog over TLS (port 6514), for devices that support it?
+- Later: two servers (main and standby) with copies of the data and the syslog files
 - Syslog forwarding is plain UDP (`rsyslog-forward.conf`); offer TLS forwarding for sites whose log server supports it?
 - Docker image: `--forwarded-allow-ips "*"` trusts any proxy's client address; fine behind the bundled nginx, but should it be narrowed?
 - The air-gapped bundle has a SHA-256 but no signature; sign bundles once the product is sold?
@@ -126,3 +130,4 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-12 | Networking-tool-kev | Demo mode (`python -m app.demo`): 25 simulated devices, failing backups, circuits, live upgrades in about 40 s, wall display; sign-in now returns the site name (it only showed after a reload) |
 | 2026-10-12 | Networking-tool-kev | Lab capture tool (`netops-cli capture`); blocks anything but read-only commands, including `| redirect` and `| tee` |
 | 2026-10-12 | Networking-tool-kev | Syslog: receiver service on 514 (rate limit per sender, disk guard), daily store, Syslog page with severity buttons, timeline and download, Help with suggested configs for every platform, Logs button per device, demo history with BGP, PSU, failover, BPDU guard and brute-force incidents |
+| 2026-10-12 | Networking-tool-kev | Email alerts per recipient, syslog alerts (Critical and worse, gathered), nightly circuit scan by default |

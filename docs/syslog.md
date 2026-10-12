@@ -68,6 +68,14 @@ The hardened firewall (`deploy/hardening/nftables.conf`) lets syslog in only fro
 `SYSLOG_SOURCES`, on UDP and TCP 514. Set it to the devices' management networks
 (usually the same as `DEVICE_NETS`), then reload: `sudo nft -f /etc/nftables.conf`.
 
+## Email alerts for serious messages
+
+On **Settings › Email alerts**, tick **Syslog** for the recipients who should get them, and
+choose the level: Emergency only, Alert and worse, **Critical and worse** (the default) or
+Error and worse. Messages at that level are gathered into at most one email every few
+minutes (5 by default), listing up to 50 with the device, time and message. Only messages
+that arrive after a recipient chooses Syslog are sent, not the history.
+
 ## Checking and troubleshooting
 
 | Symptom | Check |
@@ -79,7 +87,8 @@ The hardened firewall (`deploy/hardening/nftables.conf`) lets syslog in only fro
 | "dropped (too many from one sender)" | A device is sending more than 2000 messages a second: look at it (often a loop or debug left on) |
 
 Downloads are recorded in the activity report (`syslog.export`). Syslog files aren't part
-of the nightly server backup (`netops-backup`): they are large and only kept for a set time.
+of the nightly server backup (`netops-backup`): they are large and only kept for a set
+time. (A second, standby server holding copies is planned for later.)
 
 ## Who can see it
 

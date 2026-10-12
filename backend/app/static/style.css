@@ -301,3 +301,9 @@ textarea.pem { width: 100%; box-sizing: border-box; min-height: 120px; font-fami
 #sl-help-general { margin: 0; padding-left: 18px; }
 .bad-text { color: var(--fail); }
 @media (max-width: 600px) { #sl-table th:nth-child(4), #sl-table td:nth-child(4) { display: none; } }
+
+/* Settings: email alert recipients */
+table.recipients td, table.recipients th { text-align: center; padding: 4px 6px; }
+table.recipients td:first-child, table.recipients th:first-child { text-align: left; }
+table.recipients input[type=email] { min-width: 220px; }
+.panel h3 { margin: 6px 0 0; font-size: 15px; }

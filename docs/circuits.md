@@ -62,8 +62,8 @@ device that routes, and matches them with the list. The uploaded sheet stays as 
 the live location is shown **next to** it.
 
 **When the tables are read:**
-* **Weekly**, by default Sunday at 02:00 (server time): `NETOPS_CIRCUIT_SCAN_SCHEDULE`, e.g.
-  `sun 02:00` or `daily 02:00`; empty turns the scheduled scan off.
+* **Every night**, by default at 03:00 (server time), on the Settings page or `NETOPS_CIRCUIT_SCAN_SCHEDULE`:
+  `daily 03:00` (every night, the default) or `sun 02:00` (weekly); empty turns the scheduled scan off.
 * **In every upgrade job**, for the device being upgraded: at the pre-checks and again at the
   post-checks. So the job's circuit list is based on fresh data.
 * **Scan network now** on the Circuits page (admins), e.g. after installing new kit.

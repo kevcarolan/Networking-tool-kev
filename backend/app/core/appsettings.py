@@ -77,7 +77,7 @@ OPTIONS = (
            help="Config versions themselves are always kept"),
     Option("firmware_check_minutes", "Read each device's software version every (minutes)", int, 60, 10080),
     Option("circuit_scan_schedule", "Circuit location scan", str, high=40,
-           help="'sun 02:00', 'daily 02:00' (server time), or empty for none"),
+           help="'daily 03:00' (every night), 'sun 02:00' (weekly), server time; empty for none"),
     Option("viewers_can_read_configs", "Viewers may read device configs", bool,
            help="Configs contain password hashes and keys"),
     Option("upgrade_cpu_warn", "Upgrade pre-check: warn above CPU (%)", int, 1, 100),

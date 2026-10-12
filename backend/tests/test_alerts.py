@@ -219,3 +219,89 @@ def test_real_smtp_conversation():
     assert [m.lower() for m in received["MAIL"]] == ["mail from:<netops@corp.example>"]
     assert [m.lower() for m in received["RCPT"]] == ["rcpt to:<noc@corp.example>"]
     assert "Subject: [NetOps Tools] Hello" in received["data"] and "Body text" in received["data"]
+
+
+# --- who gets what, and syslog -------------------------------------------------------------
+
+def _people(admin, *recipients, **changes):
+    return _on(admin, recipients=[{"address": a, "kinds": k} for a, k in recipients], **changes)
+
+
+def test_each_recipient_chooses_what_they_get(app, admin, outbox):
+    view = _people(admin, ("noc@corp.example", ["licence", "worker"]),
+                   ("boss@corp.example", ["licence"]))
+    assert view["recipients"][1] == {"address": "boss@corp.example", "kinds": ["licence"]}
+    with session_scope() as db:
+        appsettings.save(db, {"trial_started_at": (utcnow() - timedelta(days=61)).date()
+                              .isoformat()}, "test")
+        db.merge(WorkerStatus(id=1, beat_at=utcnow() - timedelta(minutes=20), pid=1, host="x",
+                              started_at=utcnow() - timedelta(days=1)))
+    _tick(app)
+    to = {m["Subject"].split("] ", 1)[1][:24]: m["To"] for m in outbox}
+    assert any(v == "noc@corp.example, boss@corp.example" for k, v in to.items() if "trial" in k)
+    assert any(v == "noc@corp.example" for k, v in to.items() if "worker" in k)
+
+
+def test_recipients_are_checked(admin):
+    bad = [([("noc@corp.example", ["backups"]), ("NOC@corp.example", ["worker"])], "twice"),
+           ([("noc@corp.example", ["fax"])], "Unknown alert kind"),
+           ([("not-an-address", ["backups"])], "isn't an email address")]
+    for people, words in bad:
+        r = admin.put("/api/alerts", json={**CONFIG, "recipients": [
+            {"address": a, "kinds": k} for a, k in people]})
+        assert r.status_code == 422 and words in r.text
+
+
+def test_settings_saved_before_recipients_chose_still_work(admin):
+    view = _on(admin, upgrades=False)  # the old form: one list, switches for everyone
+    assert view["recipients"] == [
+        {"address": "noc@corp.example", "kinds": ["backups", "licence", "worker"]},
+        {"address": "oncall@corp.example", "kinds": ["backups", "licence", "worker"]}]
+
+
+def _syslog(settings, *messages):
+    import time
+
+    from app.tools.syslog.store import Record, SyslogStore
+
+    s = SyslogStore(settings.syslog_dir)
+    s.write([Record(time.time() + i * 0.001, src, sev, 23, "", tag, f"{tag}: {text}")
+             for i, (src, sev, tag, text) in enumerate(messages)])
+    s.close()
+
+
+def test_critical_syslog_is_gathered_into_one_email(app, admin, outbox, device, settings):
+    _people(admin, ("noc@corp.example", ["syslog"]), ("backups@corp.example", ["backups"]))
+    _syslog(settings, ("10.0.0.1", 2, "%OLD-2-X", "before alerts were on"))
+    assert _tick(app) == []  # switching on doesn't send the history
+    _syslog(settings, ("10.0.0.1", 2, "%PLATFORM-2-PS_FAIL", "Power supply 2 failed"),
+            ("10.0.0.1", 3, "%LINK-3-UPDOWN", "Gi1/0/1 down"),  # Error: below the level
+            ("192.0.2.250", 0, "%TEMP-0-SHUT", "shutting down"))
+    [subject] = _tick(app)
+    assert "2 syslog messages at Critical or worse (worst: Emergency): 192.0.2.250, core-sw1" in subject
+    msg = outbox[-1]
+    assert msg["To"] == "noc@corp.example"
+    body = msg.get_content()
+    assert "core-sw1 (10.0.0.1)  Critical\n    %PLATFORM-2-PS_FAIL: Power supply 2 failed" in body
+    assert "Gi1/0/1" not in body and "before alerts" not in body
+    _syslog(settings, ("10.0.0.1", 1, "%X-1-Y", "soon after"))
+    assert _tick(app) == []  # at most one email every 5 minutes: kept for the next one
+    with session_scope() as db:
+        from app.core.models import AlertSent
+
+        for row in db.query(AlertSent).filter(AlertSent.key.like("syslog:%")):
+            row.sent_at = utcnow() - timedelta(minutes=6)
+    [later] = _tick(app)
+    assert "1 syslog message at Critical or worse" in later and "soon after" in outbox[-1].get_content()
+
+
+def test_syslog_level_and_nobody_wanting_it(app, admin, outbox, device, settings):
+    _people(admin, ("noc@corp.example", ["backups"]), syslog_level=3)
+    _tick(app)
+    _syslog(settings, ("10.0.0.1", 3, "%LINK-3-UPDOWN", "Gi1/0/1 down"))
+    assert _tick(app) == []  # nobody chose syslog
+    _people(admin, ("noc@corp.example", ["syslog"]), syslog_level=3)
+    assert _tick(app) == []  # what came before they chose it isn't sent
+    _syslog(settings, ("10.0.0.1", 3, "%LINK-3-UPDOWN", "Gi1/0/2 down"))
+    [subject] = _tick(app)
+    assert "at Error or worse" in subject and "Gi1/0/2" in outbox[-1].get_content()

@@ -105,9 +105,9 @@ class Settings(BaseSettings):
 
     # Circuit list tool
     circuits_max_upload_mb: int = 25
-    # When to read every device's MAC and ARP tables (server local time), e.g. "sun 02:00"
+    # When to read every device's MAC and ARP tables (server local time), e.g. "daily 03:00"
     # or "daily 02:00". Empty = no scheduled scan (upgrade jobs still read their device).
-    circuit_scan_schedule: str = "sun 02:00"
+    circuit_scan_schedule: str = "daily 03:00"  # every night, when the network is quiet
     circuit_scan_workers: int = 5
 
     # Syslog (the receiver is its own service, netops-syslog; app/tools/syslog/receiver.py)

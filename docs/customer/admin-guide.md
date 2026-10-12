@@ -71,7 +71,7 @@ Admins see a notice from 30 days before the licence ends.
 | Retry a failed backup or version check after | How soon a failed device is tried again |
 | Keep backup and check history for | Run history only; every config version is always kept |
 | Read each device's software version every | The Firmware version report |
-| Circuit location scan | When every switch's MAC and ARP tables are read: `sun 02:00`, `daily 02:00`, or empty for none |
+| Circuit location scan | When every switch's MAC and ARP tables are read and compared with the circuit list: `daily 03:00` (every night, the default), `sun 02:00` (weekly), or empty for none |
 | Viewers may read device configs | Configs contain password hashes and keys, so the default is no |
 | Upgrade pre-check limits | When CPU or memory use gives a warning in an upgrade pre-check (a warning never blocks) |
 | Fresh backup before an upgrade | An upgrade takes a new config backup first if the last one is older than this |
@@ -82,8 +82,9 @@ over this page. To manage it here instead, comment that line out with `#` in
 
 ### Email alerts
 
-Sent through your own mail server to the addresses you choose. Each event is sent once,
-and the server checks every minute.
+Sent through your own mail server. Each recipient chooses which kinds of alert they get
+(**Who gets what**: one row per address, a tick per kind). Each event is sent once, and the
+server checks every minute.
 
 | Alert | When |
 |---|---|
@@ -91,12 +92,15 @@ and the server checks every minute.
 | Upgrades | An upgrade job (live or dry run) has completed, failed, rolled back, or needs attention |
 | Licence | 30 and 7 days before the licence ends, and when it (or the trial) has ended |
 | Upgrade worker | The upgrade worker has been stopped for more than 10 minutes |
+| Syslog | Devices sent messages at the level you choose (Critical and worse by default) or worse. They are gathered into at most one email every few minutes (5 by default), listing up to 50, so a storm of messages is one email |
 
 1. Fill in:
    * the mail server, port and security (STARTTLS on 587, TLS on 465, or none on port 25
      for an internal relay that doesn't offer encryption);
    * a username and password if the server needs them;
-   * the From address and the recipients.
+   * the From address;
+   * under **Who gets what**, each recipient's address and the alerts they get
+     (**+ Add recipient** for more, ✕ to remove one).
 2. Tick **Send email alerts**, then press **Save**.
 3. Press **Send test email**: it says straight away if the mail server refused it.
 
