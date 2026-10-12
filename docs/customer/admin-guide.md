@@ -258,6 +258,10 @@ and keeps it in one file per day under `/var/lib/netops/syslog/`.
    (30 by default) and *Keep at most this much syslog (GB)* (20). The oldest days go first.
    *Keep messages only from inventory devices* drops everything else.
 4. **Who sees it:** the **Syslog** permission (none or view) on the Users page.
+5. **Encrypted (optional):** for syslog that crosses networks you don't control, switch on
+   syslog over TLS: `NETOPS_SYSLOG_TLS_PORT=6514` in `netops.env`, then
+   `sudo systemctl restart netops-syslog`. It uses the server's certificate. The help has
+   *Send as: Encrypted* examples for the devices that support it.
 
 Sizing, the limits that protect the disk, and troubleshooting: [syslog.md](../syslog.md).
 

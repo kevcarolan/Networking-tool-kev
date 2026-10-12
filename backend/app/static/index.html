@@ -437,6 +437,10 @@
       <div class="grid2">
         <label>Platform <select id="sl-help-platform"></select></label>
         <label>Address the devices send to <input id="sl-help-server" placeholder="10.1.1.50"></label>
+        <label>Send as <select id="sl-help-mode">
+          <option value="plain">Plain syslog (UDP 514)</option>
+          <option value="tls">Encrypted: syslog over TLS (TCP 6514)</option>
+        </select></label>
       </div>
       <pre id="sl-help-text" class="config"></pre>
       <p id="sl-help-notes" class="muted"></p>

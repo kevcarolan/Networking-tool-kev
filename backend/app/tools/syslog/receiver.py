@@ -15,6 +15,11 @@ Protections:
   10 minutes of silence;
 * storing stops (and is counted) while the disk is nearly full or the newest day alone is
   over the size limit; the oldest days are deleted to stay under the limits.
+
+Syslog over TLS (RFC 5425) is a third listener, off unless ``syslog_tls_port`` is set
+(usually 6514): TLS 1.2 or newer, the server's certificate, and optionally a certificate
+from every device (``syslog_tls_client_ca``). A TLS problem (no certificate, a bad key) is
+logged and shown on the page; plain syslog keeps running.
 """
 
 import asyncio
@@ -24,8 +29,10 @@ import logging
 import os
 import shutil
 import signal
+import ssl
 import tempfile
 import time
+from functools import partial
 
 from app.core.config import Settings
 from app.tools.syslog.parse import parse
@@ -37,6 +44,28 @@ log = logging.getLogger("netops.syslog")
 MAX_LINE = 65536
 MAX_CONNECTIONS = 500
 IDLE_SECONDS = 600
+
+
+def tls_files(settings: Settings) -> tuple[str, str]:
+    """The certificate and key for syslog over TLS: the ones named in the settings, else
+    the web server's, which systemd hands to the service (LoadCredential=tls.crt, tls.key)."""
+    if settings.syslog_tls_cert:
+        return settings.syslog_tls_cert, settings.syslog_tls_key or settings.syslog_tls_cert
+    creds = os.environ.get("CREDENTIALS_DIRECTORY")
+    if creds:
+        return os.path.join(creds, "tls.crt"), os.path.join(creds, "tls.key")
+    raise ValueError("no certificate: set NETOPS_SYSLOG_TLS_CERT and NETOPS_SYSLOG_TLS_KEY")
+
+
+def tls_context(settings: Settings) -> ssl.SSLContext:
+    cert, key = tls_files(settings)
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    ctx.load_cert_chain(cert, key)
+    if settings.syslog_tls_client_ca:
+        ctx.verify_mode = ssl.CERT_REQUIRED  # devices without a certificate from it are refused
+        ctx.load_verify_locations(settings.syslog_tls_client_ca)
+    return ctx
 
 
 def split_frames(buf: bytes) -> tuple[list[bytes], bytes]:
@@ -76,7 +105,8 @@ class Receiver:
         self.started = clock()
         self.last_message = 0.0
         self.counts = {"received": 0, "stored": 0, "dropped_rate": 0, "dropped_unknown": 0,
-                       "dropped_full": 0}
+                       "dropped_full": 0, "received_tls": 0}
+        self.tls_error = ""  # why syslog over TLS isn't listening, or ""
         self._buckets: dict[str, list[float]] = {}  # sender -> [tokens, last time]
         self._stop = asyncio.Event()
 
@@ -164,6 +194,7 @@ class Receiver:
         s = self.settings
         return {"pid": os.getpid(), "started": self.started, "beat": self.clock(),
                 "udp_port": s.syslog_udp_port, "tcp_port": s.syslog_tcp_port,
+                "tls_port": s.syslog_tls_port, "tls_error": self.tls_error,
                 "last_message": self.last_message or None, "stopped_reason": self.full,
                 "connections": self.connections, **self.counts}
 
@@ -176,7 +207,8 @@ class Receiver:
 
     # --- network ----------------------------------------------------------------------------
 
-    async def _tcp_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+    async def _tcp_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter,
+                          tls: bool = False):
         peer = writer.get_extra_info("peername")
         address = peer[0] if peer else "unknown"
         if self.connections >= MAX_CONNECTIONS:
@@ -192,9 +224,13 @@ class Receiver:
                 frames, buf = split_frames(buf + chunk)
                 for frame in frames:
                     self.accept(frame, address)
+                    if tls:
+                        self.counts["received_tls"] += 1
             if buf.strip():
                 self.accept(buf, address)
-        except (TimeoutError, ConnectionError, asyncio.IncompleteReadError):
+                if tls:
+                    self.counts["received_tls"] += 1
+        except (TimeoutError, ConnectionError, asyncio.IncompleteReadError, ssl.SSLError):
             pass
         finally:
             self.connections -= 1
@@ -217,8 +253,18 @@ class Receiver:
         if s.syslog_tcp_port:
             servers.append(await asyncio.start_server(self._tcp_client, s.syslog_bind,
                                                       s.syslog_tcp_port, limit=MAX_LINE))
-        log.info("Syslog receiver listening on %s (UDP %s, TCP %s), storing in %s",
+        if s.syslog_tls_port:
+            try:
+                ctx = tls_context(s)
+                servers.append(await asyncio.start_server(
+                    partial(self._tcp_client, tls=True), s.syslog_bind, s.syslog_tls_port,
+                    limit=MAX_LINE, ssl=ctx, ssl_handshake_timeout=15))
+            except (OSError, ValueError, ssl.SSLError) as exc:
+                self.tls_error = f"{type(exc).__name__}: {exc}"[:300]
+                log.error("Syslog over TLS isn't listening: %s", self.tls_error)
+        log.info("Syslog receiver listening on %s (UDP %s, TCP %s, TLS %s), storing in %s",
                  s.syslog_bind, s.syslog_udp_port or "off", s.syslog_tcp_port or "off",
+                 "off" if not s.syslog_tls_port or self.tls_error else s.syslog_tls_port,
                  self.store.dir)
         last_house = float("-inf")
         while not self._stop.is_set():

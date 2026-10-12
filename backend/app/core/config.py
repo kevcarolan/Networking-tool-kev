@@ -114,6 +114,12 @@ class Settings(BaseSettings):
     syslog_udp_port: int = 514  # 0 = don't listen on UDP
     syslog_tcp_port: int = 514  # 0 = don't listen on TCP
     syslog_bind: str = "0.0.0.0"  # "::" for IPv6 and IPv4
+    # Syslog over TLS (RFC 5425), usually 6514; 0 = off. The certificate is the web
+    # server's (handed to the service by systemd, LoadCredential) unless these name others.
+    syslog_tls_port: int = 0
+    syslog_tls_cert: str = ""
+    syslog_tls_key: str = ""
+    syslog_tls_client_ca: str = ""  # set: every device must show a certificate from this CA
     syslog_keep_days: int = 30  # Settings page
     syslog_max_gb: int = 20  # Settings page; the oldest days go first
     syslog_inventory_only: bool = False  # Settings page: drop senders not in the inventory

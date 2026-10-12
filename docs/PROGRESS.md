@@ -90,13 +90,14 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-12 | Syslog files stay out of the nightly server backup | The owner: the backup is fine as it is; a standby server with copies is the plan for later |
 | 2026-10-12 | Email alerts: each recipient ticks the kinds they get (backups, upgrades, licence, worker, syslog); syslog alerts at Critical and worse by default, at most one email every 5 minutes | The owner asked for syslog alerts to be optional per recipient; a storm of messages must not become hundreds of emails |
 | 2026-10-12 | The circuit list is compared with the network every night at 03:00 by default (was Sundays 02:00) | The owner: nightly, late at night |
+| 2026-10-12 | Syslog over TLS (6514) is built in, off by default, switched on in netops.env; it reuses the web certificate through systemd LoadCredential, with optional device certificates | The owner: syslog may cross other networks; a port is a netops.env setting, and the key must stay root-only |
 
 ## Open questions
 
 - Licence agreement: per installation or per site? Managed-service use? Support terms, warranty, liability cap, governing law ([legal/EULA-draft.md](legal/EULA-draft.md))
 
 - Product name?
-- Syslog next steps: a wall display tile for Critical and worse messages? Syslog over TLS (port 6514), for devices that support it?
+- Syslog next steps: a wall display tile for Critical and worse messages?
 - Later: two servers (main and standby) with copies of the data and the syslog files
 - Syslog forwarding is plain UDP (`rsyslog-forward.conf`); offer TLS forwarding for sites whose log server supports it?
 - Docker image: `--forwarded-allow-ips "*"` trusts any proxy's client address; fine behind the bundled nginx, but should it be narrowed?
@@ -131,3 +132,4 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-12 | Networking-tool-kev | Lab capture tool (`netops-cli capture`); blocks anything but read-only commands, including `| redirect` and `| tee` |
 | 2026-10-12 | Networking-tool-kev | Syslog: receiver service on 514 (rate limit per sender, disk guard), daily store, Syslog page with severity buttons, timeline and download, Help with suggested configs for every platform, Logs button per device, demo history with BGP, PSU, failover, BPDU guard and brute-force incidents |
 | 2026-10-12 | Networking-tool-kev | Email alerts per recipient, syslog alerts (Critical and worse, gathered), nightly circuit scan by default |
+| 2026-10-12 | Networking-tool-kev | Syslog over TLS: third listener (6514), web certificate via systemd, optional device certificates, TLS examples in the device help, receiver restarted on a new certificate |

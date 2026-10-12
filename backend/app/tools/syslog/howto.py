@@ -166,3 +166,96 @@ save""", "notes": "Check with: display info-center"},
 # /etc/rsyslog.d/90-netops.conf   (then: systemctl restart rsyslog)
 *.info @{server}:514""", "notes": "One @ is UDP, @@ is TCP."},
 ]
+
+
+# Syslog over TLS (port 6514), for the platforms that can send it. Every device must trust
+# the CA that signed the server's certificate, and the certificate must name the address or
+# DNS name the device sends to. Platforms without an entry send plain syslog only (or only on
+# some releases): keep them on UDP 514 over a trusted network.
+TLS_GENERAL = [
+    "Syslog over TLS must be switched on on the server first (NETOPS_SYSLOG_TLS_PORT=6514 in "
+    "netops.env, and port 6514 allowed in the firewall).",
+    "The device checks the server's certificate: load the CA that signed it onto the device, "
+    "and send to a name or address that is in the certificate.",
+    "Time must be right (NTP), or the certificate check fails.",
+]
+
+TLS = {
+    "cisco_ios": """\
+configure terminal
+ crypto pki trustpoint NETOPS-CA
+  enrollment terminal
+  revocation-check none
+ exit
+ crypto pki authenticate NETOPS-CA          ! paste the CA certificate (PEM) when asked
+ logging host {server} transport tls port 6514
+ logging trap informational
+end
+write memory""",
+    "cisco_nxos": """\
+configure terminal
+ crypto ca trustpoint NETOPS-CA
+ crypto ca authenticate NETOPS-CA           ! paste the CA certificate (PEM) when asked
+ logging server {server} 6 port 6514 secure use-vrf management
+end
+copy running-config startup-config""",
+    "cisco_asa": """\
+configure terminal
+ crypto ca trustpoint NETOPS-CA
+  enrollment terminal
+ crypto ca authenticate NETOPS-CA           ! paste the CA certificate (PEM) when asked
+ logging host management {server} tcp/6514 secure
+ logging permit-hostdown                    ! keep traffic flowing if the server is down
+end
+write memory""",
+    "juniper_junos": """\
+configure
+set security pki ca-profile NETOPS-CA ca-identity NETOPS-CA
+set security pki trusted-ca-group NETOPS-CAS ca-profiles NETOPS-CA
+set system syslog host {server} port 6514 transport tls
+set system syslog host {server} tlsdetails trusted-ca-group NETOPS-CAS
+set system syslog host {server} any info
+commit and-quit
+request security pki ca-certificate load ca-profile NETOPS-CA filename /var/tmp/netops-ca.pem""",
+    "arista_eos": """\
+copy scp:user@host/netops-ca.pem certificate:netops-ca.pem
+configure
+ management security
+  ssl profile NETOPS-SYSLOG
+   trust certificate netops-ca.pem
+ logging host {server} 6514 protocol tls
+ logging ssl-profile NETOPS-SYSLOG
+end
+write memory""",
+    "fortinet_fortios": """\
+config log syslogd setting
+    set status enable
+    set server "{server}"
+    set mode reliable
+    set port 6514
+    set enc-algorithm high
+end
+# import the CA under System > Certificates > Import > CA Certificate""",
+    "paloalto_panos": """\
+1. Device > Certificate Management > Certificates > Import: the CA certificate,
+   then open it and tick 'Trusted Root CA'.
+2. Device > Server Profiles > Syslog > Add: server {server}, transport SSL,
+   port 6514, format IETF, facility LOG_USER.
+3. Device > Log Settings: add the profile to System and Configuration logs.
+4. Commit.""",
+    "aruba_aoscx": """\
+configure terminal
+ crypto pki ta-profile NETOPS-CA
+  ta-certificate                            ! paste the CA certificate (PEM), end with END_OF_CERTIFICATE
+ exit
+ logging {server} tls 6514 severity info vrf mgmt
+end
+write memory""",
+    "": """\
+# apt install rsyslog-gnutls; put the CA in /etc/ssl/certs/netops-ca.pem
+# /etc/rsyslog.d/90-netops.conf   (then: systemctl restart rsyslog)
+global(DefaultNetstreamDriverCAFile="/etc/ssl/certs/netops-ca.pem")
+*.info action(type="omfwd" target="{server}" port="6514" protocol="tcp"
+              StreamDriver="gtls" StreamDriverMode="1"
+              StreamDriverAuthMode="x509/name" StreamDriverPermittedPeers="{server}")""",
+}

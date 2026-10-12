@@ -238,6 +238,10 @@ What the installer set up, for your security review:
   is always checked against the server's trusted CAs. To trust an internal CA, add it with
   `update-ca-certificates`. The SMTP password is encrypted with the credential key and never
   shown again. Alerts hold device names, sites and versions, never configs or credentials.
+* **Syslog over TLS (TCP 6514, off by default):** encrypted syslog, TLS 1.2 or newer, with
+  the web server's certificate passed in by systemd (`LoadCredential`), so the key stays
+  root-only. You can require a certificate from every device
+  (`NETOPS_SYSLOG_TLS_CLIENT_CA`). Use it wherever syslog crosses a network you don't control.
 * **Syslog receiver (UDP and TCP 514):** its own service, `netops-syslog`, as the `netops`
   account with the same sandbox and one extra right (to listen below port 1024). Only
   `SYSLOG_SOURCES` may send. It reads nothing from the network but log lines, which are kept as

@@ -15,6 +15,7 @@ umask 077
 SRC="${NETOPS_TLS_SRC:-/var/lib/netops/tls}"   # overridable for the tests only
 DST="${NETOPS_TLS_DST:-/etc/netops/tls}"
 STATUS_DIR="${NETOPS_TLS_STATUS_DIR:-/var/lib/netops-tls}"
+ENV_FILE="${NETOPS_ENV_FILE:-/etc/netops/netops.env}"
 MAX=200000
 
 status() {  # one line the GUI shows
@@ -61,6 +62,10 @@ if ! nginx -t >/dev/null 2>&1; then
   fail "nginx rejected the certificate; the previous one is still in use"
 fi
 systemctl reload nginx
+# Syslog over TLS uses the same certificate, read when the receiver starts.
+if grep -Eq '^[[:space:]]*NETOPS_SYSLOG_TLS_PORT=[1-9]' "$ENV_FILE" 2>/dev/null; then
+  systemctl try-restart netops-syslog.service || true
+fi
 subject="$(openssl x509 -in "$DST/netops.crt" -noout -subject | sed 's/^subject= *//')"
 until="$(openssl x509 -in "$DST/netops.crt" -noout -enddate | sed 's/^notAfter=//')"
 status "applied: $subject, valid until $until"

@@ -62,10 +62,50 @@ button. The same text is in `backend/app/tools/syslog/howto.py`. For every devic
 The configs are a starting point: check them against your release. The server never
 changes a device's config by itself.
 
+## Syslog over TLS (encrypted)
+
+Plain syslog crosses the network as readable text, and over UDP anyone on the path can send
+a message that looks like it came from a switch. **Syslog over TLS** (RFC 5425, TCP port
+6514) encrypts the messages the way HTTPS does: nobody on the way can read or change them,
+the device checks it is talking to this server, and over TCP nothing is silently lost. Use
+it when syslog crosses a network you don't control (between sites, over a provider's WAN),
+or when a customer's security policy asks for it. Plain and TLS can run side by side.
+
+**On the server** (off until you switch it on):
+
+1. The certificate: by default the receiver uses the **web server's certificate** (the
+   one from the setup screen). systemd hands the receiver a private copy when it starts,
+   so the key in `/etc/netops/tls/` stays readable by root only. The certificate must name
+   what the devices send to: the server's DNS name, or its IP address (add the address to
+   the names when you make the certificate request on Settings › Certificate).
+2. In `/etc/netops/netops.env`: `NETOPS_SYSLOG_TLS_PORT=6514`, then
+   `sudo systemctl restart netops-syslog`.
+3. The firewall already lets `SYSLOG_SOURCES` reach TCP 6514.
+4. The Syslog page's status line shows "TLS on port 6514", or in red why it isn't
+   listening (plain syslog keeps working either way).
+
+A new certificate from the setup screen restarts the receiver by itself, so TLS uses it
+straight away.
+
+**Optional:**
+
+* A separate certificate for syslog: `NETOPS_SYSLOG_TLS_CERT` and `NETOPS_SYSLOG_TLS_KEY`
+  (files the `netops` account can read, e.g. `root:netops 0640`).
+* **Devices must prove who they are:** `NETOPS_SYSLOG_TLS_CLIENT_CA=<CA file>`. Every
+  device then needs its own certificate signed by that CA, and devices without one are
+  refused. This is stronger, but means a certificate on every device.
+
+**On the devices:** **Help: set up devices**, *Send as: Encrypted*. It has examples for
+Cisco IOS-XE, NX-OS and ASA, Juniper, Arista, FortiGate, Palo Alto, HPE Aruba AOS-CX and
+Linux. Each device needs the CA certificate that signed the server's certificate. Platforms
+without an example (small switches, MikroTik, Ubiquiti and others) can't send TLS, or only
+on some releases: keep those on plain syslog over the management network. Time must be
+right on both sides (NTP), or the certificate check fails.
+
 ## The firewall
 
 The hardened firewall (`deploy/hardening/nftables.conf`) lets syslog in only from
-`SYSLOG_SOURCES`, on UDP and TCP 514. Set it to the devices' management networks
+`SYSLOG_SOURCES`, on UDP and TCP 514, and TCP 6514 for syslog over TLS. Set it to the devices' management networks
 (usually the same as `DEVICE_NETS`), then reload: `sudo nft -f /etc/nftables.conf`.
 
 ## Email alerts for serious messages
@@ -84,6 +124,8 @@ that arrive after a recipient chooses Syslog are sent, not the history.
 | A device's messages don't arrive | Is the device in `SYSLOG_SOURCES`? On the server: `sudo tcpdump -ni any udp port 514 and host <device>` |
 | The messages show as a sender not in the inventory | The device sends from another address: set its logging source interface to the address in the inventory |
 | "NOT STORING" in red | The disk is nearly full, or today's messages are over the size limit: lower the level on chatty devices, or raise the limit |
+| "TLS NOT LISTENING: …" in red | The reason follows: usually no certificate, or a key that doesn't match. `journalctl -u netops-syslog -n 50` |
+| A device can't connect over TLS | The device must trust the CA that signed the server's certificate, send to a name or address that is in it, and have the right time |
 | "dropped (too many from one sender)" | A device is sending more than 2000 messages a second: look at it (often a loop or debug left on) |
 
 Downloads are recorded in the activity report (`syslog.export`). Syslog files aren't part

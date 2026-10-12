@@ -3,6 +3,10 @@
 # /var/lib/netops/syslog/ (one file per day; the Syslog page reads them).
 # A separate service, so restarting or upgrading the web app never loses messages.
 # Its only extra right is to listen on a port below 1024 (CAP_NET_BIND_SERVICE).
+# Syslog over TLS (NETOPS_SYSLOG_TLS_PORT=6514 in netops.env) uses the web server's
+# certificate: systemd reads it as root and hands the service a private copy
+# (LoadCredential), so the key in /etc/netops/tls stays root-only. A new certificate
+# from the setup screen restarts this service (netops-tls-apply).
 # Check the sandboxing with:  systemd-analyze security netops-syslog
 [Unit]
 Description=NetOps syslog receiver
@@ -16,6 +20,8 @@ WorkingDirectory=/opt/netops/current/backend
 EnvironmentFile=/etc/netops/netops.env
 Environment=NETOPS_DATA_DIR=/var/lib/netops NETOPS_CREDENTIAL_KEY_FILE=/etc/netops/credential.key
 ExecStart=/opt/netops/current/venv/bin/python -m app.tools.syslog
+LoadCredential=tls.crt:/etc/netops/tls/netops.crt
+LoadCredential=tls.key:/etc/netops/tls/netops.key
 SyslogIdentifier=netops-syslog
 Restart=always
 RestartSec=5

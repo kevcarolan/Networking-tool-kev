@@ -2293,11 +2293,12 @@ async function slStatus() {
   const r = s.receiver;
   const parts = [s.running ? "Receiving" : "The syslog receiver isn't running (netops-syslog service)",
     r && r.last_message ? `last message ${fmtAgo(new Date(r.last_message * 1000).toISOString())}` : null,
+    r && r.tls_port ? (r.tls_error ? `TLS NOT LISTENING: ${r.tls_error}` : `TLS on port ${r.tls_port}`) : null,
     `${s.days} day(s) kept, ${used} GB of ${s.max_bytes / 2 ** 30} GB, up to ${s.keep_days} days`,
     r && r.stopped_reason ? `NOT STORING: ${r.stopped_reason}` : null,
     r && r.dropped_rate ? `${r.dropped_rate} dropped (too many from one sender)` : null];
   $("#sl-status").textContent = parts.filter(Boolean).join(" · ");
-  $("#sl-status").classList.toggle("bad-text", !s.running || !!(r && r.stopped_reason));
+  $("#sl-status").classList.toggle("bad-text", !s.running || !!(r && (r.stopped_reason || r.tls_error)));
 }
 
 async function slSearch() {
@@ -2440,7 +2441,6 @@ async function slHelp() {
   if (!sl.howto) sl.howto = await api("/api/syslog/howto").catch((e) => toast(e.message));
   if (!sl.howto) return;
   const hw = sl.howto;
-  $("#sl-help-general").replaceChildren(...hw.general.map((g) => h("li", {}, g)));
   const sel = $("#sl-help-platform");
   if (!sel.options.length) {
     sel.replaceChildren(...hw.platforms.map((p, i) => h("option", { value: i }, p.title)));
@@ -2451,16 +2451,28 @@ async function slHelp() {
 }
 
 function slHelpShow() {
-  const p = sl.howto.platforms[Number($("#sl-help-platform").value) || 0];
+  const hw = sl.howto;
+  const p = hw.platforms[Number($("#sl-help-platform").value) || 0];
   const server = $("#sl-help-server").value.trim() || "<server address>";
-  $("#sl-help-text").textContent = p.text.replaceAll("{server}", server);
-  $("#sl-help-notes").textContent = (p.kind === "gui" ? "In the device's web page. " : "") + (p.notes || "");
+  const tls = $("#sl-help-mode").value === "tls";
+  const general = tls ? [...hw.tls_general, ...hw.general.slice(0, 2)] : hw.general;
+  if (tls && !hw.tls_port) general.unshift("Syslog over TLS is OFF on this server: an admin switches it on first (docs/syslog.md).");
+  $("#sl-help-general").replaceChildren(...general.map((g) => h("li", {}, g)));
+  if (tls && !p.tls) {
+    $("#sl-help-text").textContent = `${p.title} can't send syslog over TLS (or not on every release). ` +
+      "Use plain syslog over the management network, or check the vendor's documentation for your release.";
+    $("#sl-help-notes").textContent = "";
+    return;
+  }
+  $("#sl-help-text").textContent = (tls ? p.tls : p.text).replaceAll("{server}", server);
+  $("#sl-help-notes").textContent = (p.kind === "gui" ? "In the device's web page. " : "") + (tls ? "" : p.notes || "");
 }
 
 $("#sl-help").addEventListener("click", slHelp);
 $("#sl-help-close").addEventListener("click", () => $("#sl-help-dialog").close());
 $("#sl-help-platform").addEventListener("change", slHelpShow);
 $("#sl-help-server").addEventListener("input", slHelpShow);
+$("#sl-help-mode").addEventListener("change", slHelpShow);
 $("#sl-help-copy").addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText($("#sl-help-text").textContent);

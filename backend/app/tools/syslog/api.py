@@ -164,5 +164,8 @@ def status(request: Request, _: User = Depends(SYSLOG_VIEW)):
 def setup_help(request: Request, _: User = Depends(SYSLOG_VIEW)):
     """Suggested configs for sending syslog here, per platform; ``{server}`` is the
     address devices use to reach this server."""
-    return {"general": howto.GENERAL, "platforms": howto.HOWTO,
-            "server": request.url.hostname or "", "udp_port": request.app.state.settings.syslog_udp_port}
+    s = request.app.state.settings
+    platforms = [{**p, "tls": howto.TLS.get(p["platform"], "")} for p in howto.HOWTO]
+    return {"general": howto.GENERAL, "tls_general": howto.TLS_GENERAL, "platforms": platforms,
+            "server": request.url.hostname or "", "udp_port": s.syslog_udp_port,
+            "tls_port": s.syslog_tls_port}

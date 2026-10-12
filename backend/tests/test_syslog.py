@@ -5,6 +5,7 @@ import asyncio
 import datetime as dt
 import socket
 import time
+from pathlib import Path
 
 import pytest
 
@@ -337,3 +338,136 @@ def test_demo_messages_show_every_severity_and_parse():
     for story in ("Hold timer expired", "PS_FAIL", "BLOCK_BPDUGUARD", "203.0.113.66",
                   "phase1 negotiation failed", "Lost Failover communications"):
         assert story in texts
+
+
+# --- syslog over TLS ----------------------------------------------------------------------
+
+def _cert(tmp_path, name, ca=None):
+    """A certificate for 127.0.0.1 (signed by ``ca`` = (cert, key), or self-signed)."""
+    import ipaddress
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, name)])
+    issuer, sign_key = (ca[0].subject, ca[1]) if ca else (subject, key)
+    now = dt.datetime.now(dt.UTC)
+    cert = (x509.CertificateBuilder().subject_name(subject).issuer_name(issuer)
+            .public_key(key.public_key()).serial_number(x509.random_serial_number())
+            .not_valid_before(now - dt.timedelta(days=1)).not_valid_after(now + dt.timedelta(days=30))
+            .add_extension(x509.SubjectAlternativeName([x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]), False)
+            .add_extension(x509.BasicConstraints(ca=ca is None, path_length=None), True)
+            .sign(sign_key, hashes.SHA256()))
+    crt, k = tmp_path / f"{name}.crt", tmp_path / f"{name}.key"
+    crt.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    k.write_bytes(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                                    serialization.NoEncryption()))
+    return cert, key, crt, k
+
+
+def _serve_and_send(settings, store, send):
+    import ssl as ssl_mod
+
+    settings.syslog_bind = "127.0.0.1"
+    settings.syslog_udp_port = settings.syslog_tcp_port = 0
+    settings.syslog_tls_port = _free_port()
+    rx = Receiver(settings, store)
+    rx.housekeeping = lambda: None
+    result = {}
+
+    async def run():
+        task = asyncio.create_task(rx.serve())
+        await asyncio.sleep(0.3)
+        try:
+            await send(settings.syslog_tls_port)
+            result["ok"] = True
+        except (ssl_mod.SSLError, ConnectionError, OSError) as exc:
+            result["error"] = exc
+        await asyncio.sleep(1.5)
+        rx.stop()
+        await task
+
+    asyncio.run(run())
+    return rx, result
+
+
+def _client(ca_file, cert=None):
+    import ssl as ssl_mod
+
+    ctx = ssl_mod.create_default_context(cafile=str(ca_file))
+    if cert:
+        ctx.load_cert_chain(str(cert[0]), str(cert[1]))
+
+    async def send(port):
+        r, w = await asyncio.open_connection("127.0.0.1", port, ssl=ctx)
+        msg = b"<34>1 - sw1 sshd - - - over tls ok"
+        w.write(b"%d %s" % (len(msg), msg))
+        await w.drain()
+        await asyncio.sleep(0.2)
+        w.close()
+    return send
+
+
+def test_syslog_over_tls(settings, store, tmp_path):
+    _, _, crt, key = _cert(tmp_path, "server")
+    settings.syslog_tls_cert, settings.syslog_tls_key = str(crt), str(key)
+    rx, result = _serve_and_send(settings, store, _client(crt))
+    assert result == {"ok": True} and rx.counts["received_tls"] == 1
+    rows, _ = store.search(Filter(time.time() - 60, time.time() + 60))
+    assert [r["text"] for r in rows] == ["1 - sw1 sshd - - - over tls ok"]
+    assert rx.status()["tls_port"] == settings.syslog_tls_port and not rx.status()["tls_error"]
+
+
+def test_tls_can_require_a_certificate_from_each_device(settings, store, tmp_path):
+    ca_cert, ca_key, ca_crt, _ = _cert(tmp_path, "devices-ca")
+    _, _, crt, key = _cert(tmp_path, "server")
+    _, _, dev_crt, dev_key = _cert(tmp_path, "sw1", ca=(ca_cert, ca_key))
+    settings.syslog_tls_cert, settings.syslog_tls_key = str(crt), str(key)
+    settings.syslog_tls_client_ca = str(ca_crt)
+    rx, result = _serve_and_send(settings, store, _client(crt))  # no device certificate
+    assert rx.counts["received_tls"] == 0
+    rx, result = _serve_and_send(settings, store, _client(crt, (dev_crt, dev_key)))
+    assert rx.counts["received_tls"] == 1
+
+
+def test_a_tls_problem_leaves_plain_syslog_running(settings, store, monkeypatch):
+    monkeypatch.delenv("CREDENTIALS_DIRECTORY", raising=False)
+    settings.syslog_bind = "127.0.0.1"
+    settings.syslog_udp_port, settings.syslog_tcp_port = _free_port(), 0
+    settings.syslog_tls_port = _free_port()
+    rx = Receiver(settings, store)
+    rx.housekeeping = lambda: None
+
+    async def run():
+        task = asyncio.create_task(rx.serve())
+        await asyncio.sleep(0.3)
+        u = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        u.sendto(b"<14>plain still works", ("127.0.0.1", settings.syslog_udp_port))
+        u.close()
+        await asyncio.sleep(1.5)
+        rx.stop()
+        await task
+
+    asyncio.run(run())
+    assert "no certificate" in rx.tls_error and rx.counts["stored"] == 1
+
+
+def test_the_web_certificate_is_used_through_systemd(settings, monkeypatch, tmp_path):
+    from app.tools.syslog.receiver import tls_files
+
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(tmp_path))
+    assert tls_files(settings) == (str(tmp_path / "tls.crt"), str(tmp_path / "tls.key"))
+    unit = (Path(__file__).parents[2] / "deploy" / "netops-syslog.service").read_text()
+    assert "LoadCredential=tls.crt:/etc/netops/tls/netops.crt" in unit
+    assert "LoadCredential=tls.key:/etc/netops/tls/netops.key" in unit
+
+
+def test_help_has_tls_examples(admin):
+    r = admin.get("/api/syslog/howto").json()
+    tls = {p["platform"]: p["tls"] for p in r["platforms"]}
+    assert "transport tls port 6514" in tls["cisco_ios"] and "{server}" in tls["juniper_junos"]
+    assert tls["mikrotik_routeros"] == ""  # plain only
+    assert r["tls_port"] == 0 and r["tls_general"]
