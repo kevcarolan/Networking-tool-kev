@@ -3,7 +3,8 @@
 Levels within an area are ordered: each one includes the ones before it. An admin has
 the highest level everywhere and also manages users and reads the activity log.
 
-    inventory  view < manage            devices and credential profiles
+    inventory  view < manage < addresses < credentials
+                                        devices; who may decide where a device account is sent
     backups    none < view < run < configs < manage
     firmware   none < view < manage     versions, standards, image library, upgrade settings
     upgrades   none < view < dry_run < live
@@ -13,7 +14,11 @@ the highest level everywhere and also manages users and reads the activity log.
 AREAS: dict[str, dict] = {
     "inventory": {"label": "Devices and credentials", "levels": {
         "view": "See devices",
-        "manage": "Add, edit and delete devices and credential profiles"}},
+        "manage": "Also edit device details (name, platform, site, notes, schedule) and "
+                  "delete devices",
+        "addresses": "Also add devices and change a device's address or credential profile "
+                     "(this decides where a device account's password is sent)",
+        "credentials": "Also add, change and delete credential profiles"}},
     "backups": {"label": "Config backups", "levels": {
         "none": "No access",
         "view": "See backup status and history",

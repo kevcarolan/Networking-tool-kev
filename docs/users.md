@@ -38,7 +38,7 @@ Each user has a level in each area. Each level includes the ones before it.
 
 | Area | Levels |
 |---|---|
-| Devices and credentials | **view**: see devices · **manage**: add, edit and delete devices and credential profiles |
+| Devices and credentials | **view**: see devices · **manage**: edit device details (name, platform, site, notes, schedule) and delete devices · **addresses**: add devices and change a device's address or credential profile · **credentials**: add, change and delete credential profiles |
 | Config backups | none · **view**: status and history · **run**: run a backup now · **configs**: read stored configs and diffs (they contain secrets) · **manage**: change backup schedules |
 | Firmware | none · **view**: versions, standards, image library · **manage**: check versions, upload images, set standards and device upgrade settings |
 | Upgrade jobs | none · **view**: jobs and reports · **dry run**: plan and run dry-run jobs · **live**: plan and run live upgrades |
@@ -47,11 +47,17 @@ Each user has a level in each area. Each level includes the ones before it.
 **Administrator** (a tick box) means the top level everywhere, plus the Users and
 Activity pages.
 
-**Devices and credentials: manage** is more powerful than it looks. Whoever has it can
-change a device's address or credential profile, and the next backup sends that profile's
-password to the new address. Both changes are in the activity report with the old and new
-values, and the server refuses a device whose SSH key has changed. Give it only to people
-you would trust with the device accounts themselves.
+**Devices and credentials** has two levels above *manage*, because a device's address and
+credential profile decide where that account's password is sent: the next backup logs in
+to whatever the address points at.
+* **addresses** lets a user add devices and change a device's address or credential
+  profile. Give it only to people you would trust with the device accounts themselves.
+* **credentials** also lets them add, change and delete the credential profiles.
+* With **manage** alone, the address and credential fields are greyed out.
+
+Both changes are in the activity report with the old and new values, and the server
+refuses a device whose SSH key has changed. Users who had *manage* before this level was
+split keep *manage*: give *addresses* to those who add devices.
 
 **Presets** fill in the levels; adjust them after:
 
