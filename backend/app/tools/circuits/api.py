@@ -1,6 +1,5 @@
 """HTTP API for the master circuit list."""
 
-import csv
 import io
 import json
 from collections import defaultdict
@@ -10,6 +9,7 @@ from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from app.core import exports
 from app.core.audit import audit
 from app.core.auth import User, require
 from app.core.db import get_db, session_scope, utcnow
@@ -127,7 +127,7 @@ def list_circuits(db: Session = Depends(get_db), _: User = Depends(CIRCUITS_VIEW
 def export_csv(db: Session = Depends(get_db), _: User = Depends(CIRCUITS_VIEW)):
     imp = _active(db)
     out = io.StringIO()
-    w = csv.writer(out)
+    w = exports.csv_writer(out)
     w.writerow([CSV_HEADERS[f] for f in FIELDS] + ["Matched inventory device", "Warnings"]
                + LIVE_HEADERS)
     for r in _export_rows(db):
@@ -182,7 +182,8 @@ def export_updated(db: Session = Depends(get_db), _: User = Depends(CIRCUITS_VIE
         if found:
             values["switch"], values["port"] = r["live_switch"], r["live_port"]
             values["vlan"] = r["vlan"] or r["live_vlan"]
-        ws.append([values[f] for f in FIELDS] + [r["switch"], r["port"]] + _live_cells(r))
+        exports.append_row(ws, [values[f] for f in FIELDS] + [r["switch"], r["port"]]
+                           + _live_cells(r))
     ws.freeze_panes = "A2"
     buf = io.BytesIO()
     wb.save(buf)

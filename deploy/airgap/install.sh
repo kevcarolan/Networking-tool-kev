@@ -54,7 +54,12 @@ REL="$PREFIX/releases/$VERSION"
 APP="$BUNDLE/app"
 
 say "Checking bundle integrity ($VERSION)"
-(cd "$BUNDLE" && sha256sum --quiet -c SHA256SUMS) || die "checksum mismatch: the bundle is damaged or has been changed. Do not install it."
+# The files must be root's own: anyone who could change them could run commands as root.
+other="$(find "$BUNDLE" \( ! -user root -o -perm -0002 -o -perm -0020 \) -print -quit)"
+[[ -z "$other" ]] || die "$other is not root's own file, or others can change it. Unpack the bundle as root into a root-only folder (see the guide)."
+# (SHA256SUMS travels with the bundle, so this finds damage in transit. That the bundle
+# is the one that was built is checked with its .sha256 before unpacking: see the guide.)
+(cd "$BUNDLE" && sha256sum --quiet -c SHA256SUMS) || die "checksum mismatch: the bundle is damaged. Do not install it."
 echo "All files match SHA256SUMS."
 
 if [[ -z "$SKIP_OS" && -f "$BUNDLE/debs/Packages" ]]; then
@@ -87,6 +92,7 @@ install -d -m 0750 -o root -g netops "$ETC"
 install -d -m 0700 -o root -g root "$ETC/tls" "$BACKUPS"
 install -d -m 0750 -o netops -g netops "$DATA"
 install -d -m 0750 -o netops -g netops "$DATA/tls"   # certificates proposed by the setup screen
+install -d -m 0755 -o root -g root /var/lib/netops-tls  # the root service's status (the app reads it)
 
 say "Installing release $VERSION"
 CURRENT="$(readlink -f "$PREFIX/current" 2>/dev/null || true)"
@@ -119,7 +125,7 @@ if [[ ! -f "$ETC/netops.env" ]]; then
   echo "Created $ETC/netops.env (AD and the admin are set on the setup screen; edit it only for other settings)."
 fi
 if [[ ! -f "$ETC/credential.key" ]]; then
-  (umask 027 && "$STAGE/venv/bin/python" -c \
+  (umask 027 && cd / && "$STAGE/venv/bin/python" -I -c \
     "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" > "$ETC/credential.key")
   chown root:netops "$ETC/credential.key"
   chmod 0640 "$ETC/credential.key"
@@ -191,7 +197,7 @@ ln -sfn "$REL" "$PREFIX/current.new" && mv -T "$PREFIX/current.new" "$PREFIX/cur
 
 health() {
   for _ in $(seq 1 30); do
-    "$PREFIX/current/venv/bin/python" -c \
+    "$PREFIX/current/venv/bin/python" -I -c \
       "import urllib.request; urllib.request.urlopen('http://127.0.0.1:$APP_PORT/api/health', timeout=2)" \
       2>/dev/null && return 0
     sleep 1

@@ -7,6 +7,7 @@ the coloured band rows above it don't matter."""
 import io
 import ipaddress
 import re
+import zipfile
 from dataclasses import dataclass, field
 
 FIELDS = (
@@ -178,9 +179,26 @@ def _find_header(rows: list[tuple]) -> tuple[int, dict[int, str], dict[str, str]
     return None
 
 
+# A workbook is a zip file; refuse one that would unpack to more than this.
+MAX_UNPACKED = 500 * 2**20
+
+
+def _check_unpacked_size(data: bytes) -> None:
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            total = sum(i.file_size for i in z.infolist())
+    except (zipfile.BadZipFile, ValueError):
+        raise CircuitImportError("Not a readable .xlsx workbook (not a zip file)") from None
+    if total > MAX_UNPACKED:
+        raise CircuitImportError(
+            f"The workbook unpacks to more than {MAX_UNPACKED // 2**20} MB; save it again in "
+            "Excel without unused rows, columns or pictures")
+
+
 def parse_workbook(data: bytes, max_rows: int = 50000) -> ParsedSheet:
     from openpyxl import load_workbook
 
+    _check_unpacked_size(data)
     try:
         wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
     except Exception as exc:  # noqa: BLE001 - zip/xml errors of a non-xlsx file

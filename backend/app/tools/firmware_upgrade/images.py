@@ -5,6 +5,7 @@ import hashlib
 import os
 import re
 import secrets
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -41,8 +42,11 @@ class ImageWriter:
     """Streams one upload to a temporary file, hashing as it goes. Call
     finish() to verify and move it into place, or abort() to discard it."""
 
-    def __init__(self, directory: Path, filename: str, max_bytes: int):
+    def __init__(self, directory: Path, filename: str, max_bytes: int,
+                 keep_free: int = 0):
         self.directory = directory
+        self.keep_free = keep_free
+        self._checked = 0
         self.final = directory / filename
         self.part = directory / f".{filename}.{secrets.token_hex(4)}.part"
         self.max_bytes = max_bytes
@@ -57,6 +61,12 @@ class ImageWriter:
         self.size += len(chunk)
         if self.size > self.max_bytes:
             raise ImageError(f"Image is larger than the {self.max_bytes // 2**20} MB limit")
+        if self.size - self._checked >= 64 * 2**20 or not self._checked:
+            self._checked = self.size
+            if shutil.disk_usage(self.directory).free - len(chunk) < self.keep_free:
+                raise ImageError("Not enough free disk space on the server for this image "
+                                 f"(at least {self.keep_free // 2**20} MB must stay free); "
+                                 "delete images that are no longer needed")
         self._fh.write(chunk)
         self._md5.update(chunk)
         self._sha512.update(chunk)

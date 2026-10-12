@@ -5,3 +5,8 @@ After=nginx.service
 [Service]
 Type=oneshot
 ExecStart=/usr/local/sbin/netops-tls-apply
+# Runs as root (it installs into /etc/netops/tls and reloads nginx), so keep it small.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+PrivateDevices=yes

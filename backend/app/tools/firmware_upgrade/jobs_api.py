@@ -334,7 +334,8 @@ def report_html(job_id: int, request: Request, db: Session = Depends(get_db),
     s = _settings(request)
     return Response(render_html(job, s.product_name, s.site_name), media_type="text/html", headers={
         # The report has its own inline styles and no scripts.
-        "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
+        "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; "
+                                   "frame-ancestors 'none'",
         "Content-Disposition": f'inline; filename="upgrade-job-{job_id}.html"'})
 
 
