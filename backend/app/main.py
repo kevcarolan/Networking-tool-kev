@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.core import appsettings, auth, display, inventory, licence, setup, users
+from app.core import appsettings, auth, display, inventory, licence, setup, ssh, users
 from app.core.config import Settings, get_settings
 from app.core.crypto import CredentialCipher
 from app.core.db import init_engine, session_scope
@@ -54,6 +54,7 @@ def create_app(settings: Settings | None = None, fetcher=fetch_config,
     run_scheduler = settings.scheduler_enabled if start_scheduler is None else start_scheduler
 
     setup.ensure_token(settings)
+    ssh.use_known_hosts(settings.data_dir / "known_hosts")  # devices' SSH host keys
     appsettings.apply(settings)  # site settings and defaults from the Settings page
     with session_scope() as db:
         licence.ensure_install(db)
@@ -79,6 +80,7 @@ def create_app(settings: Settings | None = None, fetcher=fetch_config,
     app.state.cipher = cipher
     app.state.authenticator = auth.Authenticator(settings)
     app.state.login_throttle = auth.LoginThrottle()
+    app.state.address_throttle = auth.LoginThrottle(max_failures=30)  # any names, one address
     app.state.backup_service = backup_service
     app.state.firmware_service = firmware_service
     app.state.circuit_scan = circuit_scan

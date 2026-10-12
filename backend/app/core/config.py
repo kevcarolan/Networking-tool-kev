@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # local tools often use. The installed service (systemd + nginx) also uses 8710.
     host: str = "127.0.0.1"
     port: int = 8710
+    # Where the root certificate service (deploy/netops-tls-apply.sh) writes its result
+    tls_status_file: Path = Path("/var/lib/netops-tls/apply-status")
+
     # The wall display's own HTTPS port (nginx). Only used to show the display link; the
     # nginx site and the host firewall must use the same number.
     display_port: int = 8443
@@ -75,6 +78,8 @@ class Settings(BaseSettings):
     firmware_check_minutes: int = 1440  # how often each device's version is re-read
     firmware_workers: int = 5
     firmware_max_upload_mb: int = 4096
+    # Uploads stop while this much disk is still free (MB)
+    firmware_keep_free_mb: int = 2048
 
     # Upgrade jobs
     upgrade_workers: int = 2

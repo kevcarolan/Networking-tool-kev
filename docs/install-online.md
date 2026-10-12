@@ -33,12 +33,17 @@ release.
 
 ```bash
 sudo apt-get update && sudo apt-get install -y git
-git clone <repository URL> ~/netops
-cd ~/netops
+sudo git clone <repository URL> /usr/local/src/netops
+cd /usr/local/src/netops
 ```
 
+Clone it **as root** into a root-owned folder, such as `/usr/local/src/netops`. The
+installer runs as root, so it refuses a copy that any other account could change (one
+in your home folder, for example): whoever could edit it could run commands as root at the
+next upgrade.
+
 To install a particular version, check out its tag or commit:
-`git checkout <tag>`.
+`sudo git checkout <tag>`.
 
 ## 3. Install
 
@@ -61,14 +66,14 @@ encryption key onwards:
 3. add the licence on the Settings page;
 4. harden the server.
 
-The installer keeps the bundle in `~/netops/dist/`, with its SHA-256 and a list of every
+The installer keeps the bundle in `/usr/local/src/netops/dist/`, with its SHA-256 and a list of every
 package and version. Attach that list to your change ticket.
 
 ## 4. Upgrade
 
 ```bash
-cd ~/netops
-git pull              # or: git fetch && git checkout <new tag>
+cd /usr/local/src/netops
+sudo git pull         # or: sudo git fetch && sudo git checkout <new tag>
 sudo deploy/install-online.sh
 ```
 

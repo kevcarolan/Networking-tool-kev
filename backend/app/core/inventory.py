@@ -201,17 +201,52 @@ def create_device(body: DeviceIn, db: Session = Depends(get_db),
     return device_out(device)
 
 
+def _who_and_where(device: Device) -> dict:
+    return {"address": device.address,
+            "credential": device.credential.name if device.credential else "-"}
+
+
 @router.put("/devices/{device_id}", response_model=DeviceOut)
 def update_device(device_id: int, body: DeviceIn, db: Session = Depends(get_db),
                   user: User = Depends(INVENTORY_MANAGE)):
     device = db.get(Device, device_id) or _not_found("Device")
     _check_credential(db, body.credential_id)
+    if (body.name, body.address) != (device.name, device.address):
+        # Otherwise an existing entry could be reused for a different device.
+        licence.require_active(db, "change a device's name or address")
+    before = _who_and_where(device)
     for key, value in body.model_dump().items():
         setattr(device, key, value)
     _flush_unique(db, "A device with that name already exists")
     db.refresh(device)
-    audit(db, user.username, "device.update", device.name)
+    after = _who_and_where(device)
+    # The address and the account matter: the account's password goes to that address.
+    changes = "".join(f", {k} {before[k]} -> {after[k]}" for k in before if before[k] != after[k])
+    audit(db, user.username, "device.update", device.name + changes)
     return device_out(device)
+
+
+@router.get("/devices/{device_id}/ssh-key")
+def get_ssh_key(device_id: int, db: Session = Depends(get_db), _: User = Depends(current_user)):
+    """The SSH host key recorded for the device (None until the first connection)."""
+    from app.core import ssh
+
+    device = db.get(Device, device_id) or _not_found("Device")
+    return {"address": device.address, "key": ssh.host_key(device.address)}
+
+
+@router.delete("/devices/{device_id}/ssh-key", status_code=204)
+def forget_ssh_key(device_id: int, db: Session = Depends(get_db),
+                   user: User = Depends(require_admin)):
+    """Forget the recorded key (the device was replaced): the next connection records
+    the new one. Admins only."""
+    from app.core import ssh
+
+    device = db.get(Device, device_id) or _not_found("Device")
+    old = ssh.host_key(device.address)
+    ssh.forget_host_key(device.address)
+    audit(db, user.username, "device.ssh_key_forget",
+          f"{device.name} ({device.address}): {old['fingerprint'] if old else 'none recorded'}")
 
 
 @router.delete("/devices/{device_id}", status_code=204)

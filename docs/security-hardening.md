@@ -240,7 +240,28 @@ What the installer set up, for your security review:
   service (`netops-tls.path` → `/usr/local/sbin/netops-tls-apply`) checks it (a real
   certificate, in date, matches its key, no links), copies it into place, and keeps it only
   if `nginx -t` accepts it; otherwise it puts the old one back. The result is shown on the
-  Settings page and logged to syslog.
+  Settings page and logged to syslog. The root service reads each proposed file once,
+  without following links, and writes its result to `/var/lib/netops-tls/`, a folder the
+  app can't write to.
+* **Root scripts never act on files the app can change.** The nightly server backup
+  (`netops-backup`) copies the database and the config history *as* `netops`, and only then
+  packs them as root. The online installer refuses a source folder that anyone but root
+  could change.
+* **Sign-in limits:** after 5 wrong passwords for one account from one address, that pair
+  waits 5 minutes, however the name is typed (`jsmith`, `CORP\jsmith`, `jsmith@corp.local`,
+  `JSmith`). One address that gets 30 wrong passwords across any names waits too (password
+  spraying). Unknown names take as long to refuse as known ones.
+* **Sign-ins last at most `NETOPS_SESSION_MAX_AGE_HOURS`,** even while in use. Changing or
+  removing the break-glass password signs out every break-glass session at once.
+* **Only your own domain:** with AD, a name typed with another domain
+  (`OTHER\jsmith`, `jsmith@other.local`) is refused; the server signs in to AD only as
+  `<name>@<your domain>`.
+* **Exports are safe to open in Excel.** Text in CSV and Excel exports that starts with
+  `= + - @` is kept as text, so a crafted sign-in name, circuit sheet or device output can't
+  run a formula on the computer of whoever opens it.
+* **Uploads are limited:** circuit spreadsheets to 25 MB (and 500 MB unpacked), firmware
+  images to `NETOPS_FIRMWARE_MAX_UPLOAD_MB`, and an image upload stops while
+  `NETOPS_FIRMWARE_KEEP_FREE_MB` (2 GB) of disk is still free.
 
 ## 8. HTTPS and app settings
 
@@ -285,6 +306,8 @@ Alert on:
 | `nft-out-drop` | kernel log | Something on the server tried to reach a place it shouldn't. Possible compromise |
 | `action=login` by the local admin account | `netops.audit` | Break-glass was used |
 | Many `action=login.failed` | `netops.audit` | Password guessing |
+| `action=device.ssh_key_forget`, or backups failing with "SSH key has changed" | `netops.audit`, Config backups | A device was replaced, or something else is answering on its address |
+| `action=device.update` with an address or credential change | `netops.audit` | Where a device account's password is sent changed |
 | `netops-secrets`, `netops-code`, `sshd`, `sudoers`, `identity` keys | auditd | Someone read the key or changed code, SSH, sudo or accounts |
 | SSH logins | `sshd` | Expected only from named admins, at expected times |
 | Service restarts | systemd | Unexpected restarts may be tampering or a crash |
@@ -344,6 +367,17 @@ The server's credentials are only as dangerous as the devices allow. On the devi
 * **Log device logins centrally**, and alert when the backup account logs in from
   anywhere other than the NetOps server.
 * Keep device firmware current. The Firmware tool's version report shows what's behind.
+* **SSH host keys** are checked. The server records each device's key the first time it
+  connects (in `/var/lib/netops/known_hosts`), and refuses a device whose key changes,
+  before any password is sent. So someone who takes over a device's address can't collect
+  the account's password. Only an admin can forget a recorded key (on the device's edit
+  dialog), and that is in the activity report. If you can, compare the first key with the
+  device's own (`show ip ssh` / `show crypto key mypubkey`) after adding it.
+* **Who can edit devices decides where passwords go.** A user with *Inventory: manage* can
+  point a device at another address, or give it another credential profile, and the next
+  backup sends that profile's password there. Both changes are in the activity report
+  with the old and new values. Give *Inventory: manage* only to people you'd trust with
+  the device accounts themselves, and keep the upgrade account in its own profile.
 
 ## 12. Processes
 

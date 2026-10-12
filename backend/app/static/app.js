@@ -314,7 +314,25 @@ async function openDeviceDialog(row = null) {
     form.credential_id.value = state.credentials[0].id;
   }
   dlg.dataset.deviceId = row ? row.device.id : "";
+  showSshKey(row);
   dlg.showModal();
+}
+
+/** The device's recorded SSH host key, and (admins) forgetting it after a replacement. */
+async function showSshKey(row) {
+  const p = $("#device-ssh-key");
+  p.hidden = true;
+  if (!row) return;
+  const r = await api(`/api/devices/${row.device.id}/ssh-key`).catch(() => null);
+  if (!r) return;
+  p.replaceChildren(r.key ? `SSH host key: ${r.key.type} ${r.key.fingerprint} ` : "SSH host key: recorded at the first connection",
+    r.key && isAdmin() ? h("button", { type: "button", class: "small", onclick: async () => {
+      if (!confirm(`Forget the SSH host key of ${row.device.name}? Only if the device was replaced or reinstalled: the next connection trusts the key it is offered.`)) return;
+      await api(`/api/devices/${row.device.id}/ssh-key`, { method: "DELETE" });
+      toast("SSH host key forgotten");
+      showSshKey(row);
+    } }, "Forget") : "");
+  p.hidden = false;
 }
 
 $("#add-device").addEventListener("click", () => openDeviceDialog());

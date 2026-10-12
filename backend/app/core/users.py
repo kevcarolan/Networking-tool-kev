@@ -6,7 +6,6 @@ it ended: backups they ran, upgrade jobs they planned or started (dry run or liv
 their result, overrides, circuit imports and scans.
 """
 
-import csv
 import io
 import json
 import re
@@ -18,7 +17,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core import appsettings
+from app.core import appsettings, exports
 from app.core import permissions as pm
 from app.core.audit import audit
 from app.core.auth import MIN_PASSWORD, User, account_key, require_admin
@@ -300,7 +299,7 @@ def activity_csv(user: str = "", area: str = "", since: datetime | None = None,
                  _: User = Depends(require_admin)):
     since, until = _range(since, until)
     out = io.StringIO()
-    w = csv.writer(out)
+    w = exports.csv_writer(out)
     w.writerow(["Time (UTC)", "User", "Area", "Action", "Detail"])
     for e in _events(db, user, area, since, until, 50000):
         w.writerow([f"{e.timestamp:%Y-%m-%d %H:%M:%S}", e.username,
