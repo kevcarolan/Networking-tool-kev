@@ -1,17 +1,29 @@
 # NetOps Tools
 
-A self-hosted web platform for network operations tools. Two tools share one
-device inventory, one AD login and one database:
+A self-hosted web platform for network operations: one server, one web address, one login
+(Active Directory and/or local users), and a set of tools that share a device inventory and
+one database.
 
-* **Config Backup** pulls running configurations from switches and firewalls
-  on a schedule, keeps every version in a git archive, and shows in the browser
-  which devices are backing up and which are failing, and why.
-* **Firmware** shows which software version every device runs compared with the
-  approved version for its model, and keeps a checksummed library of firmware images.
-  Staging and upgrades come in later phases.
-* **Circuits** holds the master circuit list, uploaded from the Excel template. It is
-  linked to switches and ports, so you can see which circuits a device carries when
-  planning an upgrade. See [docs/circuits.md](docs/circuits.md).
+* **Config backups**: running configs from switches and firewalls on a schedule, every
+  version kept, and which devices are failing and why.
+* **Inventory**: every device plus racks, servers, UPSs and anything else, with your own
+  columns, import and export. See [docs/inventory.md](docs/inventory.md).
+* **Firmware and upgrade jobs**: versions against the approved standard, an image library,
+  and upgrades with pre-checks, a maintenance window and roll-back. See
+  [docs/upgrades.md](docs/upgrades.md).
+* **Circuits**: the circuit list from Excel, compared every night with where each device
+  really is on the network. See [docs/circuits.md](docs/circuits.md).
+* **Syslog**: the devices' log messages in one place, searchable, with email alerts and
+  optional TLS. See [docs/syslog.md](docs/syslog.md).
+* Email alerts, a wall display for NOC screens, per-area user permissions, an activity
+  report, and licences that unlock the tools ([docs/licensing.md](docs/licensing.md)).
+
+## Try it
+
+On your own computer, against a simulated network of 25 devices: install Python 3.11+ and
+Git, then run `run-demo.bat` (Windows) or `./run-demo.sh` (Mac, Linux), and open
+<http://127.0.0.1:8710> (demo / demo-password). Step by step, with a checklist of what to
+try: [docs/try-it.md](docs/try-it.md).
 
 See [docs/design.md](docs/design.md) for the platform design and roadmap, and
 [docs/firmware.md](docs/firmware.md) for the firmware tool's design and upgrade plan, and

@@ -10,6 +10,9 @@ pip install -r requirements-dev.txt
 python -m app.demo
 ```
 
+Or simply run `run-demo.bat` (Windows) or `./run-demo.sh` (Mac, Linux) from the top folder:
+they do the steps above. A step-by-step guide with a checklist: [try-it.md](try-it.md).
+
 Open `http://127.0.0.1:8710` and sign in as **demo** / **demo-password**. The command also
 prints a link for the **wall display**: open it in a second window or on a big screen.
 

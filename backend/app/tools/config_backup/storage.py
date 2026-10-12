@@ -5,12 +5,16 @@ readable diffs, and the folder can be browsed or grepped directly on disk.
 """
 
 import difflib
-import fcntl
 import re
 import subprocess
 import threading
 from contextlib import contextmanager
 from pathlib import Path
+
+try:
+    import fcntl
+except ImportError:  # Windows: the demo runs in one process, so the thread lock is enough
+    fcntl = None
 
 _SLUG_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -41,6 +45,9 @@ class GitConfigStore:
         """One writer at a time, across threads and processes (the web app and the
         upgrade worker both take backups)."""
         with self._lock, open(self.root.parent / ".configs.lock", "a") as fh:
+            if fcntl is None:
+                yield
+                return
             fcntl.flock(fh, fcntl.LOCK_EX)
             try:
                 yield
