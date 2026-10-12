@@ -1,6 +1,5 @@
 """HTTP API for the firmware tool: version report, standards and image library."""
 
-import csv
 import io
 import re
 from datetime import datetime
@@ -12,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core import exports
 from app.core.audit import audit
 from app.core.auth import User, require
 from app.core.db import get_db, session_scope
@@ -126,7 +126,7 @@ def list_devices(request: Request, db: Session = Depends(get_db),
 @router.get("/devices.csv")
 def export_csv(request: Request, db: Session = Depends(get_db), _: User = Depends(FIRMWARE_VIEW)):
     out = io.StringIO()
-    w = csv.writer(out)
+    w = exports.csv_writer(out)
     w.writerow(["device", "address", "site", "platform", "model", "serial", "version",
                 "target_version", "compliance", "boot_mode", "ha_role", "flash_free_mb",
                 "last_checked"])
@@ -335,7 +335,8 @@ async def upload_image(
         raise HTTPException(409, "An image with that file name already exists")
     try:
         writer = ImageWriter(settings.firmware_dir, filename,
-                             settings.firmware_max_upload_mb * 2**20)
+                             settings.firmware_max_upload_mb * 2**20,
+                             keep_free=settings.firmware_keep_free_mb * 2**20)
     except ImageError as exc:
         raise HTTPException(409, str(exc)) from None
 

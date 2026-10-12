@@ -197,6 +197,15 @@ their results, overrides, and changes to devices, users and settings. Export it 
    The columns are `name,address,platform,site,credential,frequency_minutes,notes`.
    There is an example in `docs/devices-example.csv`.
 3. Check each new platform with one device first: **Backup now**, then **Firmware › Check now**.
+4. **SSH host keys.** The first time the server connects to a device it records the
+   device's SSH key, which is shown in the device's edit dialog. After that, a device that
+   answers with a different key is refused **before any password is sent**, and the
+   reason says so. When you have really replaced or reinstalled the device, an admin
+   clicks **Forget** next to the key in its edit dialog, and the next connection records the
+   new one. Otherwise, find out who is answering on that address first.
+5. Changes to a device's **address** or **credential profile** are shown in the activity
+   report with the old and new values: whoever can edit devices decides where an
+   account's password is sent.
 
 ## 5. Live upgrades
 
@@ -239,7 +248,7 @@ The full procedure is in [upgrades.md](../upgrades.md).
 
 ## 8. Upgrading the platform
 
-* **Online:** `cd ~/netops && git pull && sudo deploy/install-online.sh`.
+* **Online:** `cd /usr/local/src/netops && sudo git pull && sudo deploy/install-online.sh`.
 * **Air-gapped:** build, carry across and verify the new bundle, then run
   `sudo bash netops-bundle-<new>/install.sh`.
 
@@ -260,6 +269,8 @@ Settings, the key and the licence are kept. See [install-airgap.md](../install-a
 | The certificate wasn't installed | The Settings page shows the reason. Usually the certificate doesn't match the key, or is missing the intermediate certificate |
 | A device's version, model or a check result is read wrong | Run `sudo netops-cli capture <device>` and send the file (`/var/lib/netops/captures/`) to support. It holds only read-only command output, with IP and MAC addresses replaced |
 | Device backups fail | The reason is on Config backups: wrong account, the device's SSH access list, or the server's firewall to the device |
+| "The device's SSH key has changed" | The device was replaced or reinstalled: an admin clicks **Forget** next to the key in its edit dialog. If it wasn't, investigate before forgetting it |
+| "Your session has expired" | Sign-ins last at most `NETOPS_SESSION_MAX_AGE_HOURS` (12 by default), even while in use: sign in again |
 | "The upgrade worker isn't running" | `systemctl status netops-worker`; `journalctl -u netops-worker -n 50` |
 | Can't add devices or start upgrades | The trial or licence has ended: Settings › Licence |
 | No email alerts arrive | Settings › Email alerts › **Send test email** shows the mail server's answer. Check `SMTP_HOSTS` in the firewall and the relay's certificate |

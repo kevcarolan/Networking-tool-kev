@@ -26,6 +26,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 - [x] Customer documentation: install guide, admin guide, user guide ([customer/](customer/README.md))
 - [x] Licence keys: 60-day trial, signed licences (end date, devices, optional installation), read-only for new work without one ([licensing.md](licensing.md))
 - [x] Wall display for NOC screens: overview and upgrades pages, own port (8443), per-screen links ([customer/admin-guide.md](customer/admin-guide.md#wall-displays))
+- [x] Security review of the whole product, with fixes (see the session log of 2026-10-12)
 - [ ] Later: one overview of several servers (the display feed is the starting point); several customers on one server kept as an idea
 
 ### Platform (inherited)
@@ -75,6 +76,10 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-09 | Several customers on one server is kept as an idea, not built | Not needed while each company runs its own server |
 | 2026-10-09 | A read-only wall display on its own port (8443) with a per-screen key, rather than a signed-in session | A wall screen can't sign in every few hours; the separate port and key let the firewall and admins limit it to the screens |
 | 2026-10-12 | Email alerts look at the state every minute and send each event once, rather than being sent from inside each tool | One place to switch alerts on and off; events from the worker process are covered too; a failed send is simply tried again |
+| 2026-10-12 | SSH host keys are trusted on first use and then checked; only an admin can forget one (device edit dialog, audited) | Devices have no central key list to load; a device answering with another key never receives a password |
+| 2026-10-12 | Sign-ins last at most `NETOPS_SESSION_MAX_AGE_HOURS` even while in use; a break-glass session ends when its password changes | A stolen cookie or a forgotten browser stays useful for a limited time only |
+| 2026-10-12 | Root scripts never act on files the app account can change (TLS status in `/var/lib/netops-tls`, backups copied as `netops`, online installer only from a root-owned clone) | The app account must not be a way to root |
+| 2026-10-12 | Spreadsheet exports keep formula-like text as text | Text from sign-in names, uploaded sheets and device output ends up in exports opened in Excel |
 | 2026-10-12 | Captures replace IP and MAC addresses with consistent stand-ins by default, and never include the running configuration | Captures are sent outside the customer's network for parser fixes; the tables still match up, so the readers can be tested |
 
 ## Open questions
@@ -82,6 +87,10 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 - Licence agreement: per installation or per site? Managed-service use? Support terms, warranty, liability cap, governing law ([legal/EULA-draft.md](legal/EULA-draft.md))
 
 - Product name?
+- Should only admins change a device's address or credential profile? Today *Inventory: manage* can, so whoever has it decides where a device account's password is sent (audited, host keys checked, documented in [users.md](users.md))
+- Syslog forwarding is plain UDP (`rsyslog-forward.conf`); offer TLS forwarding for sites whose log server supports it?
+- Docker image: `--forwarded-allow-ips "*"` trusts any proxy's client address; fine behind the bundled nginx, but should it be narrowed?
+- The air-gapped bundle has a SHA-256 but no signature; sign bundles once the product is sold?
 - Licence model: sold, subscription, or open source with paid support?
 - FortiGate backups: is masking the secrets acceptable, or should the backup use FortiGate's own encrypted backup file instead?
 - Setup screen: also add product name, syslog forwarding or the upgrade live-platform list later, or keep those in `netops.env`?
@@ -107,4 +116,5 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-08 | Networking-tool-kev | Online installer (`deploy/install-online.sh`), shared Ubuntu package list; tested end to end in an Ubuntu container (bundle built, verified and installed) |
 | 2026-10-09 | Networking-tool-kev | Wall display: overview and upgrades pages rotating, own nginx site on 8443 (checked with a real nginx: refused on the main port, only the display there), per-screen links on the Settings page |
 | 2026-10-12 | Networking-tool-kev | Email alerts (Settings › Email alerts, test email, sent once each, tried again after a failure); firewall template allows the mail relay |
+| 2026-10-12 | Networking-tool-kev | Security review (sign-in, setup/licence/display, device access, deployment, browser): fixed a root escalation through the certificate status file, the sign-in throttle bypass, sign-in with a trusted domain's name, root git in the backup script, the online installer trusting a user's clone, unchecked SSH host keys, sessions that never ended, formula injection in exports, failed sign-ins missing from the activity report, and smaller upload and licence gaps |
 | 2026-10-12 | Networking-tool-kev | Lab capture tool (`netops-cli capture`); blocks anything but read-only commands, including `| redirect` and `| tee` |

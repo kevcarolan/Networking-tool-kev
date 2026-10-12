@@ -47,6 +47,12 @@ Each user has a level in each area. Each level includes the ones before it.
 **Administrator** (a tick box) means the top level everywhere, plus the Users and
 Activity pages.
 
+**Devices and credentials: manage** is more powerful than it looks. Whoever has it can
+change a device's address or credential profile, and the next backup sends that profile's
+password to the new address. Both changes are in the activity report with the old and new
+values, and the server refuses a device whose SSH key has changed. Give it only to people
+you would trust with the device accounts themselves.
+
 **Presets** fill in the levels; adjust them after:
 
 | Preset | Devices | Backups | Firmware | Upgrades | Circuits |

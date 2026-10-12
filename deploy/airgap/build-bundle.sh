@@ -55,7 +55,8 @@ fi
 NAME="netops-bundle-${VERSION}"
 WORK="$(mktemp -d)"
 OUT="$WORK/$NAME"
-mkdir -p "$OUT"/{wheels,debs} "$REPO_ROOT/dist"
+DIST="${DIST_DIR:-$REPO_ROOT/dist}"  # where the bundle is written
+mkdir -p "$OUT"/{wheels,debs} "$DIST"
 trap 'rm -rf "$WORK"' EXIT
 
 # The bundle's Python packages are built for this release's own Python.
@@ -140,20 +141,20 @@ say "Checksums and bundle"
   echo "arch:     $TARGET_ARCH"
 } > "$OUT/BUNDLE-INFO.txt"
 (cd "$OUT" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
-tar -C "$WORK" -czf "dist/$NAME.tar.gz" "$NAME"
-(cd dist && sha256sum "$NAME.tar.gz" > "$NAME.tar.gz.sha256")
-cp "$OUT/MANIFEST.txt" "dist/$NAME.MANIFEST.txt"
+tar -C "$WORK" -czf "$DIST/$NAME.tar.gz" "$NAME"
+(cd "$DIST" && sha256sum "$NAME.tar.gz" > "$NAME.tar.gz.sha256")
+cp "$OUT/MANIFEST.txt" "$DIST/$NAME.MANIFEST.txt"
 if [[ -n "${MAKE_ISO:-}" ]]; then
-  xorriso -as mkisofs -quiet -r -J -V NETOPS_BUNDLE -o "dist/$NAME.iso" \
-    "dist/$NAME.tar.gz" "dist/$NAME.tar.gz.sha256" "dist/$NAME.MANIFEST.txt"
-  (cd dist && sha256sum "$NAME.iso" > "$NAME.iso.sha256")
+  xorriso -as mkisofs -quiet -r -J -V NETOPS_BUNDLE -o "$DIST/$NAME.iso" \
+    "$DIST/$NAME.tar.gz" "$DIST/$NAME.tar.gz.sha256" "$DIST/$NAME.MANIFEST.txt"
+  (cd "$DIST" && sha256sum "$NAME.iso" > "$NAME.iso.sha256")
 fi
 
 say "Done"
-echo "Bundle:  dist/$NAME.tar.gz ($(du -h "dist/$NAME.tar.gz" | cut -f1))"
-echo "SHA-256: $(cut -d' ' -f1 "dist/$NAME.tar.gz.sha256")"
-echo "List:    dist/$NAME.MANIFEST.txt (every package and version, for the change ticket)"
-[[ -n "${MAKE_ISO:-}" ]] && echo "CD image: dist/$NAME.iso (SHA-256 $(cut -d' ' -f1 "dist/$NAME.iso.sha256"))"
+echo "Bundle:  $DIST/$NAME.tar.gz ($(du -h "$DIST/$NAME.tar.gz" | cut -f1))"
+echo "SHA-256: $(cut -d' ' -f1 "$DIST/$NAME.tar.gz.sha256")"
+echo "List:    $DIST/$NAME.MANIFEST.txt (every package and version, for the change ticket)"
+[[ -n "${MAKE_ISO:-}" ]] && echo "CD image: $DIST/$NAME.iso (SHA-256 $(cut -d' ' -f1 "$DIST/$NAME.iso.sha256"))"
 echo
 echo "Record the SHA-256 in your change ticket (or send it by a separate channel);"
 echo "the install checks it on the server before anything is installed."

@@ -21,6 +21,7 @@ import hmac
 import ipaddress
 import logging
 import os
+import re
 import secrets
 from pathlib import Path
 
@@ -37,6 +38,8 @@ from app.core.crypto import hash_password
 from app.core.db import get_db, session_scope, utcnow
 
 log = logging.getLogger(__name__)
+# A DNS name for a certificate: letters, digits, hyphens and dots (a leading "*." for a wildcard)
+_DNS_NAME = re.compile(r"(\*\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*")
 
 _CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no 0/O, 1/I/L
 
@@ -349,7 +352,7 @@ def _cert_info(pem: bytes) -> dict:
 def get_certificate(request: Request, who: str = Depends(setup_or_admin)):
     d = tls_dir(request.app.state.settings)
     crt = d / "netops.crt"
-    status_file = d / "apply-status"  # written by the root service that installs it for nginx
+    status_file = request.app.state.settings.tls_status_file  # by the root service
     return {"certificate": _cert_info(crt.read_bytes()) if crt.exists() else None,
             "applied": status_file.read_text().strip()[:500] if status_file.exists() else "",
             "request_pending": (d / "pending.key").exists(),
@@ -377,14 +380,17 @@ def make_request(body: CsrIn, request: Request, db: Session = Depends(get_db),
         try:
             alt.append(x509.IPAddress(ipaddress.ip_address(n)))
         except ValueError:
-            if not all(part and len(part) < 64 for part in n.split(".")) or " " in n:
+            if not _DNS_NAME.fullmatch(n) or not all(len(p) < 64 for p in n.split(".")):
                 raise HTTPException(422, f"'{n}' isn't a valid DNS name") from None
             alt.append(x509.DNSName(n))
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    csr = (x509.CertificateSigningRequestBuilder()
-           .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, names[0])]))
-           .add_extension(x509.SubjectAlternativeName(alt), critical=False)
-           .sign(key, hashes.SHA256()))
+    try:
+        csr = (x509.CertificateSigningRequestBuilder()
+               .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, names[0])]))
+               .add_extension(x509.SubjectAlternativeName(alt), critical=False)
+               .sign(key, hashes.SHA256()))
+    except ValueError as exc:  # e.g. a first name over 64 characters, or not plain ASCII
+        raise HTTPException(422, f"Can't make a request for these names: {exc}") from None
     d = tls_dir(request.app.state.settings)
     _write_private(d / "pending.key", key.private_bytes(
         serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,

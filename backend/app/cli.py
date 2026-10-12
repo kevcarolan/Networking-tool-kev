@@ -290,6 +290,11 @@ def main(argv=None) -> int:
     sub.add_parser("upgrades-running").set_defaults(func=_upgrades_running)
     sub.add_parser("db-status").set_defaults(func=_db_status)
     args = parser.parse_args(argv)
+    if args.cmd != "hash-password":
+        from app.core import ssh
+        from app.core.config import get_settings
+
+        ssh.use_known_hosts(get_settings().data_dir / "known_hosts")
     return args.func(args)
 
 

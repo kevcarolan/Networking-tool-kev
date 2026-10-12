@@ -168,6 +168,9 @@ def main() -> None:
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     settings = get_settings()
     init_engine(settings.database_url)
+    from app.core import ssh
+
+    ssh.use_known_hosts(settings.data_dir / "known_hosts")  # the same keys as the web app
     cipher = CredentialCipher(settings.credential_key_file)
     backups = BackupService(settings, cipher, GitConfigStore(settings.configs_dir),
                             fetcher=fetch_config)

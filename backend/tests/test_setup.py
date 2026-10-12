@@ -232,9 +232,10 @@ def test_configured_install_still_signs_in(client):
 
 
 def test_certificate_shows_what_the_root_service_reported(fresh):
-    tls = fresh.settings.data_dir / "tls"
-    tls.mkdir(parents=True, exist_ok=True)
-    (tls / "apply-status").write_text("2026-10-08T10:00:00Z refused: the certificate has expired\n")
+    status = fresh.settings.data_dir.parent / "netops-tls" / "apply-status"
+    status.parent.mkdir(parents=True, exist_ok=True)
+    status.write_text("2026-10-08T10:00:00Z refused: the certificate has expired\n")
+    fresh.settings.tls_status_file = status  # (the root service's folder on a real server)
     r = fresh.get("/api/setup/certificate", headers=_h(fresh)).json()
     assert r["applied"].endswith("refused: the certificate has expired")
 
