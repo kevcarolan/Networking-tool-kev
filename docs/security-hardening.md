@@ -276,7 +276,7 @@ What the installer set up, for your security review:
 * **Exports are safe to open in Excel.** Text in CSV and Excel exports that starts with
   `= + - @` is kept as text, so a crafted sign-in name, circuit sheet or device output can't
   run a formula on the computer of whoever opens it.
-* **Uploads are limited:** circuit spreadsheets to 25 MB (and 500 MB unpacked), firmware
+* **Uploads are limited:** circuit spreadsheets to 25 MB and inventory imports to 10 MB (both 500 MB unpacked), firmware
   images to `NETOPS_FIRMWARE_MAX_UPLOAD_MB`, and an image upload stops while
   `NETOPS_FIRMWARE_KEEP_FREE_MB` (2 GB) of disk is still free.
 

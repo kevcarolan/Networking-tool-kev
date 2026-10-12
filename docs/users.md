@@ -38,7 +38,7 @@ Each user has a level in each area. Each level includes the ones before it.
 
 | Area | Levels |
 |---|---|
-| Devices and credentials | **view**: see devices · **manage**: edit device details (name, platform, site, notes, schedule) and delete devices · **addresses**: add devices and change a device's address or credential profile · **credentials**: add, change and delete credential profiles |
+| Devices and credentials | **view**: see devices and the inventory · **manage**: edit device details (name, platform, site, notes, schedule), delete devices, and add, change and import inventory items · **addresses**: add devices and change a device's address or credential profile · **credentials**: add, change and delete credential profiles |
 | Config backups | none · **view**: status and history · **run**: run a backup now · **configs**: read stored configs and diffs (they contain secrets) · **manage**: change backup schedules |
 | Firmware | none · **view**: versions, standards, image library · **manage**: check versions, upload images, set standards and device upgrade settings |
 | Upgrade jobs | none · **view**: jobs and reports · **dry run**: plan and run dry-run jobs · **live**: plan and run live upgrades |

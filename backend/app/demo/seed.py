@@ -225,8 +225,59 @@ def seed(client, settings, net) -> dict:
     imp = _ok(client.put("/api/circuits/imports/upload", params={"filename": "circuits.xlsx"},
                          content=circuit_workbook())).json()
     _ok(client.post(f"/api/circuits/imports/{imp['id']}/commit"))
+    inventory(client)
     screen = _ok(client.post("/api/displays", json={"name": "Demo wall"})).json()
     return {"display_key": screen["key"], "ids": ids}
+
+
+# Inventory-only items (not managed by the tools): (name, type, site, rack, U, height, details)
+EXTRA = [
+    ("HQ-R01", "rack", "HQ", "", None, 42, {"manufacturer": "APC", "model": "NetShelter SX 42U", "room": "Comms 1"}),
+    ("HQ-R02", "rack", "HQ", "", None, 42, {"manufacturer": "APC", "model": "NetShelter SX 42U", "room": "Comms 1"}),
+    ("HQ-UPS1", "UPS", "HQ", "HQ-R01", 1, 3, {"manufacturer": "APC", "model": "Smart-UPS SRT 5000",
+                                               "serial": "AS2219123456", "warranty_end": "2027-03-31"}),
+    ("HQ-PDU-A", "PDU", "HQ", "HQ-R01", None, 0, {"manufacturer": "Raritan", "model": "PX3-5260R"}),
+    ("HQ-PDU-B", "PDU", "HQ", "HQ-R01", None, 0, {"manufacturer": "Raritan", "model": "PX3-5260R"}),
+    ("HQ-PP-01", "patch panel", "HQ", "HQ-R02", 42, 1, {"manufacturer": "Panduit", "model": "48-port Cat6A"}),
+    ("HQ-PP-02", "patch panel", "HQ", "HQ-R02", 41, 1, {"manufacturer": "Panduit", "model": "48-port Cat6A"}),
+    ("hq-esx01", "virtual host", "HQ", "HQ-R01", 20, 2, {"manufacturer": "Dell", "model": "PowerEdge R760",
+                                                        "serial": "7XKQ2X3", "owner": "Server team",
+                                                        "warranty_end": "2028-06-30"}),
+    ("hq-nms01", "server", "HQ", "HQ-R01", 18, 1, {"manufacturer": "Dell", "model": "PowerEdge R660",
+                                                   "role": "network management", "owner": "Network team"}),
+    ("DC1-R10", "rack", "DC1", "", None, 48, {"manufacturer": "Rittal", "model": "TS IT 48U", "room": "Hall A"}),
+    ("DC1-R11", "rack", "DC1", "", None, 48, {"manufacturer": "Rittal", "model": "TS IT 48U", "room": "Hall A"}),
+    ("dc1-san01", "storage", "DC1", "DC1-R11", 10, 4, {"manufacturer": "NetApp", "model": "AFF A400",
+                                                      "owner": "Storage team"}),
+    ("BN-R01", "rack", "Branch-North", "", None, 24, {"manufacturer": "APC", "model": "NetShelter WX 24U"}),
+    ("bn-ups1", "UPS", "Branch-North", "BN-R01", 1, 2, {"manufacturer": "Eaton", "model": "5PX 1500",
+                                                       "status": "faulty", "notes": "Battery fault since the last test: replacement ordered"}),
+    ("BS-R01", "rack", "Branch-South", "", None, 24, {"manufacturer": "APC", "model": "NetShelter WX 24U"}),
+    ("WH-R01", "rack", "Warehouse", "", None, 42, {"manufacturer": "APC", "model": "NetShelter SX 42U"}),
+    ("spare-c9300-48p", "switch", "HQ", "", None, 1, {"manufacturer": "Cisco", "model": "C9300-48P",
+                                                       "serial": "FOC2512X0AB", "status": "spare", "room": "Stores"}),
+]
+RACK_OF = {"HQ": "HQ-R02", "DC1": "DC1-R10", "Branch-North": "BN-R01", "Branch-South": "BS-R01",
+           "Warehouse": "WH-R01"}
+
+
+def inventory(client) -> None:
+    """A custom column, the rack places of the managed devices, and inventory-only items."""
+    _ok(client.post("/api/inventory/fields", json={"label": "Power feed", "kind": "choice",
+                                                   "choices": ["A", "B", "A+B"]}))
+    rows = _ok(client.get("/api/inventory/assets")).json()
+    position: dict[str, int] = {}
+    for r in rows:
+        site = r["values"]["site"] or (r["auto"].get("site") or "")
+        rack = RACK_OF.get(site, "")
+        position[rack] = position.get(rack, 40) - 1
+        _ok(client.put(f"/api/inventory/assets/{r['id']}", json={"values": {
+            "rack": rack, "rack_position": position[rack], "rack_units": 1, "x_power_feed": "A+B",
+            "purchase_date": "2023-04-01", "supplier": "Example Networks Ltd"}}))
+    for name, kind, site, rack, u, height, more in EXTRA:
+        _ok(client.post("/api/inventory/assets", json={"values": {
+            "name": name, "type": kind, "site": site, "rack": rack, "rack_position": u,
+            "rack_units": height or None, **more}}))
 
 
 def _ok(r):

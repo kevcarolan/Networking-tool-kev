@@ -26,6 +26,7 @@ from app.tools.firmware_upgrade import jobs_api
 from app.tools.firmware_upgrade.deviceio import DeviceIO
 from app.tools.firmware_upgrade.jobs import JobService
 from app.tools.firmware_upgrade.service import FirmwareService
+from app.tools.inventory import api as inventory_api
 from app.tools.syslog import api as syslog_api
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -113,6 +114,7 @@ def create_app(settings: Settings | None = None, fetcher=fetch_config,
     app.include_router(display.admin_router)
     app.include_router(display.router)
     app.include_router(alerts.router)
+    app.include_router(inventory_api.router)  # part of every licence
     app.include_router(backup_api.router)
     # The tools a licence can leave out (licence.MODULES): refused unless unlocked.
     app.include_router(firmware_api.router, dependencies=[Depends(licence.module("firmware"))])

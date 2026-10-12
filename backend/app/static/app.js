@@ -189,7 +189,7 @@ function switchView(view) {
   $$("#nav button").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
   if (VIEW_MODULE[view] && !hasModule(VIEW_MODULE[view])) return showLocked(view);
   $$(".view").forEach((s) => (s.hidden = s.id !== `view-${view}`));
-  ({ backups: loadBackups, firmware: loadFirmware, circuits: loadCircuits, syslog: loadSyslog, credentials: loadCredentials,
+  ({ backups: loadBackups, inventory: loadInventory, firmware: loadFirmware, circuits: loadCircuits, syslog: loadSyslog, credentials: loadCredentials,
     audit: loadAudit, users: loadUsers, settings: loadSettings })[view]();
 }
 $$("#nav button").forEach((b) => b.addEventListener("click", () => switchView(b.dataset.view)));
@@ -2514,3 +2514,277 @@ $("#sl-help-copy").addEventListener("click", async () => {
     toast("Select the text and copy it (the browser blocked copying)");
   }
 });
+
+// ---------- network inventory ----------
+
+const inv = { meta: null, rows: [], cols: null };
+const invColsKey = () => `inventory-columns:${state.user ? state.user.username : ""}`;
+
+/** The columns this person chose (and their order); the defaults until they choose. */
+function invColumns() {
+  const all = inv.meta.fields;
+  let keys = null;
+  try { keys = JSON.parse(localStorage.getItem(invColsKey()) || "null"); } catch { keys = null; }
+  if (!Array.isArray(keys)) keys = all.filter((f) => f.default_shown).map((f) => f.key);
+  const known = new Map(all.map((f) => [f.key, f]));
+  return keys.filter((k) => known.has(k)).map((k) => known.get(k));
+}
+
+function invSaveColumns(keys) {
+  try { localStorage.setItem(invColsKey(), JSON.stringify(keys)); } catch { /* private window */ }
+}
+
+async function loadInventory() {
+  try {
+    [inv.meta, inv.rows] = await Promise.all([api("/api/inventory/meta"), api("/api/inventory/assets")]);
+  } catch (e) {
+    return toast(e.message);
+  }
+  const fill = (sel, values, all) => {
+    const keep = $(sel).value;
+    $(sel).replaceChildren(h("option", { value: "" }, all), ...values.map((v) => h("option", { value: v }, v)));
+    $(sel).value = values.includes(keep) ? keep : "";
+  };
+  const distinct = (key) => [...new Set(inv.rows.map((r) => invValue(r, key)).filter(Boolean))].sort();
+  fill("#inv-type", distinct("type"), "All types");
+  fill("#inv-site", distinct("site"), "All sites");
+  fill("#inv-status", distinct("status"), "All statuses");
+  const n = (f) => inv.rows.filter(f).length;
+  $("#inv-summary").replaceChildren(
+    ...[["Items", n(() => true), ""], ["Managed by the tools", n((r) => r.managed), "success"],
+      ["Inventory only", n((r) => !r.managed), "never"],
+      ["Spare or faulty", n((r) => ["spare", "faulty"].includes(invValue(r, "status"))), "failed"]]
+      .map(([lbl, num, cls]) => h("div", { class: `tile card ${cls}` }, h("span", { class: "num" }, num), h("span", { class: "lbl" }, lbl))));
+  renderInventory();
+}
+
+const invValue = (r, key) => {
+  const v = r.values[key];
+  return v === null || v === undefined || v === "" ? (r.auto[key] ?? "") : v;
+};
+
+function renderInventory() {
+  const cols = invColumns();
+  const q = $("#inv-search").value.trim().toLowerCase();
+  const want = { type: $("#inv-type").value, site: $("#inv-site").value, status: $("#inv-status").value };
+  const managed = $("#inv-managed").value;
+  const rows = inv.rows.filter((r) => {
+    if (Object.entries(want).some(([k, v]) => v && invValue(r, k) !== v)) return false;
+    if (managed && (managed === "yes") !== r.managed) return false;
+    if (!q) return true;
+    return inv.meta.fields.some((f) => String(invValue(r, f.key)).toLowerCase().includes(q));
+  });
+  $("#inv-table thead").replaceChildren(h("tr", {}, ...cols.map((f) => h("th", {}, f.label)), h("th", {}, "Tools")));
+  $("#inv-table tbody").replaceChildren(...rows.map((r) => h("tr", {},
+    ...cols.map((f) => {
+      const v = invValue(r, f.key);
+      if (f.key === "name") return h("td", {}, h("span", { class: "link", onclick: () => invEdit(r) }, v || "(no name)"));
+      const auto = (r.values[f.key] === null || r.values[f.key] === "" || r.values[f.key] === undefined) && r.auto[f.key];
+      return h("td", { class: f.key === "notes" || f.max_length > 1000 ? "wrap" : "", title: auto ? "From the device" : "" },
+        auto ? h("span", { class: "muted" }, v) : String(v ?? ""));
+    }),
+    h("td", {}, invTools(r)))));
+  $("#inv-empty").hidden = rows.length > 0;
+  $("#inv-empty").textContent = inv.rows.length ? "Nothing matches the filters." :
+    "The inventory is empty. Devices added on Config backups appear here; add anything else with + Add item, or import a spreadsheet.";
+}
+
+function invTools(r) {
+  if (!r.managed) return h("span", { class: "badge never", title: "Recorded only: not backed up or checked" }, "Inventory only");
+  const out = [];
+  if (r.backup) out.push(h("span", { class: `badge ${r.backup === "success" ? "success" : r.backup === "failed" ? "failed" : "never"}`, title: "Config backup" },
+    { success: "Backup OK", failed: "Backup failed", never: "Never backed up" }[r.backup] || r.backup));
+  if (r.compliance) out.push(h("span", { class: `badge ${r.compliance}`, title: "Firmware against the standard" },
+    { compliant: "On standard", behind: "Behind", ahead: "Ahead", no_standard: "No standard", unknown: "Version unknown" }[r.compliance] || r.compliance));
+  if (hasModule("backups") && can("backups", "view")) out.push(h("button", { class: "small", onclick: async () => {
+    try { openDetail(await api(`/api/backup/devices/${r.device.id}`)); } catch (e) { toast(e.message); }
+  } }, "Backups"));
+  if (hasModule("syslog") && can("syslog", "view")) out.push(h("button", { class: "small", onclick: () => { sl.pick = String(r.device.id); switchView("syslog"); } }, "Logs"));
+  return h("span", { class: "actions" }, ...out);
+}
+
+// The one dialog: an item, the columns, the custom columns or an import.
+function invDialog(title, ...content) {
+  $("#inv-dialog-title").textContent = title;
+  $("#inv-dialog-body").replaceChildren(...content);
+  if (!$("#inv-dialog").open) $("#inv-dialog").showModal();
+}
+$("#inv-dialog-close").addEventListener("click", () => $("#inv-dialog").close());
+
+function invInput(f, value, auto, locked) {
+  const attrs = { name: f.key, disabled: locked };
+  if (f.kind === "choice") {
+    return h("select", attrs, h("option", { value: "" }, auto ? `(${auto})` : "—"),
+      ...f.choices.map((c) => h("option", { value: c, selected: c === value }, c)));
+  }
+  if (f.key === "notes") return h("textarea", { ...attrs, rows: 3 }, value ?? "");
+  const type = f.kind === "number" ? "number" : f.kind === "date" ? "date" : "text";
+  return h("input", { ...attrs, type, value: value ?? "", placeholder: auto ? `From the device: ${auto}` : "", min: type === "number" ? 0 : null });
+}
+
+function invEdit(r = null) {
+  const canEdit = inv.meta.can_manage;
+  const err = errorLine();
+  const groups = new Map();
+  inv.meta.fields.forEach((f) => groups.set(f.group, [...(groups.get(f.group) || []), f]));
+  const form = h("form", { class: "form" },
+    r && r.managed ? h("p", { class: "muted" }, `Managed by the tools as ${r.device.name}. Grey values come from the device; type over them to replace them. ` +
+      "Rename it on Config backups.") : "",
+    h("div", { class: "inv-groups" }, ...[...groups].map(([group, list]) => h("fieldset", {}, h("legend", {}, group),
+      ...list.map((f) => h("label", {}, f.label,
+        invInput(f, r ? r.values[f.key] : (f.key === "status" ? "in service" : ""), r ? r.auto[f.key] : "",
+          !canEdit || (r && r.managed && f.key === "name"))))))),
+    err);
+  const save = async () => {
+    err.hidden = true;
+    const values = {};
+    inv.meta.fields.forEach((f) => {
+      const el = form.elements[f.key];
+      if (!el || el.disabled) return;
+      values[f.key] = el.value;
+    });
+    try {
+      if (r) await api(`/api/inventory/assets/${r.id}`, { method: "PUT", body: { values } });
+      else await api("/api/inventory/assets", { method: "POST", body: { values } });
+      $("#inv-dialog").close();
+      toast("Saved");
+      loadInventory();
+    } catch (e) { showError(err, e); }
+  };
+  const buttons = h("div", { class: "dialog-actions" });
+  if (r && !r.managed && inv.meta.can_add_devices) buttons.append(h("button", { type: "button", onclick: () => invManage(r) }, "Manage this device…"));
+  if (r && !r.managed && canEdit) buttons.append(h("button", { type: "button", class: "danger", onclick: async () => {
+    if (!confirm(`Delete ${invValue(r, "name")} from the inventory?`)) return;
+    try { await api(`/api/inventory/assets/${r.id}`, { method: "DELETE" }); $("#inv-dialog").close(); loadInventory(); } catch (e) { showError(err, e); }
+  } }, "Delete"));
+  if (canEdit) buttons.append(h("button", { type: "button", class: "primary", onclick: save }, "Save"));
+  invDialog(r ? invValue(r, "name") : "Add to the inventory", form, buttons);
+}
+
+/** Turn an inventory-only row into a device the tools back up and check. */
+async function invManage(r) {
+  const creds = await api("/api/credentials").catch(() => []);
+  const err = errorLine();
+  const platform = h("select", { required: true }, h("option", { value: "" }, "— choose —"), ...platformOptions());
+  const address = h("input", { value: invValue(r, "mgmt_ip"), placeholder: "10.0.0.1", required: true });
+  const cred = h("select", {}, h("option", { value: "" }, "— none —"), ...creds.map((c) => h("option", { value: c.id }, `${c.name} (${c.username})`)));
+  invDialog(`Manage ${invValue(r, "name")}`,
+    h("p", { class: "muted" }, "The tools will back it up, check its firmware and match its syslog. It then counts towards the licence's devices."),
+    h("label", {}, "Platform", platform), h("label", {}, "Management address", address), h("label", {}, "Credential profile", cred), err,
+    h("div", { class: "dialog-actions" }, h("button", { type: "button", class: "primary", onclick: async () => {
+      err.hidden = true;
+      try {
+        await api(`/api/inventory/assets/${r.id}/manage`, { method: "POST", body: {
+          platform: platform.value, address: address.value.trim(), credential_id: cred.value ? Number(cred.value) : null } });
+        $("#inv-dialog").close();
+        toast("Now managed: its first backup and version check follow on their schedules");
+        loadInventory();
+      } catch (e) { showError(err, e); }
+    } }, "Manage")));
+}
+
+/** Choose and order the columns you see (remembered for you, in this browser). */
+function invColumnsDialog() {
+  const shown = invColumns().map((f) => f.key);
+  const order = [...shown, ...inv.meta.fields.map((f) => f.key).filter((k) => !shown.includes(k))];
+  const byKey = new Map(inv.meta.fields.map((f) => [f.key, f]));
+  const list = h("ul", { class: "col-list" });
+  const draw = () => list.replaceChildren(...order.map((k, i) => h("li", {},
+    h("input", { type: "checkbox", checked: shown.includes(k), "aria-label": byKey.get(k).label, onchange: (ev) => {
+      if (ev.target.checked) shown.push(k); else shown.splice(shown.indexOf(k), 1);
+    } }),
+    h("span", {}, byKey.get(k).label, h("small", { class: "muted" }, ` ${byKey.get(k).group}`)), h("span", { class: "spacer" }),
+    h("button", { type: "button", class: "small ghost", title: "Move up", disabled: i === 0, onclick: () => { [order[i - 1], order[i]] = [order[i], order[i - 1]]; draw(); } }, "↑"),
+    h("button", { type: "button", class: "small ghost", title: "Move down", disabled: i === order.length - 1, onclick: () => { [order[i + 1], order[i]] = [order[i], order[i + 1]]; draw(); } }, "↓"))));
+  draw();
+  invDialog("Columns",
+    h("p", { class: "muted" }, "Tick the columns you want to see and put them in order. This is remembered for you in this browser; others keep their own."),
+    list,
+    h("div", { class: "dialog-actions" },
+      h("button", { type: "button", onclick: () => { try { localStorage.removeItem(invColsKey()); } catch { /* */ } $("#inv-dialog").close(); renderInventory(); } }, "Reset to the defaults"),
+      h("button", { type: "button", class: "primary", onclick: () => {
+        invSaveColumns(order.filter((k) => shown.includes(k)));
+        $("#inv-dialog").close();
+        renderInventory();
+      } }, "Apply")));
+}
+
+/** Admins: the site's own columns, for everyone. */
+function invFieldsDialog() {
+  const custom = inv.meta.fields.filter((f) => f.group === "Custom");
+  const err = errorLine();
+  const label = h("input", { placeholder: "e.g. Power feed", maxlength: 100 });
+  const kind = h("select", {}, ...[["text", "Text"], ["number", "Number"], ["date", "Date"], ["choice", "Pick-list"]].map(([v, l]) => h("option", { value: v }, l)));
+  const choices = h("input", { placeholder: "For a pick-list: A, B, C" });
+  const call = async (fn) => { err.hidden = true; try { await fn(); await loadInventory(); invFieldsDialog(); } catch (e) { showError(err, e); } };
+  invDialog("Custom columns",
+    h("p", { class: "muted" }, "Columns you add here are there for everyone at this site, in the item form, the Columns list, imports and exports."),
+    custom.length ? h("ul", { class: "col-list" }, ...custom.map((f) => h("li", {},
+      h("span", {}, f.label, h("small", { class: "muted" }, ` ${f.kind}${f.choices.length ? `: ${f.choices.join(", ")}` : ""}`)), h("span", { class: "spacer" }),
+      h("button", { type: "button", class: "small", onclick: () => {
+        const name = prompt("New name for the column", f.label);
+        if (!name) return;
+        const list = f.kind === "choice" ? prompt("Choices, separated by commas", f.choices.join(", ")) : "";
+        call(() => api(`/api/inventory/fields/${f.key}`, { method: "PUT", body: { label: name, kind: f.kind,
+          choices: (list || "").split(",").map((c) => c.trim()).filter(Boolean) } }));
+      } }, "Rename"),
+      h("button", { type: "button", class: "small danger", onclick: () => {
+        if (confirm(`Delete the column ${f.label} and everything typed in it?`)) call(() => api(`/api/inventory/fields/${f.key}`, { method: "DELETE" }));
+      } }, "Delete")))) : h("p", { class: "muted" }, "No custom columns yet."),
+    h("h3", {}, "Add a column"),
+    h("div", { class: "grid2" }, h("label", {}, "Name", label), h("label", {}, "Kind", kind)),
+    h("label", {}, "Choices", choices), err,
+    h("div", { class: "dialog-actions" }, h("button", { type: "button", class: "primary", onclick: () => call(() =>
+      api("/api/inventory/fields", { method: "POST", body: { label: label.value, kind: kind.value,
+        choices: choices.value.split(",").map((c) => c.trim()).filter(Boolean) } })) }, "Add column")));
+}
+
+/** Import a spreadsheet: first what would change, then make the changes. */
+function invImportDialog() {
+  const err = errorLine();
+  const file = h("input", { type: "file", accept: ".xlsx,.xlsm,.csv" });
+  const plan = h("div", { class: "inv-plan" });
+  const go = h("button", { type: "button", class: "primary", disabled: true }, "Import");
+  const send = async (commit) => {
+    const f = file.files[0];
+    const res = await fetch(`/api/inventory/import?filename=${encodeURIComponent(f.name)}&commit=${commit}`, {
+      method: "PUT", body: f, credentials: "same-origin" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || res.statusText);
+    return data;
+  };
+  file.addEventListener("change", async () => {
+    err.hidden = true;
+    plan.replaceChildren();
+    go.disabled = true;
+    if (!file.files[0]) return;
+    try {
+      const p = await send(false);
+      plan.replaceChildren(
+        h("p", {}, `${p.new.length} new, ${p.updated.length} to update, ${p.errors.length} with errors. Columns read: ${p.columns.join(", ")}.`),
+        p.unknown_columns.length ? h("p", { class: "muted" }, `Not read (no such column): ${p.unknown_columns.join(", ")}. An admin can add them as custom columns.`) : "",
+        p.errors.length ? h("ul", { class: "error" }, ...p.errors.slice(0, 50).map((e) => h("li", {}, `Row ${e.row}: ${e.message}`))) : "",
+        p.updated.length ? h("ul", {}, ...p.updated.slice(0, 50).map((u) => h("li", {}, `${u.name}: ${u.changes.join(", ")}`))) : "");
+      go.disabled = !!p.errors.length || !(p.new.length + p.updated.length);
+    } catch (e) { showError(err, e); }
+  });
+  go.addEventListener("click", async () => {
+    try {
+      const p = await send(true);
+      $("#inv-dialog").close();
+      toast(`Imported: ${p.new.length} new, ${p.updated.length} updated`);
+      loadInventory();
+    } catch (e) { showError(err, e); }
+  });
+  invDialog("Import a spreadsheet",
+    h("p", { class: "muted" }, "Excel (.xlsx) or CSV, column names in the first row (the same names as in an export). Rows are matched to the inventory by serial number, then asset tag, then name; " +
+      "anything not matched is added. Empty cells leave a value as it is. Nothing changes until you press Import."),
+    file, plan, err, h("div", { class: "dialog-actions" }, go));
+}
+
+["#inv-type", "#inv-site", "#inv-status", "#inv-managed"].forEach((s) => $(s).addEventListener("change", renderInventory));
+$("#inv-search").addEventListener("input", renderInventory);
+$("#inv-add").addEventListener("click", () => invEdit());
+$("#inv-columns").addEventListener("click", invColumnsDialog);
+$("#inv-fields").addEventListener("click", invFieldsDialog);
+$("#inv-import").addEventListener("click", invImportDialog);

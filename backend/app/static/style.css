@@ -313,3 +313,22 @@ table.recipients input[type=email] { min-width: 220px; }
 #nav button.locked::after { content: " 🔒"; font-size: 11px; }
 .locked-card { max-width: 620px; padding: 24px; display: grid; gap: 8px; }
 .locked-card h2 { margin: 0; }
+
+/* Network inventory */
+#inv-table td { white-space: nowrap; }
+#inv-table td.wrap { white-space: normal; min-width: 180px; }
+#inv-table th { white-space: nowrap; }
+#inv-table .link { cursor: pointer; color: var(--accent); }
+#inv-table td .actions { flex-wrap: nowrap; }
+#inv-dialog { max-height: 92vh; overflow: auto; }
+.inv-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 18px; }
+.inv-groups { align-items: start; }
+.inv-groups fieldset { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 12px 12px; display: grid; gap: 8px; min-width: 0; align-content: start; }
+.inv-groups label { display: grid; gap: 4px; }
+.inv-groups legend { color: var(--muted); font-size: 13px; padding: 0 4px; }
+.inv-groups input, .inv-groups select, .inv-groups textarea { width: 100%; box-sizing: border-box; min-width: 0; }
+.col-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 2px; max-height: 55vh; overflow: auto; }
+.col-list li { display: flex; align-items: center; gap: 6px; padding: 3px 4px; border-radius: 4px; }
+.col-list li:hover { background: var(--bg); }
+.col-list .spacer { flex: 1; }
+.inv-plan { max-height: 40vh; overflow: auto; font-size: 13px; }
