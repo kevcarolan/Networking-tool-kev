@@ -26,6 +26,7 @@ from app.tools.firmware_upgrade import jobs_api
 from app.tools.firmware_upgrade.deviceio import DeviceIO
 from app.tools.firmware_upgrade.jobs import JobService
 from app.tools.firmware_upgrade.service import FirmwareService
+from app.tools.syslog import api as syslog_api
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -116,6 +117,7 @@ def create_app(settings: Settings | None = None, fetcher=fetch_config,
     app.include_router(firmware_api.router)
     app.include_router(jobs_api.router)
     app.include_router(circuits_api.router)
+    app.include_router(syslog_api.router)
 
     @app.get("/api/health", include_in_schema=False)
     def health():

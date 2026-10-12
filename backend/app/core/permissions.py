@@ -9,6 +9,7 @@ the highest level everywhere and also manages users and reads the activity log.
     firmware   none < view < manage     versions, standards, image library, upgrade settings
     upgrades   none < view < dry_run < live
     circuits   none < view < manage
+    syslog     none < view              device log messages (users added before it: view)
 """
 
 AREAS: dict[str, dict] = {
@@ -38,6 +39,9 @@ AREAS: dict[str, dict] = {
         "none": "No access",
         "view": "See the circuit list and exports",
         "manage": "Also upload the list and scan the network"}},
+    "syslog": {"label": "Syslog", "missing": "view", "levels": {
+        "none": "No access",
+        "view": "Search and download the devices' log messages"}},
 }
 
 LEVELS: dict[str, list[str]] = {a: list(d["levels"]) for a, d in AREAS.items()}
@@ -45,13 +49,13 @@ LEVELS: dict[str, list[str]] = {a: list(d["levels"]) for a, d in AREAS.items()}
 PRESETS: dict[str, dict] = {
     "viewer": {"label": "Viewer", "admin": False, "perms": {
         "inventory": "view", "backups": "view", "firmware": "view", "upgrades": "view",
-        "circuits": "view"}},
+        "circuits": "view", "syslog": "view"}},
     "operator": {"label": "Backup operator", "admin": False, "perms": {
         "inventory": "view", "backups": "run", "firmware": "view", "upgrades": "view",
-        "circuits": "view"}},
+        "circuits": "view", "syslog": "view"}},
     "upgrader": {"label": "Upgrader", "admin": False, "perms": {
         "inventory": "view", "backups": "configs", "firmware": "view", "upgrades": "live",
-        "circuits": "view"}},
+        "circuits": "view", "syslog": "view"}},
     "admin": {"label": "Administrator", "admin": True, "perms": {a: lv[-1] for a, lv in LEVELS.items()}},
 }
 
@@ -59,7 +63,10 @@ PRESETS: dict[str, dict] = {
 def normalise(perms: dict | None) -> dict[str, str]:
     """Every area with a valid level (unknown or missing -> the lowest level)."""
     perms = perms or {}
-    return {a: perms.get(a) if perms.get(a) in lv else lv[0] for a, lv in LEVELS.items()}
+    # An area added later gets its "missing" level for users saved before it existed.
+    return {a: perms[a] if perms.get(a) in lv else
+            (AREAS[a].get("missing", lv[0]) if a not in perms else lv[0])
+            for a, lv in LEVELS.items()}
 
 
 def full() -> dict[str, str]:

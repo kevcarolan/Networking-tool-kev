@@ -40,6 +40,7 @@
         <button data-view="backups" class="active" data-perm="backups:view">Config backups</button>
         <button data-view="firmware" data-perm="firmware:view|upgrades:view">Firmware</button>
         <button data-view="circuits" data-perm="circuits:view">Circuits</button>
+        <button data-view="syslog" data-perm="syslog:view">Syslog</button>
         <button data-view="credentials" data-perm="inventory:credentials">Credentials</button>
         <button data-view="users" data-admin>Users</button>
         <button data-view="audit" data-admin>Activity</button>
@@ -216,6 +217,49 @@
         </div>
       </section>
 
+      <!-- Syslog -->
+      <section id="view-syslog" class="view" hidden>
+        <p id="sl-status" class="muted"></p>
+        <div class="toolbar">
+          <select id="sl-range" aria-label="Period">
+            <option value="900">Last 15 minutes</option>
+            <option value="3600">Last hour</option>
+            <option value="21600">Last 6 hours</option>
+            <option value="86400" selected>Last 24 hours</option>
+            <option value="604800">Last 7 days</option>
+            <option value="2592000">Last 30 days</option>
+            <option value="custom">Choose the period…</option>
+          </select>
+          <span id="sl-custom" class="actions" hidden>
+            <input id="sl-from" type="datetime-local" aria-label="From"> to
+            <input id="sl-to" type="datetime-local" aria-label="To">
+          </span>
+          <select id="sl-device" aria-label="Device"><option value="">All devices</option></select>
+          <input id="sl-search" type="search" placeholder="Search text or code, e.g. %LINK or Gi1/0/5">
+          <label class="check" title="Show new messages every 5 seconds"><input id="sl-live" type="checkbox"> Live</label>
+          <span class="spacer"></span>
+          <a id="sl-export" class="button" href="/api/syslog/export.log" download>Download .log</a>
+          <button id="sl-help">Help: set up devices</button>
+        </div>
+        <div class="sev-filter">
+          <div id="sl-sev" class="chips"></div>
+          <span class="actions">
+            <button class="small" data-sev="0,1,2,3">Errors and worse</button>
+            <button class="small" data-sev="0,1,2,3,4">Warnings and worse</button>
+            <button class="small" data-sev="">All</button>
+          </span>
+        </div>
+        <div id="sl-timeline" class="timeline" aria-label="Messages over time"></div>
+        <div class="table-wrap">
+          <table id="sl-table">
+            <thead><tr><th>Time</th><th>Device</th><th>Severity</th><th>Code / program</th><th>Message</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <p id="sl-empty" class="empty" hidden></p>
+        </div>
+        <div class="actions"><button id="sl-more" hidden>Load older messages</button></div>
+      </section>
+
       <!-- Credentials -->
       <section id="view-credentials" class="view" hidden>
         <div class="toolbar">
@@ -383,6 +427,23 @@
   </dialog>
 
   <!-- Device detail -->
+  <dialog id="sl-help-dialog" class="wide">
+    <div class="detail-head">
+      <h2>Send syslog to this server</h2>
+      <button id="sl-help-close" class="ghost">Close</button>
+    </div>
+    <div class="form">
+      <ul id="sl-help-general" class="muted"></ul>
+      <div class="grid2">
+        <label>Platform <select id="sl-help-platform"></select></label>
+        <label>Address the devices send to <input id="sl-help-server" placeholder="10.1.1.50"></label>
+      </div>
+      <pre id="sl-help-text" class="config"></pre>
+      <p id="sl-help-notes" class="muted"></p>
+      <div class="dialog-actions"><button id="sl-help-copy" class="primary">Copy</button></div>
+    </div>
+  </dialog>
+
   <dialog id="detail-dialog" class="wide">
     <div class="detail-head">
       <h2 id="detail-title"></h2>

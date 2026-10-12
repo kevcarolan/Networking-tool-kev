@@ -158,7 +158,7 @@ function switchView(view) {
   state.view = view;
   $$("#nav button").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
   $$(".view").forEach((s) => (s.hidden = s.id !== `view-${view}`));
-  ({ backups: loadBackups, firmware: loadFirmware, circuits: loadCircuits, credentials: loadCredentials,
+  ({ backups: loadBackups, firmware: loadFirmware, circuits: loadCircuits, syslog: loadSyslog, credentials: loadCredentials,
     audit: loadAudit, users: loadUsers, settings: loadSettings })[view]();
 }
 $$("#nav button").forEach((b) => b.addEventListener("click", () => switchView(b.dataset.view)));
@@ -237,6 +237,10 @@ function deviceRow(r) {
   const actions = [h("button", { class: "small", onclick: () => openDetail(r) }, "History")];
   if (can("backups", "run")) {
     actions.push(h("button", { class: "small", disabled: b.busy, onclick: () => runNow(d) }, "Backup now"));
+  }
+  if (can("syslog", "view")) {
+    actions.push(h("button", { class: "small", title: "This device's syslog messages",
+      onclick: () => { sl.pick = String(d.id); switchView("syslog"); } }, "Logs"));
   }
   if (can("inventory", "manage")) {
     actions.push(
@@ -2218,3 +2222,221 @@ async function loadSettings() {
 api("/api/setup/status")
   .then((s) => (s.needed ? showSetup() : api("/api/auth/me").then(showApp).catch(showLogin)))
   .catch(showLogin);
+
+// ---------- syslog ----------
+
+const SEV_NAMES = ["Emergency", "Alert", "Critical", "Error", "Warning", "Notice", "Informational", "Debug"];
+const sl = { sev: null, next: null, timer: null, devices: [], howto: null, counts: [0, 0, 0, 0, 0, 0, 0, 0] };
+
+/** The filters as query parameters (severities only when asked: the counts show them all). */
+function slParams(withSev = true) {
+  const p = new URLSearchParams();
+  const range = $("#sl-range").value;
+  if (range === "custom") {
+    if ($("#sl-from").value) p.set("since", new Date($("#sl-from").value).toISOString());
+    if ($("#sl-to").value) p.set("until", new Date($("#sl-to").value).toISOString());
+  } else {
+    p.set("since", new Date(Date.now() - Number(range) * 1000).toISOString());
+  }
+  if ($("#sl-device").value) p.set("device", $("#sl-device").value);
+  if ($("#sl-search").value.trim()) p.set("q", $("#sl-search").value.trim());
+  if (withSev && sl.sev) p.set("severities", [...sl.sev].join(","));
+  return p;
+}
+
+async function loadSyslog() {
+  const chosen = $("#sl-device").value;
+  sl.devices = await api("/api/devices").catch(() => sl.devices);
+  {
+    $("#sl-device").replaceChildren(h("option", { value: "" }, "All devices"),
+      h("option", { value: "unknown" }, "Senders not in the inventory"),
+      ...sl.devices.map((d) => h("option", { value: d.id }, d.name)));
+    $("#sl-device").value = chosen;
+  }
+  if (sl.pick !== undefined) {  // from a device's Logs button
+    $("#sl-device").value = sl.pick;
+    delete sl.pick;
+  }
+  await Promise.all([slStatus(), slSearch()]);
+}
+
+async function slStatus() {
+  const s = await api("/api/syslog/status").catch(() => null);
+  if (!s) return;
+  const used = (s.bytes / 2 ** 30).toFixed(s.bytes < 2 ** 30 ? 2 : 1);
+  const r = s.receiver;
+  const parts = [s.running ? "Receiving" : "The syslog receiver isn't running (netops-syslog service)",
+    r && r.last_message ? `last message ${fmtAgo(new Date(r.last_message * 1000).toISOString())}` : null,
+    `${s.days} day(s) kept, ${used} GB of ${s.max_bytes / 2 ** 30} GB, up to ${s.keep_days} days`,
+    r && r.stopped_reason ? `NOT STORING: ${r.stopped_reason}` : null,
+    r && r.dropped_rate ? `${r.dropped_rate} dropped (too many from one sender)` : null];
+  $("#sl-status").textContent = parts.filter(Boolean).join(" · ");
+  $("#sl-status").classList.toggle("bad-text", !s.running || !!(r && r.stopped_reason));
+}
+
+async function slSearch() {
+  const p = slParams();
+  $("#sl-export").href = `/api/syslog/export.log?${p}`;
+  try {
+    const [page, sum] = await Promise.all([api(`/api/syslog/messages?${p}`),
+      api(`/api/syslog/summary?${slParams(false)}&buckets=80`)]);
+    sl.next = page.next;
+    $("#sl-table tbody").replaceChildren(...page.rows.map(slRow));
+    $("#sl-empty").hidden = page.rows.length > 0;
+    $("#sl-empty").textContent = "No messages for these filters. Widen the period, or use Help to set up the devices.";
+    $("#sl-more").hidden = !sl.next;
+    sl.counts = sum.severity;
+    slSevChips();
+    slTimeline(sum);
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+async function slMore() {
+  if (!sl.next) return;
+  const p = slParams();
+  p.set("before", sl.next);
+  const page = await api(`/api/syslog/messages?${p}`).catch((e) => toast(e.message));
+  if (!page) return;
+  sl.next = page.next;
+  $("#sl-table tbody").append(...page.rows.map(slRow));
+  $("#sl-more").hidden = !sl.next;
+}
+
+function slRow(r) {
+  const when = new Date(r.time);
+  const device = r.device
+    ? h("span", { class: "link", title: `Only ${r.device}`, onclick: () => slPick(String(r.device_id)) }, r.device)
+    : h("span", { class: "link", title: "Only senders not in the inventory", onclick: () => slPick("unknown") }, r.src);
+  return h("tr", {},
+    h("td", { class: "when", title: when.toISOString() },
+      when.toLocaleString(undefined, { dateStyle: "short", timeStyle: "medium" })),
+    h("td", {}, device, r.device ? h("small", { class: "muted" }, ` ${r.src}`) : null),
+    h("td", {}, h("span", { class: `badge s${r.sev}` }, SEV_NAMES[r.sev] || r.sev)),
+    h("td", {}, r.tag || "", h("small", { class: "muted" }, ` ${r.facility}`)),
+    h("td", { class: "msg" }, r.text));
+}
+
+function slPick(device) {
+  $("#sl-device").value = device;
+  slSearch();
+}
+
+function slSevChips() {
+  $("#sl-sev").replaceChildren(...SEV_NAMES.map((name, i) => h("button", {
+    class: `sev s${i}${sl.sev && !sl.sev.has(i) ? " off" : ""}`,
+    title: sl.sev && !sl.sev.has(i) ? `Show ${name}` : `Hide ${name}`,
+    onclick: () => {
+      const all = new Set(sl.sev || [0, 1, 2, 3, 4, 5, 6, 7]);
+      all.has(i) ? all.delete(i) : all.add(i);
+      sl.sev = all.size === 8 ? null : all;
+      slSearch();
+    },
+  }, `${name} ${sl.counts[i]}`)));
+}
+
+function slTimeline(sum) {
+  const totals = sum.timeline.map((b) => b.reduce((a, n) => a + n, 0));
+  const max = Math.max(1, ...totals);
+  const start = new Date(sum.since).getTime();
+  const groups = [["bad", [0, 1, 2, 3]], ["warn", [4]], ["note", [5]], ["info", [6, 7]]];
+  $("#sl-timeline").replaceChildren(...sum.timeline.map((b, i) => {
+    const from = new Date(start + i * sum.bucket_seconds * 1000);
+    const to = new Date(from.getTime() + sum.bucket_seconds * 1000);
+    const bar = h("div", {
+      class: "bar",
+      title: `${from.toLocaleString()} – ${to.toLocaleTimeString()}: ${totals[i]} message(s)` +
+        (b[0] + b[1] + b[2] + b[3] ? `, ${b[0] + b[1] + b[2] + b[3]} error(s) or worse` : "") +
+        (b[4] ? `, ${b[4]} warning(s)` : "") + "\nClick to look at this period",
+      onclick: () => slZoom(from, to),
+    }, ...groups.map(([cls, sevs]) => {
+      const n = sevs.reduce((a, s) => a + b[s], 0);
+      if (!n) return null;
+      const seg = h("div", { class: `seg ${cls}` });
+      seg.style.height = `${(n / max) * 100}%`;
+      return seg;
+    }));
+    return bar;
+  }));
+}
+
+function toLocalInput(d) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function slZoom(from, to) {
+  $("#sl-range").value = "custom";
+  $("#sl-custom").hidden = false;
+  $("#sl-from").value = toLocalInput(from);
+  $("#sl-to").value = toLocalInput(new Date(to.getTime() + 60000));
+  $("#sl-live").checked = false;
+  slLive();
+  slSearch();
+}
+
+function slLive() {
+  clearInterval(sl.timer);
+  if ($("#sl-live").checked && $("#sl-range").value !== "custom") {
+    sl.timer = setInterval(() => {
+      if (state.view === "syslog" && !document.hidden) { slSearch(); slStatus(); }
+    }, 5000);
+  }
+}
+
+$("#sl-range").addEventListener("change", () => {
+  const custom = $("#sl-range").value === "custom";
+  $("#sl-custom").hidden = !custom;
+  if (custom && !$("#sl-from").value) {
+    $("#sl-from").value = toLocalInput(new Date(Date.now() - 86400000));
+    $("#sl-to").value = toLocalInput(new Date(Date.now() + 60000));
+  }
+  if (custom) $("#sl-live").checked = false;
+  slLive();
+  slSearch();
+});
+["#sl-from", "#sl-to", "#sl-device"].forEach((s) => $(s).addEventListener("change", slSearch));
+let slTyping;
+$("#sl-search").addEventListener("input", () => { clearTimeout(slTyping); slTyping = setTimeout(slSearch, 400); });
+$("#sl-live").addEventListener("change", slLive);
+$("#sl-more").addEventListener("click", slMore);
+$$(".sev-filter [data-sev]").forEach((b) => b.addEventListener("click", () => {
+  sl.sev = b.dataset.sev ? new Set(b.dataset.sev.split(",").map(Number)) : null;
+  slSearch();
+}));
+
+// Help: suggested device configs, with this server's address filled in.
+async function slHelp() {
+  if (!sl.howto) sl.howto = await api("/api/syslog/howto").catch((e) => toast(e.message));
+  if (!sl.howto) return;
+  const hw = sl.howto;
+  $("#sl-help-general").replaceChildren(...hw.general.map((g) => h("li", {}, g)));
+  const sel = $("#sl-help-platform");
+  if (!sel.options.length) {
+    sel.replaceChildren(...hw.platforms.map((p, i) => h("option", { value: i }, p.title)));
+    $("#sl-help-server").value = hw.server;
+  }
+  slHelpShow();
+  $("#sl-help-dialog").showModal();
+}
+
+function slHelpShow() {
+  const p = sl.howto.platforms[Number($("#sl-help-platform").value) || 0];
+  const server = $("#sl-help-server").value.trim() || "<server address>";
+  $("#sl-help-text").textContent = p.text.replaceAll("{server}", server);
+  $("#sl-help-notes").textContent = (p.kind === "gui" ? "In the device's web page. " : "") + (p.notes || "");
+}
+
+$("#sl-help").addEventListener("click", slHelp);
+$("#sl-help-close").addEventListener("click", () => $("#sl-help-dialog").close());
+$("#sl-help-platform").addEventListener("change", slHelpShow);
+$("#sl-help-server").addEventListener("input", slHelpShow);
+$("#sl-help-copy").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText($("#sl-help-text").textContent);
+    toast("Copied");
+  } catch {
+    toast("Select the text and copy it (the browser blocked copying)");
+  }
+});

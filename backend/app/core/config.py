@@ -110,6 +110,16 @@ class Settings(BaseSettings):
     circuit_scan_schedule: str = "sun 02:00"
     circuit_scan_workers: int = 5
 
+    # Syslog (the receiver is its own service, netops-syslog; app/tools/syslog/receiver.py)
+    syslog_udp_port: int = 514  # 0 = don't listen on UDP
+    syslog_tcp_port: int = 514  # 0 = don't listen on TCP
+    syslog_bind: str = "0.0.0.0"  # "::" for IPv6 and IPv4
+    syslog_keep_days: int = 30  # Settings page
+    syslog_max_gb: int = 20  # Settings page; the oldest days go first
+    syslog_inventory_only: bool = False  # Settings page: drop senders not in the inventory
+    syslog_keep_free_mb: int = 2048  # stop storing while this much disk is still free
+    syslog_rate_per_source: int = 2000  # messages a second from one sender; more are dropped
+
 
     def record_env(self) -> frozenset[str]:
         """The settings given in netops.env or the environment (not defaults)."""
@@ -128,6 +138,10 @@ class Settings(BaseSettings):
     @property
     def firmware_dir(self) -> Path:
         return self.data_dir / "firmware"
+
+    @property
+    def syslog_dir(self) -> Path:
+        return self.data_dir / "syslog"
 
     def prepare(self) -> "Settings":
         """Create the data directory and fill in generated secrets."""

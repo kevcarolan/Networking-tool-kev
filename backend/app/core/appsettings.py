@@ -82,6 +82,12 @@ OPTIONS = (
            help="Configs contain password hashes and keys"),
     Option("upgrade_cpu_warn", "Upgrade pre-check: warn above CPU (%)", int, 1, 100),
     Option("upgrade_mem_warn", "Upgrade pre-check: warn above memory used (%)", int, 1, 100),
+    Option("syslog_keep_days", "Keep syslog messages for (days)", int, 1, 3650,
+           help="Older days are deleted, oldest first"),
+    Option("syslog_max_gb", "Keep at most this much syslog (GB)", int, 1, 10000,
+           help="When the folder is bigger, the oldest days are deleted first"),
+    Option("syslog_inventory_only", "Syslog: keep messages only from inventory devices", bool,
+           help="Otherwise every sender the server's firewall lets through is kept"),
     Option("upgrade_backup_max_age_hours", "Take a fresh backup before an upgrade if older than (hours)",
            int, 1, 720),
 )
