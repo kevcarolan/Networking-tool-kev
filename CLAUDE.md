@@ -90,7 +90,7 @@ remote); never sync the two automatically.
   `api()` helpers in `app.js`, keep styles on the CSS variables in `style.css` (light and dark),
   and hide admin-only controls with `data-admin`.
 * Permissions are a level per area (`core/permissions.py`: inventory, backups, firmware, upgrades,
-  circuits) plus the admin flag (users, activity). Protect endpoints with `require(area, level)`
+  circuits; inventory's `addresses` level guards anything that decides where a credential is sent) plus the admin flag (users, activity). Protect endpoints with `require(area, level)`
   (`require_admin` only for users/activity); in the GUI use `can(area, level)` and
   `data-perm="area:level"`. Users are added on the Users page (`core/users.py`, table `users`) or
   come from AD groups as a fallback ([docs/users.md](docs/users.md)). Live upgrade jobs also

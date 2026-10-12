@@ -221,7 +221,7 @@ function renderDevices() {
   $("#device-table tbody").replaceChildren(...rows.map(deviceRow));
   $("#empty-devices").hidden = rows.length > 0;
   $("#empty-devices").textContent = state.rows.length ? "No devices match the filter." :
-    can("inventory", "manage") ? "No devices yet - add a credential profile, then add your first device." : "No devices yet.";
+    can("inventory", "addresses") ? "No devices yet - add a credential profile, then add your first device." : "No devices yet.";
 }
 
 function deviceRow(r) {
@@ -314,6 +314,11 @@ async function openDeviceDialog(row = null) {
   } else if (state.credentials.length === 1) {
     form.credential_id.value = state.credentials[0].id;
   }
+  // Where a device account's password is sent is a separate permission.
+  const where = can("inventory", "addresses");
+  form.address.disabled = form.credential_id.disabled = !where;
+  form.address.title = form.credential_id.title = where ? "" :
+    "Changing the address or credential profile needs the 'addresses' level for Devices and credentials";
   dlg.dataset.deviceId = row ? row.device.id : "";
   showSshKey(row);
   dlg.showModal();

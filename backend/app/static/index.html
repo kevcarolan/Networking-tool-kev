@@ -40,7 +40,7 @@
         <button data-view="backups" class="active" data-perm="backups:view">Config backups</button>
         <button data-view="firmware" data-perm="firmware:view|upgrades:view">Firmware</button>
         <button data-view="circuits" data-perm="circuits:view">Circuits</button>
-        <button data-view="credentials" data-perm="inventory:manage">Credentials</button>
+        <button data-view="credentials" data-perm="inventory:credentials">Credentials</button>
         <button data-view="users" data-admin>Users</button>
         <button data-view="audit" data-admin>Activity</button>
         <button data-view="settings" data-admin>Settings</button>
@@ -68,7 +68,7 @@
           </select>
           <select id="filter-site"><option value="">All sites</option></select>
           <span class="spacer"></span>
-          <button id="add-device" class="primary" data-perm="inventory:manage">+ Add device</button>
+          <button id="add-device" class="primary" data-perm="inventory:addresses">+ Add device</button>
         </div>
         <div class="table-wrap">
           <table id="device-table">

@@ -20,6 +20,8 @@ from app.core.platforms import PLATFORMS
 router = APIRouter(prefix="/api", tags=["inventory"])
 
 INVENTORY_MANAGE = require("inventory", "manage")
+INVENTORY_ADDRESSES = require("inventory", "addresses")
+INVENTORY_CREDENTIALS = require("inventory", "credentials")
 
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
 _HOST_RE = re.compile(r"^(?=.{1,253}$)[A-Za-z0-9]([A-Za-z0-9-]{0,62})(\.[A-Za-z0-9-]{1,63})*$")
@@ -75,7 +77,7 @@ def list_credentials(db: Session = Depends(get_db), _: User = Depends(INVENTORY_
 
 @router.post("/credentials", response_model=CredentialOut, status_code=201)
 def create_credential(body: CredentialIn, request: Request, db: Session = Depends(get_db),
-                      user: User = Depends(INVENTORY_MANAGE)):
+                      user: User = Depends(INVENTORY_CREDENTIALS)):
     if not body.password:
         raise HTTPException(422, "Password is required")
     cipher = request.app.state.cipher
@@ -91,7 +93,7 @@ def create_credential(body: CredentialIn, request: Request, db: Session = Depend
 
 @router.put("/credentials/{cred_id}", response_model=CredentialOut)
 def update_credential(cred_id: int, body: CredentialIn, request: Request,
-                      db: Session = Depends(get_db), user: User = Depends(INVENTORY_MANAGE)):
+                      db: Session = Depends(get_db), user: User = Depends(INVENTORY_CREDENTIALS)):
     cred = db.get(Credential, cred_id) or _not_found("Credential")
     cipher = request.app.state.cipher
     cred.name, cred.username = body.name.strip(), body.username
@@ -106,7 +108,7 @@ def update_credential(cred_id: int, body: CredentialIn, request: Request,
 
 @router.delete("/credentials/{cred_id}", status_code=204)
 def delete_credential(cred_id: int, db: Session = Depends(get_db),
-                      user: User = Depends(INVENTORY_MANAGE)):
+                      user: User = Depends(INVENTORY_CREDENTIALS)):
     cred = db.get(Credential, cred_id) or _not_found("Credential")
     if cred.devices:
         raise HTTPException(409, f"Credential is used by {len(cred.devices)} device(s)")
@@ -190,7 +192,7 @@ def get_device(device_id: int, db: Session = Depends(get_db), _: User = Depends(
 
 @router.post("/devices", response_model=DeviceOut, status_code=201)
 def create_device(body: DeviceIn, db: Session = Depends(get_db),
-                  user: User = Depends(INVENTORY_MANAGE)):
+                  user: User = Depends(INVENTORY_ADDRESSES)):
     licence.room_for(db)
     _check_credential(db, body.credential_id)
     device = Device(**body.model_dump())
@@ -211,6 +213,12 @@ def update_device(device_id: int, body: DeviceIn, db: Session = Depends(get_db),
                   user: User = Depends(INVENTORY_MANAGE)):
     device = db.get(Device, device_id) or _not_found("Device")
     _check_credential(db, body.credential_id)
+    if ((body.address, body.credential_id) != (device.address, device.credential_id)
+            and not user.can("inventory", "addresses")):
+        # The account's password goes to the device's address: who may decide that is
+        # a separate permission.
+        raise HTTPException(403, "Changing a device's address or credential profile needs "
+                                 "the 'addresses' level for Devices and credentials")
     if (body.name, body.address) != (device.name, device.address):
         # Otherwise an existing entry could be reused for a different device.
         licence.require_active(db, "change a device's name or address")

@@ -80,6 +80,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-12 | Sign-ins last at most `NETOPS_SESSION_MAX_AGE_HOURS` even while in use; a break-glass session ends when its password changes | A stolen cookie or a forgotten browser stays useful for a limited time only |
 | 2026-10-12 | Root scripts never act on files the app account can change (TLS status in `/var/lib/netops-tls`, backups copied as `netops`, online installer only from a root-owned clone) | The app account must not be a way to root |
 | 2026-10-12 | Spreadsheet exports keep formula-like text as text | Text from sign-in names, uploaded sheets and device output ends up in exports opened in Excel |
+| 2026-10-12 | Devices and credentials gets two more levels: *addresses* (add devices, change a device's address or credential profile) and *credentials* (manage the profiles); *manage* keeps only device details | The owner: whoever sets the address decides where a device account's password goes, so it is given per user on the Users page |
 | 2026-10-12 | The network simulator and sample outputs moved from `tests/` to `app/demo/` (tests keep the old names) | One simulator for the tests and the demo, so the demo shows exactly what the tests check |
 
 ## Open questions
@@ -87,7 +88,6 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 - Licence agreement: per installation or per site? Managed-service use? Support terms, warranty, liability cap, governing law ([legal/EULA-draft.md](legal/EULA-draft.md))
 
 - Product name?
-- Should only admins change a device's address or credential profile? Today *Inventory: manage* can, so whoever has it decides where a device account's password is sent (audited, host keys checked, documented in [users.md](users.md))
 - Syslog forwarding is plain UDP (`rsyslog-forward.conf`); offer TLS forwarding for sites whose log server supports it?
 - Docker image: `--forwarded-allow-ips "*"` trusts any proxy's client address; fine behind the bundled nginx, but should it be narrowed?
 - The air-gapped bundle has a SHA-256 but no signature; sign bundles once the product is sold?
