@@ -7,9 +7,12 @@ it starts ([upgrades.md](upgrades.md)).
 
 ## Uploading the spreadsheet
 
-1. **Circuits → Upload spreadsheet** (admins only) and choose the workbook (`.xlsx`).
-2. NetOps finds the sheet and the header row by the **column names**. The coloured band
-   row above the names, the column order and extra sheets don't matter.
+1. **Circuits → Upload spreadsheet** (*Circuits: manage*) and choose the file: an Excel
+   workbook (`.xlsx`) or a CSV file (comma, semicolon or tab separated).
+2. The header row is found by the **column names**. The coloured band row above the names,
+   the column order and extra sheets don't matter. A header is recognised when at least six
+   of the names below are in it, or when every name in it is one the list knows (a
+   **Blank template** with only a few columns).
 3. You get a **preview** before anything changes:
    * rows read, and rows **new / changed / removed** compared with the live list. Changed
      rows show the old and new value of each field;
@@ -24,7 +27,7 @@ Expected columns, from the current template:
 |---|---|
 | SERVICE | IP Partition, Service |
 | DEVICE INFORMATION | Engineering prefix, Device Name, Device Type, Manufacturer, Hardware Mac Address |
-| LOCATION | Floor Level, Room / Area |
+| LOCATION | Site, Floor Level, Room / Area |
 | IP DETAILS | IP Address, Subnet Mask, Default Gateway |
 | NETWORK PORT | VLAN, TYPE, PORT, **DEVICE** |
 | DRAWING DETAILS | Drawing Number, Device Drawing Reference |
@@ -32,7 +35,61 @@ Expected columns, from the current template:
 Each row needs a **MAC address or an IP address**, so NetOps can find it on the network.
 **DEVICE** and **PORT** are optional: they are the *documented* location. Leave them empty
 and NetOps fills in the *live* location from the switches (see below). Any other missing
-column is left empty.
+column is left empty. Custom columns (below) are read by their name too.
+
+### A blank template to fill in
+
+**Blank template** gives a sheet with only the column names, as CSV or Excel, in the form
+the upload reads:
+
+* **The columns I see** (the ones ticked in **Columns**) or **Every column**;
+* **Hardware Mac Address** and **IP Address** are always in it;
+* the Excel version has a second sheet, *How to fill in*, with the rules above.
+
+Fill it in, one row per circuit, and upload it. The upload replaces the whole list, so
+start from **Export CSV** instead when you only want to change a few rows.
+
+## Which site a circuit is at
+
+Each circuit is linked to a site on the **Sites** page ([sites.md](sites.md)):
+
+1. the list's **Site** column (a site's name or code; *Site name* and *Site code* headers
+   work too);
+2. else the site of the switch it is documented on (DEVICE);
+3. else the site of the switch where the network scan last found it.
+
+The **Site** column shows the site as a link (and *from its switch* or *from where it was
+found* when it didn't come from the list), or *not on the site list* for a name the Sites
+page doesn't have. Filter by site with **All sites**; *Not at a listed site* shows the rest.
+The exports have the list's *Site* and the **Linked site**. Renaming a site, or its code,
+also changes it in the live circuit list (and a pending upload).
+
+## Choosing the columns you see
+
+**Columns** (everyone): tick the columns you want and put them in order. It is remembered
+for you, in your browser; others keep their own. **Reset to the defaults** goes back.
+
+* **Combined** columns show two or three values in one cell: *Service* (with IP
+  partition), *Device* (name, engineering prefix, warnings), *Type / make*, *Location*,
+  *Site*, *IP* (with gateway and mask), *VLAN* (with connection type), *Switch / port (list)*,
+  *On the network* and *Drawing*. These are the default view.
+* Every value also has a column of its own (*Subnet Mask*, *Drawing Number*...), plus
+  *Warnings* and the custom columns.
+
+## Custom columns
+
+**Custom columns** (admins): add your own columns for everyone, e.g. *Patch panel* or
+*Cable number*. They are text. Then:
+
+* an upload reads a column with exactly that name (upper/lower case and punctuation don't
+  matter) and keeps its values with each row;
+* they are in **Columns**, the search, the blank template and both exports, and the
+  preview shows their changes like any other column;
+* **Rename** changes the name the upload looks for; the values stay. **Delete** removes
+  the column and its values from every version of the list.
+
+A custom column can't have the name of a built-in column (or of one the upload already
+reads, such as *Room* or *Mask*), nor of an export-only column such as *Live status*.
 
 ## How rows are linked to NetOps devices
 
@@ -50,8 +107,9 @@ column is left empty.
 
 - **Circuits page:**
   * tiles: total, linked, not linked, with warnings, switches;
-  * search and filters by service, switch, VLAN and link status;
-  * CSV export.
+  * search (including custom columns) and filters by service, switch, VLAN and link status;
+  * the columns you choose;
+  * **Export CSV** and **Updated sheet**, with the custom columns.
 - **Device → History → Circuits tab:** the circuits on that switch, grouped by service and
   VLAN. This is the list an upgrade job will show and save.
 

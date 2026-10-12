@@ -20,6 +20,7 @@ one database.
 | Circuits (circuit list from Excel, live location from MAC/ARP tables) | `backend/app/tools/circuits/` | Done; live locations need lab testing ([docs/circuits.md](docs/circuits.md)) |
 | Syslog (receiver on 514, one file per day, search page, device setup help) | `backend/app/tools/syslog/` | Done ([docs/syslog.md](docs/syslog.md)) |
 | Network inventory (every device plus racks, servers, UPSs…; custom columns, import/export) | `backend/app/tools/inventory/` | Done ([docs/inventory.md](docs/inventory.md)) |
+| Sites (site list, what the inventory has at each) | `backend/app/tools/inventory/sites.py` | Done ([docs/sites.md](docs/sites.md)) |
 | Users and activity (per-area permissions, activity report) | `backend/app/core/users.py`, `permissions.py` | Done ([docs/users.md](docs/users.md)) |
 
 Design docs: [docs/design.md](docs/design.md) (platform and backup tool),
@@ -133,7 +134,14 @@ remote); never sync the two automatically.
   row by name or address). Built-in columns are `fields.STANDARD` (page, import and export
   all read it); admins' columns are `asset_fields`, their values JSON in `assets.custom`
   under `x_<key>`. Values from the device (`Field.auto`) are shown where a row is empty.
-  Only `devices` count for the licence. Part of every licence.
+  Only `devices` count for the licence. Part of every licence. Blank templates for
+  inventory, sites and circuits go through `exports.template()`. Sites (`sites.py`, tables
+  `sites`, `site_fields`) reuse the inventory's field code; a row is at a site when its
+  effective Site is the site's name or code, and renaming one rewrites `assets.site` and
+  `devices.site`. Circuit custom columns (`ct_fields`, values in `ct_circuits.custom`) are
+  text, read by header name on upload (`importer.parse_workbook`/`parse_csv`, `custom=`).
+  A circuit's site (`circuits/api.SiteIndex`): its Site column, else its switch's, else the
+  switch it was found on; the GUI links any Site value with `siteLink()`.
 * Device access is always injectable (`fetcher=` / `fw_collector=` in `create_app`), so tests
   never touch SSH. Parser tests use real sample output in `app/demo/samples.py` (alias
   `tests/firmware_samples.py`); the newer vendors' samples (`app/demo/vendor_samples.py`) are

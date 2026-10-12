@@ -21,7 +21,7 @@ from app.core.db import get_db
 from app.core.models import Credential, Device
 from app.core.platforms import PLATFORMS
 from app.tools.inventory import fields as fl
-from app.tools.inventory.models import Asset, AssetField
+from app.tools.inventory.models import Asset, AssetField, Site
 
 router = APIRouter(prefix="/api/inventory", tags=["inventory"])
 MANAGE = require("inventory", "manage")
@@ -93,6 +93,7 @@ def _effective(row: dict, key: str):
 @router.get("/meta")
 def meta(db: Session = Depends(get_db), user: User = Depends(current_user)):
     return {"fields": fl.describe(fl.all_fields(db)), "kinds": fl.KINDS,
+            "sites": sorted(db.scalars(select(Site.name)), key=str.lower),
             "can_manage": user.can("inventory", "manage"),
             "can_add_devices": user.can("inventory", "addresses"), "is_admin": user.is_admin}
 
@@ -203,64 +204,77 @@ class FieldIn(BaseModel):
     choices: list[str] = PField(default_factory=list, max_length=100)
 
 
-def _check_field(db: Session, body: FieldIn, exclude: int | None = None) -> None:
+def check_field(db: Session, body: FieldIn, model, standard, exclude: int | None = None) -> None:
     if body.kind not in fl.KINDS:
         raise HTTPException(422, f"Kind: one of {', '.join(fl.KINDS)}")
     if body.kind == "choice" and not [c for c in body.choices if c.strip()]:
         raise HTTPException(422, "A pick-list needs at least one choice")
-    used = {f.label.lower() for f in fl.STANDARD} | {
-        c.label.lower() for c in db.scalars(select(AssetField)) if c.id != exclude}
+    used = {f.label.lower() for f in standard} | {
+        c.label.lower() for c in db.scalars(select(model)) if c.id != exclude}
     if body.label.strip().lower() in used:
         raise HTTPException(422, f"There is already a column called {body.label.strip()}")
 
 
-@router.post("/fields", status_code=201)
-def add_field(body: FieldIn, db: Session = Depends(get_db), user: User = Depends(require_admin)):
-    _check_field(db, body)
+def add_custom_field(db: Session, body: FieldIn, model, standard, user: User, action: str) -> dict:
+    check_field(db, body, model, standard)
     key, n = fl.slug(body.label), 2
     base = key
-    while db.scalar(select(AssetField.id).where(AssetField.key == key)):
+    while db.scalar(select(model.id).where(model.key == key)):
         key, n = f"{base}_{n}", n + 1
-    position = (db.scalar(select(func.max(AssetField.position))) or 0) + 1
-    f = AssetField(key=key, label=body.label.strip(), kind=body.kind, position=position,
-                   choices=json.dumps([c.strip() for c in body.choices if c.strip()]))
+    position = (db.scalar(select(func.max(model.position))) or 0) + 1
+    f = model(key=key, label=body.label.strip(), kind=body.kind, position=position,
+              choices=json.dumps([c.strip() for c in body.choices if c.strip()]))
     db.add(f)
     db.flush()
-    audit(db, user.username, "inventory.column_add", f"{f.label} ({f.kind})")
+    audit(db, user.username, f"{action}.column_add", f"{f.label} ({f.kind})")
     return {"key": f"x_{f.key}"}
 
 
-def _field(db: Session, key: str) -> AssetField:
-    f = db.scalar(select(AssetField).where(AssetField.key == key.removeprefix("x_")))
+def get_custom_field(db: Session, model, key: str):
+    f = db.scalar(select(model).where(model.key == key.removeprefix("x_")))
     if f is None:
         raise HTTPException(404, "No such column")
     return f
 
 
-@router.put("/fields/{key}")
-def change_field(key: str, body: FieldIn, db: Session = Depends(get_db),
-                 user: User = Depends(require_admin)):
-    f = _field(db, key)
+def change_custom_field(db: Session, model, standard, key: str, body: FieldIn, user: User,
+                        action: str) -> dict:
+    f = get_custom_field(db, model, key)
     if body.label.strip().lower() != f.label.lower():
-        _check_field(db, body, exclude=f.id)
+        check_field(db, body, model, standard, exclude=f.id)
     if body.kind != f.kind:
         raise HTTPException(422, "A column's kind can't change: add a new column instead")
     old = f.label
     f.label = body.label.strip()
     f.choices = json.dumps([c.strip() for c in body.choices if c.strip()])
-    audit(db, user.username, "inventory.column_change", f"{old} -> {f.label}")
+    audit(db, user.username, f"{action}.column_change", f"{old} -> {f.label}")
     return {"key": f"x_{f.key}"}
+
+
+def delete_custom_field(db: Session, model, rows_model, key: str, user: User, action: str) -> None:
+    f = get_custom_field(db, model, key)
+    for row in db.scalars(select(rows_model).where(rows_model.custom.like(f'%"{f.key}"%'))):
+        values = json.loads(row.custom or "{}")
+        values.pop(f.key, None)
+        row.custom = json.dumps(values)
+    db.delete(f)
+    audit(db, user.username, f"{action}.column_delete", f.label)
+
+
+@router.post("/fields", status_code=201)
+def add_field(body: FieldIn, db: Session = Depends(get_db), user: User = Depends(require_admin)):
+    return add_custom_field(db, body, AssetField, fl.STANDARD, user, "inventory")
+
+
+@router.put("/fields/{key}")
+def change_field(key: str, body: FieldIn, db: Session = Depends(get_db),
+                 user: User = Depends(require_admin)):
+    return change_custom_field(db, AssetField, fl.STANDARD, key, body, user, "inventory")
 
 
 @router.delete("/fields/{key}", status_code=204)
 def delete_field(key: str, db: Session = Depends(get_db), user: User = Depends(require_admin)):
-    f = _field(db, key)
-    for asset in db.scalars(select(Asset).where(Asset.custom.like(f'%"{f.key}"%'))):
-        values = json.loads(asset.custom or "{}")
-        values.pop(f.key, None)
-        asset.custom = json.dumps(values)
-    db.delete(f)
-    audit(db, user.username, "inventory.column_delete", f.label)
+    delete_custom_field(db, AssetField, Asset, key, user, "inventory")
     return Response(status_code=204)
 
 
@@ -304,7 +318,38 @@ def export_xlsx(db: Session = Depends(get_db), _: User = Depends(current_user)):
                     media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
-def _read_table(data: bytes, filename: str) -> list[list[str]]:
+TEMPLATE_NOTES = [
+    "Fill in one row per item on the first sheet, under the column names, then import the file "
+    "on the Inventory page (Import).",
+    "Keep the column names as they are. Columns can be in any order, and you can delete the ones "
+    "you don't use; Name is always needed.",
+    "Rows are matched to the inventory by serial number, then asset tag, then name: a match is "
+    "updated, anything else is added. Empty cells leave a value as it is.",
+    "Dates: YYYY-MM-DD or DD/MM/YYYY. Position and Height (U): whole numbers.",
+    "Type and Status (and pick-list columns) take one of their listed values: Excel shows the list.",
+    "You see what changes before anything is changed.",
+]
+
+
+@router.get("/template.{fmt}")
+def template(fmt: str, columns: str = Query("", max_length=4000), db: Session = Depends(get_db),
+             _: User = Depends(current_user)):
+    """A blank inventory to fill in: the chosen columns (``columns``: keys separated by
+    commas), or every column. Name is always in it."""
+    if fmt not in ("csv", "xlsx"):
+        raise HTTPException(404, "Use template.csv or template.xlsx")
+    fields = {f.key: f for f in fl.all_fields(db)}
+    keys = [k for k in dict.fromkeys(c.strip() for c in columns.split(",")) if k in fields] \
+        or list(fields)
+    if "name" not in keys:
+        keys.insert(0, "name")
+    chosen = [fields[k] for k in keys]
+    return exports.template(fmt, [f.label for f in chosen], "inventory-template", TEMPLATE_NOTES,
+                            {f.label: list(f.choices) for f in chosen if f.choices},
+                            sheet="Inventory")
+
+
+def read_table(data: bytes, filename: str) -> list[list[str]]:
     if filename.lower().endswith((".xlsx", ".xlsm")):
         from openpyxl import load_workbook
 
@@ -393,7 +438,7 @@ async def import_file(request: Request, filename: str = Query(..., max_length=25
         body += chunk
         if len(body) > MAX_IMPORT:
             raise HTTPException(413, f"File is larger than {MAX_IMPORT // 2**20} MB")
-    table = await run_in_threadpool(_read_table, bytes(body), filename)
+    table = await run_in_threadpool(read_table, bytes(body), filename)
 
     def work():
         from app.core.db import session_scope

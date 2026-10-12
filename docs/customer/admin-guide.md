@@ -229,8 +229,23 @@ Only devices the tools manage count towards the licence.
 * **Import** a spreadsheet of your existing inventory first: when you then add the
   devices on Config backups, they are linked to their rows by name or address.
 * **Manage this device…** in an item's form turns a recorded switch into a managed one.
+* **Blank template** gives people a sheet to fill in with only the columns they need.
 
 Details: [inventory.md](../inventory.md).
+
+### Sites
+
+**Sites** is the list of your sites. Set it up early: **Import** a filled-in **Blank
+template**, or click **Add them to the list** to add the sites your devices already use.
+Give each site a short **code** (e.g. `DC1`): items and devices are at a site when their
+*Site* is its name or code. Renaming a site, or its code, updates the items and devices that
+use it. Admins can add **Custom columns** (e.g. *Power supply*). Details: [sites.md](../sites.md).
+
+### The circuit list's own columns
+
+On **Circuits**, admins can add **Custom columns** (e.g. *Patch panel*). An upload reads a
+column of that name and keeps its values; they are in the exports, the search and the
+**Blank template**. Details: [circuits.md](../circuits.md).
 
 ## 5. Live upgrades
 

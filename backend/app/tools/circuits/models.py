@@ -47,6 +47,7 @@ class Circuit(Base):
     manufacturer: Mapped[str] = mapped_column(String(255), default="")
     mac: Mapped[str] = mapped_column(String(100), default="")
     # LOCATION
+    site: Mapped[str] = mapped_column(String(100), default="", server_default="")  # name or code
     floor: Mapped[str] = mapped_column(String(200), default="")
     room: Mapped[str] = mapped_column(String(200), default="")
     # IP DETAILS
@@ -67,6 +68,20 @@ class Circuit(Base):
     port_norm: Mapped[str] = mapped_column(String(100), default="")
     mac_norm: Mapped[str] = mapped_column(String(20), default="")
     warnings: Mapped[str] = mapped_column(Text, default="")  # "; "-separated
+    # The admins' own columns (CircuitField): {"<key>": "value"}
+    custom: Mapped[str] = mapped_column(Text, default="{}", server_default="{}")
+
+
+class CircuitField(Base):
+    """A column an admin added to the circuit list. Uploads read it by its name."""
+
+    __tablename__ = "ct_fields"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String(50), unique=True)
+    label: Mapped[str] = mapped_column(String(100))
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 # --- live location: what the switches report (MAC and ARP tables) ------------------

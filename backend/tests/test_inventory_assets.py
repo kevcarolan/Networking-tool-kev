@@ -219,3 +219,22 @@ def test_an_export_imports_back_unchanged(admin, device):
     data = admin.get("/api/inventory/export.xlsx").content
     plan = _import(admin, data, "inventory.xlsx").json()
     assert plan["new"] == [] and plan["errors"] == []
+
+
+def test_a_blank_template_has_the_chosen_columns_and_imports(admin):
+    admin.post("/api/inventory/fields", json={"label": "Power feed", "kind": "choice",
+                                              "choices": ["A", "B"]})
+    full = admin.get("/api/inventory/template.csv").text.lstrip("\ufeff").strip().split(",")
+    assert full[:2] == ["Name", "Type"] and full[-1] == "Power feed" and "Managed" not in full
+    some = admin.get("/api/inventory/template.csv", params={"columns": "rack,x_power_feed"}).text
+    assert some.lstrip("\ufeff").strip() == "Name,Rack,Power feed"  # Name is always there
+    plan = _import(admin, (some + "HQ-UPS1,HQ-R01,B\n").encode(), "t.csv", commit=True).json()
+    assert plan["committed"] and _by_name(admin, "HQ-UPS1")["values"]["x_power_feed"] == "B"
+
+    wb = load_workbook(io.BytesIO(admin.get("/api/inventory/template.xlsx",
+                                            params={"columns": "type,x_power_feed"}).content))
+    ws = wb["Inventory"]
+    assert [c.value for c in ws[1]] == ["Name", "Type", "Power feed"]
+    lists = sorted(dv.formula1 for dv in ws.data_validations.dataValidation)
+    assert lists[0] == '"A,B"' and "rack" in lists[1]
+    assert _import(admin, admin.get("/api/inventory/template.xlsx").content, "t.xlsx").json()["new"] == []

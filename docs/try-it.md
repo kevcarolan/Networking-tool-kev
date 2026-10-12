@@ -58,6 +58,15 @@ you did and what you expected, and send it over.
 - [ ] **Custom columns** (admin): add one, see it in the form and in **Columns**.
 - [ ] **Excel** export, change something in Excel, **Import** it back: check the preview.
 - [ ] Open *spare-c9300-48p*, **Manage this device…**: it becomes a managed device.
+- [ ] **Blank template**: the columns you see, as CSV; fill in two rows and **Import** it.
+
+**Sites**
+- [ ] Four sites, and a note that the inventory also uses *Warehouse*: **Add them to the list**.
+- [ ] Open *Head office*: its details and the 19 items there, with their backup and firmware state.
+- [ ] Rename a site's code (e.g. `HQ` to `HO`), then check the devices' site on Config backups.
+- [ ] Click *Head office*'s **Circuits** count: the 72 circuits there. Click a Site link on
+      Circuits, Inventory or Config backups: it opens the site.
+- [ ] **Columns** (add *Firmware behind*), **Custom columns**, **Blank template**, **Import**.
 
 **Firmware and upgrades**
 - [ ] **Firmware › Versions**: which devices are behind their standard.
@@ -71,6 +80,10 @@ you did and what you expected, and send it over.
 **Circuits**
 - [ ] 72 circuits; one has **moved** port and one is **not seen**.
 - [ ] **Scan network now**, and the circuit exports.
+- [ ] **Columns**: add *Patch panel* (a custom column) and *Subnet Mask*, take away *Drawing*.
+- [ ] **Blank template** (the columns you see, CSV): fill in a few rows and **Upload spreadsheet**
+      it: check the preview, then **Discard** (or make it live and upload the export again).
+- [ ] **Custom columns** (admin): add one, then upload a sheet with a column of that name.
 
 **Syslog**
 - [ ] The last 24 hours: severity buttons, the timeline (click a bar to zoom in).

@@ -147,6 +147,7 @@ async function showApp(user) {
   $$("[data-perm]").forEach((el) => (el.hidden = !permitted(el.dataset.perm)));
   state.platforms = await api("/api/platforms");
   state.licence = await api("/api/licence").catch(() => null);
+  await loadSiteIndex();
   applyModules();
   showLicenceBanner();
   const first = $$("#nav button").find((b) => !b.hidden && !b.classList.contains("locked"));
@@ -189,7 +190,7 @@ function switchView(view) {
   $$("#nav button").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
   if (VIEW_MODULE[view] && !hasModule(VIEW_MODULE[view])) return showLocked(view);
   $$(".view").forEach((s) => (s.hidden = s.id !== `view-${view}`));
-  ({ backups: loadBackups, inventory: loadInventory, firmware: loadFirmware, circuits: loadCircuits, syslog: loadSyslog, credentials: loadCredentials,
+  state.viewLoading = ({ backups: loadBackups, inventory: loadInventory, sites: loadSites, firmware: loadFirmware, circuits: loadCircuits, syslog: loadSyslog, credentials: loadCredentials,
     audit: loadAudit, users: loadUsers, settings: loadSettings })[view]();
 }
 $$("#nav button").forEach((b) => b.addEventListener("click", () => switchView(b.dataset.view)));
@@ -283,7 +284,7 @@ function deviceRow(r) {
     h("td", {}, h("span", { class: `dot ${st}`, title: STATUS_LABEL[st] })),
     h("td", { class: "name" }, d.name, d.notes ? h("small", {}, d.notes.slice(0, 80)) : null),
     h("td", {}, d.address),
-    h("td", {}, d.site || "—"),
+    h("td", {}, siteLink(d.site)),
     h("td", {}, d.platform_label),
     h("td", {}, fmtFreq(b.frequency_minutes)),
     h("td", { title: fmtTime(b.last_success) }, fmtAgo(b.last_success)),
@@ -622,7 +623,7 @@ function fwRow(r) {
   return h("tr", { class: d.enabled ? "" : "disabled" },
     h("td", {}, h("span", { class: `dot ${r.compliance}`, title: COMPLIANCE_LABEL[r.compliance] })),
     h("td", { class: "name" }, d.name, h("small", {}, d.address)),
-    h("td", {}, d.site || "—"),
+    h("td", {}, siteLink(d.site)),
     h("td", {}, d.platform_label),
     h("td", {}, f.model || "—", f.serial ? h("small", { class: "sub mono" }, f.serial) : null),
     h("td", {}, f.version ? h("code", {}, f.version) : "—",
@@ -849,16 +850,168 @@ async function deleteImage(img) {
   }
 }
 
+// ---------- shared: links to sites ----------
+
+/** Sites by lower-case name and code, so any page can link a Site value to its site. */
+async function loadSiteIndex() {
+  const list = await api("/api/sites/index").catch(() => []);
+  state.siteIndex = new Map();
+  list.forEach((x) => { if (x.code) state.siteIndex.set(x.code.trim().toLowerCase(), x); });
+  list.forEach((x) => state.siteIndex.set(x.name.trim().toLowerCase(), x)); // a name wins over a code
+}
+
+const siteOf = (text) => (text && state.siteIndex ? state.siteIndex.get(String(text).trim().toLowerCase()) : null);
+
+/** A Site value as a link to its site (or plain text when it isn't on the site list). */
+function siteLink(text, id = null) {
+  const s = id ? { id, name: text } : siteOf(text);
+  if (!text) return "—";
+  if (!s) return h("span", { title: "Not on the site list" }, text);
+  return h("span", { class: "link", title: "Open the site", onclick: (ev) => { ev.stopPropagation(); openSite(s.id); } }, text);
+}
+
+/** Go to the Sites page and open one site. */
+async function openSite(id, itemsFirst = true) {
+  if (state.view !== "sites") switchView("sites");
+  await site.loading;
+  const r = site.data.sites.find((x) => x.id === id);
+  if (r) siteEdit(r, itemsFirst);
+}
+
+/** Go to the Inventory page and open one item. */
+async function openItem(id) {
+  if ($("#site-dialog").open) $("#site-dialog").close();
+  switchView("inventory");
+  await state.viewLoading;
+  const r = inv.rows.find((x) => x.id === id);
+  if (r) invEdit(r);
+}
+
+/** Go to the Circuits page, showing one site's circuits. */
+function openSiteCircuits(id) {
+  ct.siteFilter = String(id);
+  if ($("#site-dialog").open) $("#site-dialog").close();
+  switchView("circuits");
+}
+
+// ---------- shared: column chooser and blank templates ----------
+
+function saveLocal(key, value) {
+  try {
+    if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, JSON.stringify(value));
+  } catch { /* private window */ }
+}
+
+/** Tick and order columns. `all`: [{key, label, group, help}]; `shown`: keys shown now. */
+function chooseColumns(dialog, close, all, shown, save, reset, note = "") {
+  shown = [...shown];
+  const order = [...shown, ...all.map((f) => f.key).filter((k) => !shown.includes(k))];
+  const byKey = new Map(all.map((f) => [f.key, f]));
+  const list = h("ul", { class: "col-list" });
+  const draw = () => list.replaceChildren(...order.map((k, i) => h("li", {},
+    h("input", { type: "checkbox", checked: shown.includes(k), "aria-label": byKey.get(k).label, onchange: (ev) => {
+      if (ev.target.checked) shown.push(k); else shown.splice(shown.indexOf(k), 1);
+    } }),
+    h("span", {}, byKey.get(k).label, h("small", { class: "muted" }, ` ${byKey.get(k).group}${byKey.get(k).help ? `: ${byKey.get(k).help}` : ""}`)),
+    h("span", { class: "spacer" }),
+    h("button", { type: "button", class: "small ghost", title: "Move up", disabled: i === 0, onclick: () => { [order[i - 1], order[i]] = [order[i], order[i - 1]]; draw(); } }, "↑"),
+    h("button", { type: "button", class: "small ghost", title: "Move down", disabled: i === order.length - 1, onclick: () => { [order[i + 1], order[i]] = [order[i], order[i + 1]]; draw(); } }, "↓"))));
+  draw();
+  dialog("Columns",
+    h("p", { class: "muted" }, "Tick the columns you want to see and put them in order. This is remembered for you in this browser; others keep their own. " + note),
+    list,
+    h("div", { class: "dialog-actions" },
+      h("button", { type: "button", onclick: () => { reset(); close(); } }, "Reset to the defaults"),
+      h("button", { type: "button", class: "primary", onclick: () => { save(order.filter((k) => shown.includes(k))); close(); } }, "Apply")));
+}
+
+/** Download a blank sheet with the column names: the columns you see, or all of them. */
+function templateDialog(dialog, base, seen, note) {
+  const which = h("select", {}, h("option", { value: "seen" }, "The columns I see"), h("option", { value: "all" }, "Every column"));
+  const csv = h("a", { class: "button", download: "" }, "CSV");
+  const xlsx = h("a", { class: "button", download: "" }, "Excel");
+  const update = () => {
+    const q = which.value === "seen" && seen.length ? `?columns=${encodeURIComponent(seen.join(","))}` : "";
+    csv.href = `${base}/template.csv${q}`;
+    xlsx.href = `${base}/template.xlsx${q}`;
+  };
+  which.addEventListener("change", update);
+  update();
+  dialog("Blank template",
+    h("p", { class: "muted" }, "A sheet with only the column names, in a format the import reads. " + note),
+    h("p", { class: "muted" }, "The Excel version also has a second sheet on how to fill it in, and pick-lists on columns that take set values."),
+    h("label", {}, "Columns", which),
+    h("div", { class: "dialog-actions" }, csv, xlsx));
+}
+
 // ---------- circuits ----------
 
-const ct = { rows: [], imp: null, pending: null };
+const ct = { rows: [], imp: null, pending: null, meta: null };
+const ctColsKey = () => `circuit-columns:${state.user ? state.user.username : ""}`;
+const sub = (text) => (text ? h("small", { class: "sub" }, text) : null);
+const ctCode = (v) => h("code", {}, v || "—");
+
+/* The columns you can show. "Combined" ones put two or three values in one cell (the
+   default view); every value also has its own column, and admins add custom ones. */
+const CT_COMBINED = [
+  { key: "@service", label: "Service", help: "Service, IP partition", fields: ["service", "ip_partition"],
+    cell: (r) => [r.service || "—", sub(r.ip_partition)] },
+  { key: "@device", label: "Device", help: "Device name, engineering prefix, warnings", fields: ["device_name", "eng_prefix"], cls: "name",
+    cell: (r) => [r.device_name || "—", r.eng_prefix ? h("small", {}, r.eng_prefix) : null,
+      r.warnings ? h("span", { class: "errtext" }, `⚠ ${r.warnings}`) : null] },
+  { key: "@type", label: "Type / make", help: "Device type, manufacturer", fields: ["device_type", "manufacturer"],
+    cell: (r) => [r.device_type || "—", sub(r.manufacturer)] },
+  { key: "@site", label: "Site", help: "The list's Site, else the site of the switch it is on; links to the site", fields: ["site"],
+    cell: (r) => [r.site_id ? siteLink(r.site_name, r.site_id) : r.site_text || "—",
+      r.site_text && !r.site_id ? sub("not on the site list") : sub({ switch: "from its switch", network: "from where it was found" }[r.site_from])] },
+  { key: "@location", label: "Location", help: "Room / area, floor", fields: ["room", "floor"],
+    cell: (r) => [r.room || "—", sub(r.floor)] },
+  { key: "@ip", label: "IP", help: "IP address, gateway and mask", fields: ["ip", "gateway", "mask"],
+    cell: (r) => [ctCode(r.ip), r.gateway ? sub(`gw ${r.gateway} / ${r.mask}`) : null] },
+  { key: "@vlan", label: "VLAN", help: "VLAN, connection type", fields: ["vlan", "conn_type"],
+    cell: (r) => [r.vlan || "—", sub(r.conn_type)] },
+  { key: "@switch", label: "Switch / port (list)", help: "DEVICE and PORT from the list, and the inventory device it links to", fields: ["switch", "port"],
+    cell: (r) => [r.switch || r.port ? h("code", {}, `${r.switch || "?"} ${r.port || ""}`) : "—",
+      sub(r.match === "matched" ? `→ ${r.switch_device_name}` : CT_MATCH[r.match])] },
+  { key: "@live", label: "On the network", help: "Where the last scan found it", fields: [], live: true },
+  { key: "@drawing", label: "Drawing", help: "Drawing number, device drawing reference", fields: ["drawing_number", "drawing_ref"],
+    cell: (r) => [r.drawing_number || "—", sub(r.drawing_ref)] },
+];
+const CT_DEFAULT = ["@service", "@device", "@type", "mac", "@site", "@location", "@ip", "@vlan", "@switch", "@live", "@drawing"];
+
+function ctAllColumns() {
+  const fields = ct.meta ? ct.meta.fields : [];
+  return [
+    ...CT_COMBINED.map((c) => ({ ...c, group: "Combined" })),
+    ...fields.map((f) => ({ key: f.key, label: f.label, group: f.custom ? "Custom" : "One value", fields: [f.key],
+      cell: (r) => (["mac", "ip", "gateway", "mask", "port", "switch"].includes(f.key) ? ctCode(r[f.key]) : r[f.key] || "—") })),
+    { key: "warnings", label: "Warnings", group: "One value", fields: [], cell: (r) => (r.warnings ? h("span", { class: "errtext" }, r.warnings) : "—") },
+  ];
+}
+
+/** The columns this person chose (and their order); the defaults until they choose. */
+function ctColumns() {
+  const all = new Map(ctAllColumns().map((c) => [c.key, c]));
+  let keys = null;
+  try { keys = JSON.parse(localStorage.getItem(ctColsKey()) || "null"); } catch { keys = null; }
+  if (!Array.isArray(keys)) keys = CT_DEFAULT;
+  return keys.filter((k) => all.has(k)).map((k) => all.get(k));
+}
+
+function ctDialog(title, ...content) {
+  $("#ct-dialog-title").textContent = title;
+  $("#ct-dialog-body").replaceChildren(...content);
+  if (!$("#ct-dialog").open) $("#ct-dialog").showModal();
+}
+$("#ct-dialog-close").addEventListener("click", () => $("#ct-dialog").close());
 
 const CT_MATCH = { matched: "Linked", unmatched: "Switch not in inventory", ambiguous: "Several devices match", none: "No switch" };
 const CT_LIVE_CLS = { matches: "success", moved: "failed", found: "changed", not_seen: "never", several: "changed", no_address: "never" };
 
 async function loadCircuits() {
   try {
-    const data = await api("/api/circuits");
+    const [data, meta] = await Promise.all([api("/api/circuits"), api("/api/circuits/meta")]);
+    ct.meta = meta;
     ct.rows = data.circuits;
     ct.imp = data.import;
     ct.scan = data.scan;
@@ -893,6 +1046,10 @@ async function loadCircuits() {
   const uniq = (key) => [...new Set(rows.map((r) => r[key]).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   fillSelect($("#ct-filter-service"), "All services", uniq("service").map((x) => [x, x]));
   fillSelect($("#ct-filter-switch"), "All switches", uniq("switch").map((x) => [x, x]));
+  const sites = [...new Map(rows.filter((r) => r.site_id).map((r) => [r.site_id, r.site_name])).entries()]
+    .sort((a, b) => a[1].localeCompare(b[1]));
+  fillSelect($("#ct-filter-site"), "All sites", [...sites.map(([id, name]) => [String(id), name]), ["none", "Not at a listed site"]]);
+  if (ct.siteFilter) { $("#ct-filter-site").value = ct.siteFilter; ct.siteFilter = null; }
   fillSelect($("#ct-filter-vlan"), "All VLANs", uniq("vlan").map((x) => [x, `VLAN ${x}`]));
   renderCircuits();
 }
@@ -901,7 +1058,9 @@ function renderCircuits() {
   const q = $("#ct-search").value.trim().toLowerCase();
   const service = $("#ct-filter-service").value, sw = $("#ct-filter-switch").value;
   const vlan = $("#ct-filter-vlan").value, match = $("#ct-filter-match").value;
+  const siteSel = $("#ct-filter-site").value;
   const rows = ct.rows.filter((r) => {
+    if (siteSel === "none" ? r.site_id : siteSel && String(r.site_id) !== siteSel) return false;
     if (service && r.service !== service) return false;
     if (sw && r.switch !== sw) return false;
     if (vlan && r.vlan !== vlan) return false;
@@ -910,34 +1069,65 @@ function renderCircuits() {
     if (match === "warnings" && !r.warnings) return false;
     if (match.startsWith("live:") && r.live_status !== match.slice(5)) return false;
     if (q && ![r.device_name, r.eng_prefix, r.ip, r.mac, r.port, r.switch, r.drawing_number, r.drawing_ref,
-      r.room, r.device_type, r.live_switch, r.live_port, r.live_mac].some((v) => (v || "").toLowerCase().includes(q))) return false;
+      r.room, r.device_type, r.live_switch, r.live_port, r.live_mac, r.site_text, r.site_name,
+      ...Object.keys(r).filter((k) => k.startsWith("x_")).map((k) => r[k])].some((v) => (v || "").toLowerCase().includes(q))) return false;
     return true;
   });
   const shown = rows.slice(0, 2000);
-  $("#ct-table tbody").replaceChildren(...shown.map(circuitRow));
+  const cols = ctColumns();
+  $("#ct-table thead").replaceChildren(h("tr", {}, h("th", {}), ...cols.map((c) => h("th", { title: c.help || "" }, c.label))));
+  $("#ct-table tbody").replaceChildren(...shown.map((r) => circuitRow(r, cols)));
   const empty = $("#ct-empty");
   empty.hidden = rows.length > 0 && rows.length <= 2000;
   empty.textContent = !ct.rows.length ? (can("circuits", "manage") ? "No circuit list yet - click Upload spreadsheet." : "No circuit list uploaded yet.")
     : !rows.length ? "No circuits match the filter." : `Showing the first 2000 of ${rows.length} - narrow the filter to see the rest.`;
 }
 
-function circuitRow(r) {
+function circuitRow(r, cols) {
   const linkCls = r.match === "matched" ? "success" : r.match === "none" ? "never" : "failed";
   return h("tr", {},
     h("td", {}, h("span", { class: `dot ${linkCls}`, title: CT_MATCH[r.match] })),
-    h("td", {}, r.service || "—", r.ip_partition ? h("small", { class: "sub" }, r.ip_partition) : null),
-    h("td", { class: "name" }, r.device_name || "—", r.eng_prefix ? h("small", {}, r.eng_prefix) : null,
-      r.warnings ? h("span", { class: "errtext" }, `⚠ ${r.warnings}`) : null),
-    h("td", {}, r.device_type || "—", r.manufacturer ? h("small", { class: "sub" }, r.manufacturer) : null),
-    h("td", {}, h("code", {}, r.mac || "—")),
-    h("td", {}, r.room || "—", r.floor ? h("small", { class: "sub" }, r.floor) : null),
-    h("td", {}, h("code", {}, r.ip || "—"), r.gateway ? h("small", { class: "sub" }, `gw ${r.gateway} / ${r.mask}`) : null),
-    h("td", {}, r.vlan || "—", r.conn_type ? h("small", { class: "sub" }, r.conn_type) : null),
-    h("td", {}, r.switch || r.port ? h("code", {}, `${r.switch || "?"} ${r.port || ""}`) : "—",
-      h("small", { class: "sub" }, r.match === "matched" ? `→ ${r.switch_device_name}` : CT_MATCH[r.match])),
-    liveCell(r),
-    h("td", {}, r.drawing_number || "—", r.drawing_ref ? h("small", { class: "sub" }, r.drawing_ref) : null));
+    ...cols.map((c) => (c.live ? liveCell(r) : h("td", { class: c.cls || "" }, c.cell(r)))));
 }
+
+/** Choose and order the circuit columns (remembered for you, in this browser). */
+function ctColumnsDialog() {
+  chooseColumns(ctDialog, () => $("#ct-dialog").close(), ctAllColumns(), ctColumns().map((c) => c.key),
+    (keys) => { saveLocal(ctColsKey(), keys); renderCircuits(); },
+    () => { saveLocal(ctColsKey(), null); renderCircuits(); },
+    "Combined columns show two or three values in one cell; every value also has a column of its own.");
+}
+
+/** Admins: the site's own columns on the circuit list. */
+function ctFieldsDialog() {
+  const custom = ct.meta.fields.filter((f) => f.custom);
+  const err = errorLine();
+  const label = h("input", { placeholder: "e.g. Patch panel", maxlength: 100 });
+  const call = async (fn) => { err.hidden = true; try { await fn(); await loadCircuits(); ctFieldsDialog(); } catch (e) { showError(err, e); } };
+  ctDialog("Custom columns",
+    h("p", { class: "muted" }, "Columns you add here are there for everyone: in Columns, the blank template and the exports. " +
+      "An upload reads a column with the same name; the values come from the spreadsheet."),
+    custom.length ? h("ul", { class: "col-list" }, ...custom.map((f) => h("li", {},
+      h("span", {}, f.label), h("span", { class: "spacer" }),
+      h("button", { type: "button", class: "small", onclick: () => {
+        const name = prompt("New name for the column (uploads then read the new name)", f.label);
+        if (name) call(() => api(`/api/circuits/fields/${f.key}`, { method: "PUT", body: { label: name } }));
+      } }, "Rename"),
+      h("button", { type: "button", class: "small danger", onclick: () => {
+        if (confirm(`Delete the column ${f.label} and its values in every version of the list?`)) call(() => api(`/api/circuits/fields/${f.key}`, { method: "DELETE" }));
+      } }, "Delete")))) : h("p", { class: "muted" }, "No custom columns yet."),
+    h("h3", {}, "Add a column"),
+    h("label", {}, "Name", label), err,
+    h("div", { class: "dialog-actions" }, h("button", { type: "button", class: "primary", onclick: () =>
+      call(() => api("/api/circuits/fields", { method: "POST", body: { label: label.value } })) }, "Add column")));
+}
+
+$("#ct-columns").addEventListener("click", ctColumnsDialog);
+$("#ct-fields").addEventListener("click", ctFieldsDialog);
+$("#ct-template").addEventListener("click", () => templateDialog(ctDialog, "/api/circuits",
+  [...new Set(ctColumns().flatMap((c) => c.fields))],
+  "Fill it in (one row per circuit) and upload it with Upload spreadsheet. Each row needs a MAC or an IP address, so those two columns are always in it. " +
+  "The upload replaces the whole list: you see what changes before it is made live."));
 
 function liveCell(r) {
   if (!r.live_status) return h("td", {}, h("span", { class: "muted" }, r.live_status_label || "—"));
@@ -962,7 +1152,7 @@ $("#ct-scan").addEventListener("click", async () => {
 });
 
 ["input", "change"].forEach((evt) => {
-  ["#ct-search", "#ct-filter-service", "#ct-filter-switch", "#ct-filter-vlan", "#ct-filter-match"]
+  ["#ct-search", "#ct-filter-service", "#ct-filter-switch", "#ct-filter-site", "#ct-filter-vlan", "#ct-filter-match"]
     .forEach((sel) => $(sel).addEventListener(evt, renderCircuits));
 });
 
@@ -1026,7 +1216,7 @@ function renderPreview(imp) {
     h("h3", {}, "Changes"),
     d.changed_sample.length ? h("table", {}, h("thead", {}, h("tr", {}, ["Row", "Field", "Before", "After"].map((t) => h("th", {}, t)))),
       h("tbody", {}, d.changed_sample.flatMap((c) => c.fields.map((f, i) => h("tr", {},
-        h("td", {}, i === 0 ? c.row : ""), h("td", {}, f), h("td", {}, h("code", {}, c.before[f] || "—")),
+        h("td", {}, i === 0 ? c.row : ""), h("td", {}, (s.labels || {})[f] || f), h("td", {}, h("code", {}, c.before[f] || "—")),
         h("td", {}, h("code", {}, c.after[f] || "—"))))))) : h("p", { class: "muted" }, "No changed rows."),
     h("p", {}, h("b", {}, "New: "), d.added_sample.slice(0, 20).join(", ") || "none", d.added > 20 ? ` … (+${d.added - 20})` : ""),
     h("p", {}, h("b", {}, "Removed: "), d.removed_sample.slice(0, 20).join(", ") || "none", d.removed > 20 ? ` … (+${d.removed - 20})` : ""),
@@ -2579,6 +2769,7 @@ function renderInventory() {
     ...cols.map((f) => {
       const v = invValue(r, f.key);
       if (f.key === "name") return h("td", {}, h("span", { class: "link", onclick: () => invEdit(r) }, v || "(no name)"));
+      if (f.key === "site" && siteOf(v)) return h("td", {}, siteLink(v));
       const auto = (r.values[f.key] === null || r.values[f.key] === "" || r.values[f.key] === undefined) && r.auto[f.key];
       return h("td", { class: f.key === "notes" || f.max_length > 1000 ? "wrap" : "", title: auto ? "From the device" : "" },
         auto ? h("span", { class: "muted" }, v) : String(v ?? ""));
@@ -2617,9 +2808,10 @@ function invInput(f, value, auto, locked) {
     return h("select", attrs, h("option", { value: "" }, auto ? `(${auto})` : "—"),
       ...f.choices.map((c) => h("option", { value: c, selected: c === value }, c)));
   }
-  if (f.key === "notes") return h("textarea", { ...attrs, rows: 3 }, value ?? "");
+  if (["notes", "access", "circuits"].includes(f.key)) return h("textarea", { ...attrs, rows: 3 }, value ?? "");
   const type = f.kind === "number" ? "number" : f.kind === "date" ? "date" : "text";
-  return h("input", { ...attrs, type, value: value ?? "", placeholder: auto ? `From the device: ${auto}` : "", min: type === "number" ? 0 : null });
+  return h("input", { ...attrs, type, value: value ?? "", placeholder: auto ? `From the device: ${auto}` : "", min: type === "number" ? 0 : null,
+    list: f.key === "site" && inv.meta && inv.meta.sites ? "inv-site-names" : null });
 }
 
 function invEdit(r = null) {
@@ -2634,6 +2826,7 @@ function invEdit(r = null) {
       ...list.map((f) => h("label", {}, f.label,
         invInput(f, r ? r.values[f.key] : (f.key === "status" ? "in service" : ""), r ? r.auto[f.key] : "",
           !canEdit || (r && r.managed && f.key === "name"))))))),
+    h("datalist", { id: "inv-site-names" }, ...(inv.meta.sites || []).map((n) => h("option", { value: n }))),
     err);
   const save = async () => {
     err.hidden = true;
@@ -2685,28 +2878,9 @@ async function invManage(r) {
 
 /** Choose and order the columns you see (remembered for you, in this browser). */
 function invColumnsDialog() {
-  const shown = invColumns().map((f) => f.key);
-  const order = [...shown, ...inv.meta.fields.map((f) => f.key).filter((k) => !shown.includes(k))];
-  const byKey = new Map(inv.meta.fields.map((f) => [f.key, f]));
-  const list = h("ul", { class: "col-list" });
-  const draw = () => list.replaceChildren(...order.map((k, i) => h("li", {},
-    h("input", { type: "checkbox", checked: shown.includes(k), "aria-label": byKey.get(k).label, onchange: (ev) => {
-      if (ev.target.checked) shown.push(k); else shown.splice(shown.indexOf(k), 1);
-    } }),
-    h("span", {}, byKey.get(k).label, h("small", { class: "muted" }, ` ${byKey.get(k).group}`)), h("span", { class: "spacer" }),
-    h("button", { type: "button", class: "small ghost", title: "Move up", disabled: i === 0, onclick: () => { [order[i - 1], order[i]] = [order[i], order[i - 1]]; draw(); } }, "↑"),
-    h("button", { type: "button", class: "small ghost", title: "Move down", disabled: i === order.length - 1, onclick: () => { [order[i + 1], order[i]] = [order[i], order[i + 1]]; draw(); } }, "↓"))));
-  draw();
-  invDialog("Columns",
-    h("p", { class: "muted" }, "Tick the columns you want to see and put them in order. This is remembered for you in this browser; others keep their own."),
-    list,
-    h("div", { class: "dialog-actions" },
-      h("button", { type: "button", onclick: () => { try { localStorage.removeItem(invColsKey()); } catch { /* */ } $("#inv-dialog").close(); renderInventory(); } }, "Reset to the defaults"),
-      h("button", { type: "button", class: "primary", onclick: () => {
-        invSaveColumns(order.filter((k) => shown.includes(k)));
-        $("#inv-dialog").close();
-        renderInventory();
-      } }, "Apply")));
+  chooseColumns(invDialog, () => $("#inv-dialog").close(), inv.meta.fields, invColumns().map((f) => f.key),
+    (keys) => { invSaveColumns(keys); renderInventory(); },
+    () => { saveLocal(invColsKey(), null); renderInventory(); });
 }
 
 /** Admins: the site's own columns, for everyone. */
@@ -2740,14 +2914,14 @@ function invFieldsDialog() {
 }
 
 /** Import a spreadsheet: first what would change, then make the changes. */
-function invImportDialog() {
+function importDialog(dialog, close, base, intro, done) {
   const err = errorLine();
   const file = h("input", { type: "file", accept: ".xlsx,.xlsm,.csv" });
   const plan = h("div", { class: "inv-plan" });
   const go = h("button", { type: "button", class: "primary", disabled: true }, "Import");
   const send = async (commit) => {
     const f = file.files[0];
-    const res = await fetch(`/api/inventory/import?filename=${encodeURIComponent(f.name)}&commit=${commit}`, {
+    const res = await fetch(`${base}/import?filename=${encodeURIComponent(f.name)}&commit=${commit}`, {
       method: "PUT", body: f, credentials: "same-origin" });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || res.statusText);
@@ -2771,15 +2945,18 @@ function invImportDialog() {
   go.addEventListener("click", async () => {
     try {
       const p = await send(true);
-      $("#inv-dialog").close();
+      close();
       toast(`Imported: ${p.new.length} new, ${p.updated.length} updated`);
-      loadInventory();
+      done();
     } catch (e) { showError(err, e); }
   });
-  invDialog("Import a spreadsheet",
-    h("p", { class: "muted" }, "Excel (.xlsx) or CSV, column names in the first row (the same names as in an export). Rows are matched to the inventory by serial number, then asset tag, then name; " +
-      "anything not matched is added. Empty cells leave a value as it is. Nothing changes until you press Import."),
-    file, plan, err, h("div", { class: "dialog-actions" }, go));
+  dialog("Import a spreadsheet", h("p", { class: "muted" }, intro), file, plan, err, h("div", { class: "dialog-actions" }, go));
+}
+
+function invImportDialog() {
+  importDialog(invDialog, () => $("#inv-dialog").close(), "/api/inventory",
+    "Excel (.xlsx) or CSV, column names in the first row (the same names as in an export or a Blank template). Rows are matched to the inventory by serial number, then asset tag, then name; " +
+    "anything not matched is added. Empty cells leave a value as it is. Nothing changes until you press Import.", loadInventory);
 }
 
 ["#inv-type", "#inv-site", "#inv-status", "#inv-managed"].forEach((s) => $(s).addEventListener("change", renderInventory));
@@ -2788,3 +2965,201 @@ $("#inv-add").addEventListener("click", () => invEdit());
 $("#inv-columns").addEventListener("click", invColumnsDialog);
 $("#inv-fields").addEventListener("click", invFieldsDialog);
 $("#inv-import").addEventListener("click", invImportDialog);
+$("#inv-template").addEventListener("click", () => templateDialog(invDialog, "/api/inventory", invColumns().map((f) => f.key),
+  "Fill it in (one row per item) and bring it in with Import. Name is always in it. Rows are matched by serial number, then asset tag, then name; " +
+  "you see what changes before anything is changed."));
+
+// ---------- sites ----------
+
+const site = { meta: null, data: { sites: [], unlisted: [] }, loading: Promise.resolve() };
+const siteColsKey = () => `site-columns:${state.user ? state.user.username : ""}`;
+const SITE_DEFAULT_COUNTS = ["#items", "#devices", "#backup_failed", "#circuits"];
+
+function siteAllColumns() {
+  return [...site.meta.fields, ...site.meta.counts.map((c) => ({ key: `#${c.key}`, label: c.label,
+    group: c.key === "circuits" ? "From the circuit list" : "From the inventory" }))];
+}
+
+function siteColumns() {
+  const all = new Map(siteAllColumns().map((c) => [c.key, c]));
+  let keys = null;
+  try { keys = JSON.parse(localStorage.getItem(siteColsKey()) || "null"); } catch { keys = null; }
+  if (!Array.isArray(keys)) keys = [...site.meta.fields.filter((f) => f.default_shown).map((f) => f.key), ...SITE_DEFAULT_COUNTS];
+  return keys.filter((k) => all.has(k)).map((k) => all.get(k));
+}
+
+function siteDialog(title, ...content) {
+  $("#site-dialog-title").textContent = title;
+  $("#site-dialog-body").replaceChildren(...content);
+  if (!$("#site-dialog").open) $("#site-dialog").showModal();
+}
+const siteClose = () => $("#site-dialog").close();
+$("#site-dialog-close").addEventListener("click", siteClose);
+
+function loadSites() {
+  site.loading = fetchSites();
+  return site.loading;
+}
+
+async function fetchSites() {
+  try {
+    [site.meta, site.data] = await Promise.all([api("/api/sites/meta"), api("/api/sites"), loadSiteIndex()]);
+  } catch (e) {
+    return toast(e.message);
+  }
+  const rows = site.data.sites;
+  const fill = (sel, key, all) => {
+    const keep = $(sel).value;
+    const values = [...new Set(rows.map((r) => r.values[key]).filter(Boolean))].sort();
+    $(sel).replaceChildren(h("option", { value: "" }, all), ...values.map((v) => h("option", { value: v }, v)));
+    $(sel).value = values.includes(keep) ? keep : "";
+  };
+  fill("#site-type", "type", "All types");
+  fill("#site-region", "region", "All regions");
+  fill("#site-status", "status", "All statuses");
+  const sum = (k) => rows.reduce((n, r) => n + r.counts[k], 0);
+  $("#site-summary").replaceChildren(
+    ...[["Sites", rows.length, ""], ["Live", rows.filter((r) => r.values.status === "live").length, "success"],
+      ["Items at a site", sum("items"), ""], ["Managed devices", sum("devices"), "success"],
+      ["Backups failing", sum("backup_failed"), "failed"]]
+      .map(([lbl, num, cls]) => h("div", { class: `tile card ${cls}` }, h("span", { class: "num" }, num), h("span", { class: "lbl" }, lbl))));
+  const un = site.data.unlisted;
+  const note = $("#site-unlisted");
+  note.hidden = !un.length;
+  note.replaceChildren(...(un.length ? [
+    h("span", {}, `The inventory uses ${un.length === 1 ? "a site" : `${un.length} sites`} not on this list: ` +
+      un.map((u) => `${u.name} (${u.items})`).join(", ") + ". Add them, or correct the Site on those items."),
+    site.meta.can_manage ? h("button", { class: "small", onclick: async () => {
+      try {
+        const r = await api("/api/sites/from-inventory", { method: "POST" });
+        toast(`Added ${r.added.length} site(s)`);
+        loadSites();
+      } catch (e) { toast(e.message); }
+    } }, "Add them to the list") : null] : []));
+  renderSites();
+}
+
+function renderSites() {
+  const cols = siteColumns();
+  const q = $("#site-search").value.trim().toLowerCase();
+  const want = { type: $("#site-type").value, region: $("#site-region").value, status: $("#site-status").value };
+  const rows = site.data.sites.filter((r) => {
+    if (Object.entries(want).some(([k, v]) => v && r.values[k] !== v)) return false;
+    return !q || Object.values(r.values).some((v) => String(v ?? "").toLowerCase().includes(q));
+  });
+  $("#site-table thead").replaceChildren(h("tr", {}, ...cols.map((c) => h("th", {}, c.label))));
+  $("#site-table tbody").replaceChildren(...rows.map((r) => h("tr", {}, ...cols.map((c) => {
+    if (c.key === "name") return h("td", {}, h("span", { class: "link", onclick: () => siteEdit(r) }, r.values.name));
+    if (c.key.startsWith("#")) {
+      const n = r.counts[c.key.slice(1)];
+      if (c.key === "#circuits") {
+        return h("td", {}, h("span", { class: "count-link", onclick: () => openSiteCircuits(r.id), title: "See this site's circuits" }, n));
+      }
+      const cls = c.key === "#backup_failed" || c.key === "#behind" ? (n ? "badge failed" : "muted") : "count-link";
+      return h("td", {}, h("span", { class: cls, onclick: () => siteEdit(r, true), title: "See what's at this site" }, n));
+    }
+    const v = r.values[c.key];
+    return h("td", { class: ["address", "access", "circuits", "notes"].includes(c.key) ? "wrap" : "" }, String(v ?? ""));
+  }))));
+  $("#site-empty").hidden = rows.length > 0;
+  $("#site-empty").textContent = site.data.sites.length ? "Nothing matches the filters." :
+    "No sites yet. Add them with + Add site, import a spreadsheet (Blank template gives you one to fill in), or add the ones the inventory already uses.";
+}
+
+/** A site: its details, and what the inventory has there. */
+async function siteEdit(r = null, itemsFirst = false) {
+  const canEdit = site.meta.can_manage;
+  const err = errorLine();
+  const groups = new Map();
+  site.meta.fields.forEach((f) => groups.set(f.group, [...(groups.get(f.group) || []), f]));
+  const form = h("form", { class: "form" },
+    h("div", { class: "inv-groups" }, ...[...groups].map(([group, list]) => h("fieldset", {}, h("legend", {}, group),
+      ...list.map((f) => h("label", {}, f.label, invInput(f, r ? r.values[f.key] : (f.key === "status" ? "live" : ""), "", !canEdit)))))),
+    err);
+  const save = async () => {
+    err.hidden = true;
+    const values = {};
+    site.meta.fields.forEach((f) => { const el = form.elements[f.key]; if (el && !el.disabled) values[f.key] = el.value; });
+    try {
+      if (r) {
+        const res = await api(`/api/sites/${r.id}`, { method: "PUT", body: { values } });
+        toast(res.renamed_on ? `Saved; the Site was changed on ${res.renamed_on} item(s) and device(s)` : "Saved");
+      } else {
+        await api("/api/sites", { method: "POST", body: { values } });
+        toast("Saved");
+      }
+      siteClose();
+      loadSites();
+    } catch (e) { showError(err, e); }
+  };
+  const buttons = h("div", { class: "dialog-actions" });
+  if (r && canEdit) buttons.append(h("button", { type: "button", class: "danger", onclick: async () => {
+    if (!confirm(`Delete the site ${r.values.name}? Items at the site keep their Site value.`)) return;
+    try { await api(`/api/sites/${r.id}`, { method: "DELETE" }); siteClose(); loadSites(); } catch (e) { showError(err, e); }
+  } }, "Delete"));
+  if (canEdit) buttons.append(h("button", { type: "button", class: "primary", onclick: save }, "Save"));
+  if (!r) return siteDialog("Add a site", form, buttons);
+
+  const items = h("div", {}, h("p", { class: "muted" }, "Loading…"));
+  const parts = [h("h3", {}, `At this site (${r.counts.items})`),
+    r.counts.circuits !== undefined && can("circuits", "view")
+      ? h("p", {}, h("button", { type: "button", onclick: () => openSiteCircuits(r.id) }, `Circuits at this site (${r.counts.circuits})`)) : "",
+    items];
+  const details = [form, h("p", { class: "muted" }, "Renaming the site, or changing its code, changes the Site on the items and devices that use the old one."), buttons];
+  siteDialog(r.values.name, ...(itemsFirst ? [...parts, ...details] : [...details, ...parts]));
+  try {
+    const list = await api(`/api/sites/${r.id}/items`);
+    items.replaceChildren(list.length ? h("table", {},
+      h("thead", {}, h("tr", {}, ["Name", "Type", "Model", "Address", "Where", "Status", "Tools"].map((t) => h("th", {}, t)))),
+      h("tbody", {}, list.map((i) => h("tr", {},
+        h("td", { class: "name" }, h("span", { class: "link", title: "Open in the inventory", onclick: () => openItem(i.id) }, i.name)),
+        h("td", {}, i.type || "—"), h("td", {}, i.model || "—"),
+        h("td", {}, i.mgmt_ip ? h("code", {}, i.mgmt_ip) : "—"),
+        h("td", {}, [i.building, i.room, i.rack].filter(Boolean).join(" / ") || "—"),
+        h("td", {}, i.status || "—"), h("td", {}, invTools(i))))))
+      : h("p", { class: "muted" }, "Nothing in the inventory has this site yet: set the Site on items (name or code) or on devices on Config backups."));
+  } catch (e) { items.replaceChildren(h("p", { class: "error" }, e.message)); }
+}
+
+/** Admins: the site list's own columns. */
+function siteFieldsDialog() {
+  const custom = site.meta.fields.filter((f) => f.group === "Custom");
+  const err = errorLine();
+  const label = h("input", { placeholder: "e.g. Power supply", maxlength: 100 });
+  const kind = h("select", {}, ...[["text", "Text"], ["number", "Number"], ["date", "Date"], ["choice", "Pick-list"]].map(([v, l]) => h("option", { value: v }, l)));
+  const choices = h("input", { placeholder: "For a pick-list: A, B, C" });
+  const call = async (fn) => { err.hidden = true; try { await fn(); await loadSites(); siteFieldsDialog(); } catch (e) { showError(err, e); } };
+  siteDialog("Custom columns",
+    h("p", { class: "muted" }, "Columns you add here are there for everyone: in the site form, Columns, imports, exports and the blank template."),
+    custom.length ? h("ul", { class: "col-list" }, ...custom.map((f) => h("li", {},
+      h("span", {}, f.label, h("small", { class: "muted" }, ` ${f.kind}${f.choices.length ? `: ${f.choices.join(", ")}` : ""}`)), h("span", { class: "spacer" }),
+      h("button", { type: "button", class: "small", onclick: () => {
+        const name = prompt("New name for the column", f.label);
+        if (!name) return;
+        const list = f.kind === "choice" ? prompt("Choices, separated by commas", f.choices.join(", ")) : "";
+        call(() => api(`/api/sites/fields/${f.key}`, { method: "PUT", body: { label: name, kind: f.kind,
+          choices: (list || "").split(",").map((c) => c.trim()).filter(Boolean) } }));
+      } }, "Rename"),
+      h("button", { type: "button", class: "small danger", onclick: () => {
+        if (confirm(`Delete the column ${f.label} and everything typed in it?`)) call(() => api(`/api/sites/fields/${f.key}`, { method: "DELETE" }));
+      } }, "Delete")))) : h("p", { class: "muted" }, "No custom columns yet."),
+    h("h3", {}, "Add a column"),
+    h("div", { class: "grid2" }, h("label", {}, "Name", label), h("label", {}, "Kind", kind)),
+    h("label", {}, "Choices", choices), err,
+    h("div", { class: "dialog-actions" }, h("button", { type: "button", class: "primary", onclick: () => call(() =>
+      api("/api/sites/fields", { method: "POST", body: { label: label.value, kind: kind.value,
+        choices: choices.value.split(",").map((c) => c.trim()).filter(Boolean) } })) }, "Add column")));
+}
+
+["#site-type", "#site-region", "#site-status"].forEach((sel) => $(sel).addEventListener("change", renderSites));
+$("#site-search").addEventListener("input", renderSites);
+$("#site-add").addEventListener("click", () => siteEdit());
+$("#site-fields").addEventListener("click", siteFieldsDialog);
+$("#site-columns").addEventListener("click", () => chooseColumns(siteDialog, siteClose, siteAllColumns(), siteColumns().map((c) => c.key),
+  (keys) => { saveLocal(siteColsKey(), keys); renderSites(); }, () => { saveLocal(siteColsKey(), null); renderSites(); }));
+$("#site-template").addEventListener("click", () => templateDialog(siteDialog, "/api/sites",
+  siteColumns().map((c) => c.key).filter((k) => !k.startsWith("#")),
+  "Fill it in (one row per site) and bring it in with Import. Name is always in it. Rows are matched by site code, then name; you see what changes before anything is changed."));
+$("#site-import").addEventListener("click", () => importDialog(siteDialog, siteClose, "/api/sites",
+  "Excel (.xlsx) or CSV, column names in the first row (the same names as in an export or a Blank template). Rows are matched to the list by site code, then name; " +
+  "anything not matched is added. Empty cells leave a value as it is. Nothing changes until you press Import.", loadSites));

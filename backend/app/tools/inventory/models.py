@@ -64,3 +64,43 @@ class AssetField(Base):
     choices: Mapped[str] = mapped_column(Text, default="[]")  # JSON list, for "choice"
     position: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class Site(Base):
+    """A site: a data centre, office, campus... Inventory rows and devices are at a site when
+    their Site value is the site's name or code (``sites.py``)."""
+    __tablename__ = "sites"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), index=True)
+    code: Mapped[str] = mapped_column(String(50), default="")
+    type: Mapped[str] = mapped_column(String(50), default="")
+    status: Mapped[str] = mapped_column(String(30), default="live")
+    region: Mapped[str] = mapped_column(String(100), default="")
+    address: Mapped[str] = mapped_column(String(500), default="")
+    city: Mapped[str] = mapped_column(String(100), default="")
+    postcode: Mapped[str] = mapped_column(String(30), default="")
+    country: Mapped[str] = mapped_column(String(100), default="")
+    contact: Mapped[str] = mapped_column(String(200), default="")
+    phone: Mapped[str] = mapped_column(String(50), default="")
+    email: Mapped[str] = mapped_column(String(200), default="")
+    access: Mapped[str] = mapped_column(Text, default="")
+    circuits: Mapped[str] = mapped_column(Text, default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    custom: Mapped[str] = mapped_column(Text, default="{}")  # JSON: custom field key -> value
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by: Mapped[str] = mapped_column(String(200), default="")
+
+
+class SiteField(Base):
+    """A column an admin added to the site list."""
+    __tablename__ = "site_fields"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String(50), unique=True)
+    label: Mapped[str] = mapped_column(String(100))
+    kind: Mapped[str] = mapped_column(String(10), default="text")  # text, number, date, choice
+    choices: Mapped[str] = mapped_column(Text, default="[]")  # JSON list, for "choice"
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

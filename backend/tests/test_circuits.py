@@ -208,7 +208,10 @@ def test_discard_and_replace_pending(admin):
 
 
 def test_upload_errors(admin):
-    assert _upload(admin, make_xlsx(), filename="list.csv").status_code == 422
+    r = _upload(admin, make_xlsx(), filename="list.csv")
+    assert r.status_code == 422 and "Excel workbook" in r.json()["detail"]
+    assert _upload(admin, b"a,b\n1,2\n", filename="list.csv").status_code == 422
+    assert _upload(admin, b"x", filename="list.txt").status_code == 422
     r = _upload(admin, b"garbage")
     assert r.status_code == 422 and "xlsx" in r.json()["detail"]
 
@@ -225,3 +228,82 @@ def test_viewer_can_read_but_not_import(client, app, admin, switch):
     assert client.get(f"/api/circuits/for-device/{switch['id']}").status_code == 200
     assert _upload(client, make_xlsx()).status_code == 403
     assert client.post(f"/api/circuits/imports/{imp['id']}/commit").status_code == 403
+
+
+# --- the admins' own columns, CSV uploads and blank templates -------------------------------
+
+def test_custom_columns_are_read_shown_compared_and_exported(admin, switch):
+    from tests.test_inventory_assets import _xlsx
+
+    r = admin.post("/api/circuits/fields", json={"label": "Patch panel"})
+    assert r.status_code == 201 and r.json()["key"] == "x_patch_panel"
+    assert admin.post("/api/circuits/fields", json={"label": "patch PANEL"}).status_code == 422
+    assert admin.post("/api/circuits/fields", json={"label": "Room / Area"}).status_code == 422
+    assert admin.post("/api/circuits/fields", json={"label": "Live status"}).status_code == 422
+    meta = admin.get("/api/circuits/meta").json()
+    assert meta["can_manage"] and meta["fields"][-1] == {"key": "x_patch_panel", "label": "Patch panel",
+                                                          "custom": True}
+
+    header = ["Device Name", "Hardware Mac Address", "Patch panel"]
+    first = _upload(admin, _xlsx([header, ["cam-1", "02005e000001", "PP1-01"]])).json()
+    assert first["summary"]["columns"]["x_patch_panel"] == "Patch panel"
+    assert "IP Address" in first["summary"]["missing_columns"]
+    admin.post(f"/api/circuits/imports/{first['id']}/commit")
+    assert admin.get("/api/circuits").json()["circuits"][0]["x_patch_panel"] == "PP1-01"
+
+    second = _upload(admin, _xlsx([header, ["cam-1", "02005e000001", "PP1-02"]])).json()
+    d = second["summary"]["diff"]
+    assert d["changed"] == 1 and d["changed_sample"][0]["fields"] == ["x_patch_panel"]
+    assert second["summary"]["labels"]["x_patch_panel"] == "Patch panel"
+    admin.post(f"/api/circuits/imports/{second['id']}/commit")
+
+    rows = admin.get("/api/circuits/export.csv").text.splitlines()
+    assert "Patch panel" in rows[0].split(",") and "PP1-02" in rows[1]
+    assert admin.put("/api/circuits/fields/x_patch_panel", json={"label": "Panel"}).status_code == 200
+    assert admin.delete("/api/circuits/fields/x_patch_panel").status_code == 204
+    assert "x_patch_panel" not in admin.get("/api/circuits").json()["circuits"][0]
+
+
+def test_only_admins_add_columns(client, app, admin):
+    from app.core.auth import VIEWER, User
+
+    app.state.authenticator.authenticate = lambda u, p: User(username=u, role=VIEWER)
+    client.post("/api/auth/logout")
+    client.post("/api/auth/login", json={"username": "v", "password": "x"})
+    assert client.post("/api/circuits/fields", json={"label": "Mine"}).status_code == 403
+    assert client.get("/api/circuits/meta").json()["can_manage"] is False
+    assert client.get("/api/circuits/template.csv").status_code == 200
+
+
+def test_a_csv_file_is_read_like_a_workbook(admin, switch):
+    text = ("Device Name;Hardware Mac Address;IP Address;VLAN;PORT;DEVICE\n"
+            "cam-1;0200.5e00.0001;10.20.40.10;40;Gi1/0/5;ACC-SW01\n;;;;;\n")
+    r = _upload(admin, text.encode("cp1252"), filename="list.csv")
+    assert r.status_code == 201, r.text
+    assert r.json()["sheet"] == "CSV" and r.json()["row_count"] == 1
+    admin.post(f"/api/circuits/imports/{r.json()['id']}/commit")
+    c = admin.get("/api/circuits").json()["circuits"][0]
+    assert (c["vlan"], c["port"], c["match"]) == ("40", "Gi1/0/5", "matched")
+
+
+def test_a_filled_in_template_imports(admin, switch):
+    admin.post("/api/circuits/fields", json={"label": "Patch panel"})
+    full = admin.get("/api/circuits/template.csv").text.lstrip("\ufeff").strip().split(",")
+    assert full[:3] == ["IP Partition", "Service", "Engineering prefix"] and full[-1] == "Patch panel"
+    # Only a few columns chosen: MAC and IP are always added, the order is kept.
+    some = admin.get("/api/circuits/template.csv", params={"columns": "device_name,x_patch_panel,nope"})
+    header = some.text.lstrip("\ufeff").strip().split(",")
+    assert header == ["Hardware Mac Address", "IP Address", "Device Name", "Patch panel"]
+    filled = some.text + "02005e000009,10.20.40.9,cam-9,PP2-07\n"
+    r = _upload(admin, filled.encode(), filename="circuit-list-template.csv")
+    assert r.status_code == 201, r.text
+    admin.post(f"/api/circuits/imports/{r.json()['id']}/commit")
+    assert admin.get("/api/circuits").json()["circuits"][0]["x_patch_panel"] == "PP2-07"
+
+    from openpyxl import load_workbook
+
+    wb = load_workbook(io.BytesIO(admin.get("/api/circuits/template.xlsx",
+                                            params={"columns": "vlan"}).content))
+    assert [c.value for c in wb["Circuits"][1]] == ["Hardware Mac Address", "IP Address", "VLAN"]
+    assert wb.sheetnames == ["Circuits", "How to fill in"]
+    assert admin.get("/api/circuits/template.pdf").status_code == 404
