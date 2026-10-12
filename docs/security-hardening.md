@@ -378,11 +378,12 @@ The server's credentials are only as dangerous as the devices allow. On the devi
   the account's password. Only an admin can forget a recorded key (on the device's edit
   dialog), and that is in the activity report. If you can, compare the first key with the
   device's own (`show ip ssh` / `show crypto key mypubkey`) after adding it.
-* **Who can edit devices decides where passwords go.** A user with *Inventory: manage* can
-  point a device at another address, or give it another credential profile, and the next
-  backup sends that profile's password there. Both changes are in the activity report
-  with the old and new values. Give *Inventory: manage* only to people you'd trust with
-  the device accounts themselves, and keep the upgrade account in its own profile.
+* **Who can change a device's address decides where passwords go.** The next backup sends
+  the device's credential profile to its address. So adding a device, or changing its
+  address or credential profile, needs its own level (*Devices and credentials:
+  addresses*), and managing the profiles needs *credentials*. Give these only to people
+  you'd trust with the device accounts themselves. Both changes are in the activity report
+  with the old and new values. Keep the upgrade account in its own profile.
 
 ## 12. Processes
 
