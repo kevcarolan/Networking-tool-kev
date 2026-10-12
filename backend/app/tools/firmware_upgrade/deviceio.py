@@ -3,7 +3,7 @@ changes (exec commands that may prompt or reload, config lines), copying the ima
 "is it back yet?", and the FDM REST API for FTD.
 
 The upgrade worker gets one DeviceIO; the tests give it a simulator instead
-(tests/fake_network.py), so the procedures are tested without real devices.
+(app/demo/simnet.py), so the procedures are tested without real devices.
 """
 
 import logging

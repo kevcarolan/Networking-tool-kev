@@ -90,6 +90,11 @@ from another machine also set `NETOPS_HOST=0.0.0.0`.
 `python -m app` runs in development mode, so no licence is needed. Installed servers
 run a 60-day trial and then need a licence ([docs/licensing.md](docs/licensing.md)).
 
+**Demo:** `python -m app.demo` runs the whole product on a simulated network of 25 devices
+(backups, firmware compliance, circuits, live upgrades and the wall display), with its own
+data in `demo-data/`. Sign in as `demo` / `demo-password`. Nothing contacts a real device.
+See [docs/demo.md](docs/demo.md).
+
 Run the tests with `pytest` from `backend/`.
 
 ## Production install

@@ -105,11 +105,13 @@ remote); never sync the two automatically.
     `netops-worker.service`) runs them. Never talk to a device for a job from the web process;
   * a dry run and a live run use the same steps: only `StepContext.change/transfer/fdm_change`
     differ. Live needs `NETOPS_UPGRADE_LIVE_PLATFORMS`, a window and the typed device name;
-  * tests drive every path against `tests/fake_network.py`. Extend the simulator with any new
+  * tests drive every path against the network simulator `app/demo/simnet.py` (also the demo's
+    network; `tests/fake_network.py` is kept as an alias). Extend the simulator with any new
     command a driver sends.
 * Device access is always injectable (`fetcher=` / `fw_collector=` in `create_app`), so tests
-  never touch SSH. Parser tests use real sample output in `backend/tests/firmware_samples.py`;
-  the newer vendors' samples (`tests/vendor_samples.py`) are from vendor documentation until
+  never touch SSH. Parser tests use real sample output in `app/demo/samples.py` (alias
+  `tests/firmware_samples.py`); the newer vendors' samples (`app/demo/vendor_samples.py`) are
+  from vendor documentation until
   replaced by lab captures.
 
 ## Working rules

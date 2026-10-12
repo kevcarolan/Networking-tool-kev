@@ -279,7 +279,7 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     request.session["user"] = user.__dict__
     audit(db, user.username, "login",
           f"{'admin' if user.is_admin else 'user'} ({user.source or 'ad-group'}) from {client}")
-    return user.out()
+    return signed_in(request, user)
 
 
 @router.post("/logout")
@@ -288,9 +288,15 @@ def logout(request: Request):
     return {"ok": True}
 
 
+def signed_in(request: Request, user: User) -> dict:
+    """The signed-in user, as the page needs it after signing in and on every reload."""
+    return {**user.out(), "site_name": request.app.state.settings.site_name,
+            "demo": getattr(request.app.state, "demo", False)}
+
+
 @router.get("/me")
 def me(request: Request, user: User = Depends(current_user)):
-    return {**user.out(), "site_name": request.app.state.settings.site_name}
+    return signed_in(request, user)
 
 
 class PasswordChange(BaseModel):

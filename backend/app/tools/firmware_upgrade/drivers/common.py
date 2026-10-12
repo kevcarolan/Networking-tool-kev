@@ -5,7 +5,7 @@ setting at it, save, reload; roll back by pointing the boot setting at the previ
 image (or slot) and reloading. SimpleBootDriver does that; each platform says how.
 
 The procedures are built from vendor documentation and tested against the simulator
-(tests/fake_network.py). Each needs lab sign-off before live use (upgrade-lab-tests.md).
+(app/demo/simnet.py). Each needs lab sign-off before live use (upgrade-lab-tests.md).
 """
 
 import re
