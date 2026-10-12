@@ -1,5 +1,6 @@
 # Runtime data: database, config archive, keys. Never commit these.
 data/
+demo-data/
 .env
 *.key
 deploy/secrets/
