@@ -140,6 +140,8 @@ remote); never sync the two automatically.
   effective Site is the site's name or code, and renaming one rewrites `assets.site` and
   `devices.site`. Circuit custom columns (`ct_fields`, values in `ct_circuits.custom`) are
   text, read by header name on upload (`importer.parse_workbook`/`parse_csv`, `custom=`).
+  A circuit's site (`circuits/api.SiteIndex`): its Site column, else its switch's, else the
+  switch it was found on; the GUI links any Site value with `siteLink()`.
 * Device access is always injectable (`fetcher=` / `fw_collector=` in `create_app`), so tests
   never touch SSH. Parser tests use real sample output in `app/demo/samples.py` (alias
   `tests/firmware_samples.py`); the newer vendors' samples (`app/demo/vendor_samples.py`) are

@@ -30,7 +30,7 @@ def test_sites_count_what_the_inventory_has_there(admin, device):
     data = admin.get("/api/sites").json()
     lab = data["sites"][0]
     assert lab["values"]["type"] == "data centre" and lab["values"]["status"] == "live"
-    assert lab["counts"] == {"items": 2, "devices": 1, "backup_failed": 1, "behind": 0}
+    assert lab["counts"] == {"items": 2, "devices": 1, "backup_failed": 1, "behind": 0, "circuits": 0}
     assert data["unlisted"] == [{"name": "DC2", "items": 1}]
     items = admin.get(f"/api/sites/{lab['id']}/items").json()
     assert sorted(i["name"] for i in items) == ["HQ-R01", "core-sw1"]
@@ -97,7 +97,7 @@ def test_custom_columns_templates_import_and_export(admin):
     assert done["committed"] and _site(admin, "Office 2")["values"]["x_power"] == "A"
 
     rows = admin.get("/api/sites/export.csv").text.splitlines()
-    assert rows[0].startswith("Name,Site code,Type") and rows[0].endswith("Backups failing,Firmware behind")
+    assert rows[0].startswith("Name,Site code,Type") and rows[0].endswith("Backups failing,Firmware behind,Circuits")
     ws = load_workbook(io.BytesIO(admin.get("/api/sites/export.xlsx").content)).active
     assert ws["A2"].value == "DC 1 (renamed)"
     again = admin.put("/api/sites/import", params={"filename": "sites.xlsx"},
@@ -106,3 +106,35 @@ def test_custom_columns_templates_import_and_export(admin):
     xlsx = _xlsx([["Name", "Type"], ["Depot", "warehouse"]])
     assert admin.put("/api/sites/import", params={"filename": "x.xlsx"}, content=xlsx).json()["new"][0]["name"] == "Depot"
     assert admin.delete("/api/sites/fields/x_power").status_code == 204
+
+
+def test_circuits_are_linked_to_sites(admin, device):
+    """The list's Site column first, else the site of the switch the circuit is on."""
+    from tests.test_circuits import _upload
+
+    hq = _add(admin, name="Head office", code="HQ")
+    dc = _add(admin, name="Data centre 1", code="DC1")
+    data = _xlsx([["Device Name", "Hardware Mac Address", "Site", "DEVICE", "PORT"],
+                  ["cam-1", "02005e000001", "dc1", "", ""],          # the list says DC1
+                  ["cam-2", "02005e000002", "", "core-sw1", "Gi1/0/2"],  # on core-sw1, at HQ
+                  ["cam-3", "02005e000003", "Moon base", "", ""],    # not on the site list
+                  ["cam-4", "02005e000004", "", "", ""]])            # no site at all
+    imp = _upload(admin, data).json()
+    admin.post(f"/api/circuits/imports/{imp['id']}/commit")
+    rows = {c["device_name"]: c for c in admin.get("/api/circuits").json()["circuits"]}
+    assert (rows["cam-1"]["site_id"], rows["cam-1"]["site_from"]) == (dc, "list")
+    assert (rows["cam-2"]["site_name"], rows["cam-2"]["site_from"]) == ("Head office", "switch")
+    assert (rows["cam-3"]["site_id"], rows["cam-3"]["site_text"]) == (None, "Moon base")
+    assert rows["cam-4"]["site_from"] == ""
+    counts = {s["values"]["name"]: s["counts"]["circuits"] for s in admin.get("/api/sites").json()["sites"]}
+    assert counts == {"Data centre 1": 1, "Head office": 1}
+    assert "Circuits" in [c["label"] for c in admin.get("/api/sites/meta").json()["counts"]]
+    assert admin.get("/api/sites/index").json() == [
+        {"id": dc, "name": "Data centre 1", "code": "DC1"}, {"id": hq, "name": "Head office", "code": "HQ"}]
+
+    # Renaming the code carries to the circuit list, so the circuit stays at its site.
+    admin.put(f"/api/sites/{dc}", json={"values": {"code": "DC-1"}})
+    rows = {c["device_name"]: c for c in admin.get("/api/circuits").json()["circuits"]}
+    assert rows["cam-1"]["site"] == "DC-1" and rows["cam-1"]["site_id"] == dc
+    csv_head = admin.get("/api/circuits/export.csv").text.splitlines()[0].split(",")
+    assert "Site" in csv_head and "Linked site" in csv_head

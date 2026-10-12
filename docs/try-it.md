@@ -64,6 +64,8 @@ you did and what you expected, and send it over.
 - [ ] Four sites, and a note that the inventory also uses *Warehouse*: **Add them to the list**.
 - [ ] Open *Head office*: its details and the 19 items there, with their backup and firmware state.
 - [ ] Rename a site's code (e.g. `HQ` to `HO`), then check the devices' site on Config backups.
+- [ ] Click *Head office*'s **Circuits** count: the 72 circuits there. Click a Site link on
+      Circuits, Inventory or Config backups: it opens the site.
 - [ ] **Columns** (add *Firmware behind*), **Custom columns**, **Blank template**, **Import**.
 
 **Firmware and upgrades**

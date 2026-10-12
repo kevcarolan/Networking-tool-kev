@@ -56,7 +56,33 @@ def _matches(db: Session, rows) -> dict[str, tuple[str, list[int]]]:
     return match_switches(names, {r.switch_norm for r in rows if r.switch_norm})
 
 
-def _row_out(c: Circuit, matches: dict, names: dict[int, str], idx: LiveIndex | None = None) -> dict:
+class SiteIndex:
+    """What a circuit's site is: the list's Site column, else the site of the switch it is
+    documented on, else of the switch it was last found on. Matched to the site list by
+    name or code (``sites.py``)."""
+
+    def __init__(self, db: Session):
+        from app.tools.inventory.models import Asset, Site
+        from app.tools.inventory.sites import _index
+
+        self.sites = _index(list(db.scalars(select(Site))))
+        self.device_site = {d.id: d.site for d in db.scalars(select(Device))}
+        for a in db.scalars(select(Asset).where(Asset.device_id.is_not(None), Asset.site != "")):
+            self.device_site[a.device_id] = a.site  # typed on the inventory row: it wins
+
+    def resolve(self, listed: str, switch_id: int | None, live_id: int | None) -> dict:
+        text, source = listed.strip(), "list"
+        if not text and switch_id:
+            text, source = (self.device_site.get(switch_id) or "").strip(), "switch"
+        if not text and live_id:
+            text, source = (self.device_site.get(live_id) or "").strip(), "network"
+        site = self.sites.get(text.lower()) if text else None
+        return {"site_text": text, "site_from": source if text else "",
+                "site_id": site.id if site else None, "site_name": site.name if site else ""}
+
+
+def _row_out(c: Circuit, matches: dict, names: dict[int, str], idx: LiveIndex | None = None,
+             sites: SiteIndex | None = None) -> dict:
     status, ids = matches.get(c.switch_norm, ("none", []))
     out = {f: getattr(c, f) for f in FIELDS}
     out.update({f"x_{k}": v for k, v in json.loads(c.custom or "{}").items()})
@@ -66,6 +92,8 @@ def _row_out(c: Circuit, matches: dict, names: dict[int, str], idx: LiveIndex | 
                switch_device_id=doc_id, switch_device_name=names.get(doc_id) if doc_id else None)
     if idx is not None:
         out.update(_live(c, doc_id, names, idx))
+    if sites is not None:
+        out.update(sites.resolve(c.site, doc_id, out.get("live_device_id")))
     return out
 
 
@@ -127,7 +155,7 @@ def list_circuits(db: Session = Depends(get_db), _: User = Depends(CIRCUITS_VIEW
     matches = _matches(db, rows)
     names, idx = _names(db), LiveIndex(db)
     return {"import": _import_out(imp), "scan": scan,
-            "circuits": [_row_out(c, matches, names, idx) for c in rows]}
+            "circuits": [_row_out(c, matches, names, idx, SiteIndex(db)) for c in rows]}
 
 
 @router.get("/export.csv")
@@ -136,10 +164,11 @@ def export_csv(db: Session = Depends(get_db), _: User = Depends(CIRCUITS_VIEW)):
     out = io.StringIO()
     w = exports.csv_writer(out)
     w.writerow([CSV_HEADERS[f] for f in FIELDS] + [f.label for f in _custom(db)]
-               + ["Matched inventory device", "Warnings"] + LIVE_HEADERS)
+               + ["Matched inventory device", "Linked site", "Warnings"] + LIVE_HEADERS)
     for r in _export_rows(db):
         w.writerow([r[f] for f in FIELDS] + [r.get(k, "") for k in custom]
-                   + [r["switch_device_name"] or r["match"], r["warnings"]] + _live_cells(r))
+                   + [r["switch_device_name"] or r["match"], r["site_name"], r["warnings"]]
+                   + _live_cells(r))
     return Response(out.getvalue(), media_type="text/csv", headers={
         "Content-Disposition": 'attachment; filename="circuit-list.csv"'})
 
@@ -165,7 +194,17 @@ def _export_rows(db: Session) -> list[dict]:
     rows = _rows(db, imp.id)
     matches = _matches(db, rows)
     names, idx = _names(db), LiveIndex(db)
-    return [_row_out(c, matches, names, idx) for c in rows]
+    sites = SiteIndex(db)
+    return [_row_out(c, matches, names, idx, sites) for c in rows]
+
+
+def site_counts(db: Session) -> dict[int, int]:
+    """Circuits per site (site id -> count), for the Sites page."""
+    counts: dict[int, int] = defaultdict(int)
+    for r in _export_rows(db):
+        if r["site_id"]:
+            counts[r["site_id"]] += 1
+    return counts
 
 
 @router.get("/export-updated.xlsx")
@@ -204,7 +243,7 @@ def export_updated(db: Session = Depends(get_db), _: User = Depends(CIRCUITS_VIE
 # --- the columns: the built-in ones, the admins' own, and blank templates -----------------------
 
 # Columns in exports that an upload ignores: a custom column can't take these names.
-_EXPORT_ONLY = ["Matched inventory device", "Warnings", "Documented DEVICE", "Documented PORT",
+_EXPORT_ONLY = ["Matched inventory device", "Linked site", "Warnings", "Documented DEVICE", "Documented PORT",
                 *LIVE_HEADERS]
 
 
@@ -326,11 +365,11 @@ def circuits_for_device(db: Session, device: Device) -> dict:
         return {"device": device.name, "import": None, "count": 0, "groups": []}
     rows = _rows(db, imp.id)
     matches = _matches(db, rows)
-    names, idx = _names(db), LiveIndex(db)
+    names, idx, sites = _names(db), LiveIndex(db), SiteIndex(db)
     groups = defaultdict(list)
     count = 0
     for c in rows:
-        r = _row_out(c, matches, names, idx)
+        r = _row_out(c, matches, names, idx, sites)
         if device.id not in (r["switch_device_id"], r["live_device_id"]):
             continue
         r["on_this_device"] = ("both" if r["switch_device_id"] == r["live_device_id"] else

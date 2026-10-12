@@ -47,6 +47,7 @@ class Circuit(Base):
     manufacturer: Mapped[str] = mapped_column(String(255), default="")
     mac: Mapped[str] = mapped_column(String(100), default="")
     # LOCATION
+    site: Mapped[str] = mapped_column(String(100), default="", server_default="")  # name or code
     floor: Mapped[str] = mapped_column(String(200), default="")
     room: Mapped[str] = mapped_column(String(200), default="")
     # IP DETAILS

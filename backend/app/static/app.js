@@ -147,6 +147,7 @@ async function showApp(user) {
   $$("[data-perm]").forEach((el) => (el.hidden = !permitted(el.dataset.perm)));
   state.platforms = await api("/api/platforms");
   state.licence = await api("/api/licence").catch(() => null);
+  await loadSiteIndex();
   applyModules();
   showLicenceBanner();
   const first = $$("#nav button").find((b) => !b.hidden && !b.classList.contains("locked"));
@@ -189,7 +190,7 @@ function switchView(view) {
   $$("#nav button").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
   if (VIEW_MODULE[view] && !hasModule(VIEW_MODULE[view])) return showLocked(view);
   $$(".view").forEach((s) => (s.hidden = s.id !== `view-${view}`));
-  ({ backups: loadBackups, inventory: loadInventory, sites: loadSites, firmware: loadFirmware, circuits: loadCircuits, syslog: loadSyslog, credentials: loadCredentials,
+  state.viewLoading = ({ backups: loadBackups, inventory: loadInventory, sites: loadSites, firmware: loadFirmware, circuits: loadCircuits, syslog: loadSyslog, credentials: loadCredentials,
     audit: loadAudit, users: loadUsers, settings: loadSettings })[view]();
 }
 $$("#nav button").forEach((b) => b.addEventListener("click", () => switchView(b.dataset.view)));
@@ -283,7 +284,7 @@ function deviceRow(r) {
     h("td", {}, h("span", { class: `dot ${st}`, title: STATUS_LABEL[st] })),
     h("td", { class: "name" }, d.name, d.notes ? h("small", {}, d.notes.slice(0, 80)) : null),
     h("td", {}, d.address),
-    h("td", {}, d.site || "—"),
+    h("td", {}, siteLink(d.site)),
     h("td", {}, d.platform_label),
     h("td", {}, fmtFreq(b.frequency_minutes)),
     h("td", { title: fmtTime(b.last_success) }, fmtAgo(b.last_success)),
@@ -622,7 +623,7 @@ function fwRow(r) {
   return h("tr", { class: d.enabled ? "" : "disabled" },
     h("td", {}, h("span", { class: `dot ${r.compliance}`, title: COMPLIANCE_LABEL[r.compliance] })),
     h("td", { class: "name" }, d.name, h("small", {}, d.address)),
-    h("td", {}, d.site || "—"),
+    h("td", {}, siteLink(d.site)),
     h("td", {}, d.platform_label),
     h("td", {}, f.model || "—", f.serial ? h("small", { class: "sub mono" }, f.serial) : null),
     h("td", {}, f.version ? h("code", {}, f.version) : "—",
@@ -849,6 +850,50 @@ async function deleteImage(img) {
   }
 }
 
+// ---------- shared: links to sites ----------
+
+/** Sites by lower-case name and code, so any page can link a Site value to its site. */
+async function loadSiteIndex() {
+  const list = await api("/api/sites/index").catch(() => []);
+  state.siteIndex = new Map();
+  list.forEach((x) => { if (x.code) state.siteIndex.set(x.code.trim().toLowerCase(), x); });
+  list.forEach((x) => state.siteIndex.set(x.name.trim().toLowerCase(), x)); // a name wins over a code
+}
+
+const siteOf = (text) => (text && state.siteIndex ? state.siteIndex.get(String(text).trim().toLowerCase()) : null);
+
+/** A Site value as a link to its site (or plain text when it isn't on the site list). */
+function siteLink(text, id = null) {
+  const s = id ? { id, name: text } : siteOf(text);
+  if (!text) return "—";
+  if (!s) return h("span", { title: "Not on the site list" }, text);
+  return h("span", { class: "link", title: "Open the site", onclick: (ev) => { ev.stopPropagation(); openSite(s.id); } }, text);
+}
+
+/** Go to the Sites page and open one site. */
+async function openSite(id, itemsFirst = true) {
+  if (state.view !== "sites") switchView("sites");
+  await site.loading;
+  const r = site.data.sites.find((x) => x.id === id);
+  if (r) siteEdit(r, itemsFirst);
+}
+
+/** Go to the Inventory page and open one item. */
+async function openItem(id) {
+  if ($("#site-dialog").open) $("#site-dialog").close();
+  switchView("inventory");
+  await state.viewLoading;
+  const r = inv.rows.find((x) => x.id === id);
+  if (r) invEdit(r);
+}
+
+/** Go to the Circuits page, showing one site's circuits. */
+function openSiteCircuits(id) {
+  ct.siteFilter = String(id);
+  if ($("#site-dialog").open) $("#site-dialog").close();
+  switchView("circuits");
+}
+
 // ---------- shared: column chooser and blank templates ----------
 
 function saveLocal(key, value) {
@@ -916,6 +961,9 @@ const CT_COMBINED = [
       r.warnings ? h("span", { class: "errtext" }, `⚠ ${r.warnings}`) : null] },
   { key: "@type", label: "Type / make", help: "Device type, manufacturer", fields: ["device_type", "manufacturer"],
     cell: (r) => [r.device_type || "—", sub(r.manufacturer)] },
+  { key: "@site", label: "Site", help: "The list's Site, else the site of the switch it is on; links to the site", fields: ["site"],
+    cell: (r) => [r.site_id ? siteLink(r.site_name, r.site_id) : r.site_text || "—",
+      r.site_text && !r.site_id ? sub("not on the site list") : sub({ switch: "from its switch", network: "from where it was found" }[r.site_from])] },
   { key: "@location", label: "Location", help: "Room / area, floor", fields: ["room", "floor"],
     cell: (r) => [r.room || "—", sub(r.floor)] },
   { key: "@ip", label: "IP", help: "IP address, gateway and mask", fields: ["ip", "gateway", "mask"],
@@ -929,7 +977,7 @@ const CT_COMBINED = [
   { key: "@drawing", label: "Drawing", help: "Drawing number, device drawing reference", fields: ["drawing_number", "drawing_ref"],
     cell: (r) => [r.drawing_number || "—", sub(r.drawing_ref)] },
 ];
-const CT_DEFAULT = ["@service", "@device", "@type", "mac", "@location", "@ip", "@vlan", "@switch", "@live", "@drawing"];
+const CT_DEFAULT = ["@service", "@device", "@type", "mac", "@site", "@location", "@ip", "@vlan", "@switch", "@live", "@drawing"];
 
 function ctAllColumns() {
   const fields = ct.meta ? ct.meta.fields : [];
@@ -998,6 +1046,10 @@ async function loadCircuits() {
   const uniq = (key) => [...new Set(rows.map((r) => r[key]).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   fillSelect($("#ct-filter-service"), "All services", uniq("service").map((x) => [x, x]));
   fillSelect($("#ct-filter-switch"), "All switches", uniq("switch").map((x) => [x, x]));
+  const sites = [...new Map(rows.filter((r) => r.site_id).map((r) => [r.site_id, r.site_name])).entries()]
+    .sort((a, b) => a[1].localeCompare(b[1]));
+  fillSelect($("#ct-filter-site"), "All sites", [...sites.map(([id, name]) => [String(id), name]), ["none", "Not at a listed site"]]);
+  if (ct.siteFilter) { $("#ct-filter-site").value = ct.siteFilter; ct.siteFilter = null; }
   fillSelect($("#ct-filter-vlan"), "All VLANs", uniq("vlan").map((x) => [x, `VLAN ${x}`]));
   renderCircuits();
 }
@@ -1006,7 +1058,9 @@ function renderCircuits() {
   const q = $("#ct-search").value.trim().toLowerCase();
   const service = $("#ct-filter-service").value, sw = $("#ct-filter-switch").value;
   const vlan = $("#ct-filter-vlan").value, match = $("#ct-filter-match").value;
+  const siteSel = $("#ct-filter-site").value;
   const rows = ct.rows.filter((r) => {
+    if (siteSel === "none" ? r.site_id : siteSel && String(r.site_id) !== siteSel) return false;
     if (service && r.service !== service) return false;
     if (sw && r.switch !== sw) return false;
     if (vlan && r.vlan !== vlan) return false;
@@ -1015,7 +1069,7 @@ function renderCircuits() {
     if (match === "warnings" && !r.warnings) return false;
     if (match.startsWith("live:") && r.live_status !== match.slice(5)) return false;
     if (q && ![r.device_name, r.eng_prefix, r.ip, r.mac, r.port, r.switch, r.drawing_number, r.drawing_ref,
-      r.room, r.device_type, r.live_switch, r.live_port, r.live_mac,
+      r.room, r.device_type, r.live_switch, r.live_port, r.live_mac, r.site_text, r.site_name,
       ...Object.keys(r).filter((k) => k.startsWith("x_")).map((k) => r[k])].some((v) => (v || "").toLowerCase().includes(q))) return false;
     return true;
   });
@@ -1098,7 +1152,7 @@ $("#ct-scan").addEventListener("click", async () => {
 });
 
 ["input", "change"].forEach((evt) => {
-  ["#ct-search", "#ct-filter-service", "#ct-filter-switch", "#ct-filter-vlan", "#ct-filter-match"]
+  ["#ct-search", "#ct-filter-service", "#ct-filter-switch", "#ct-filter-site", "#ct-filter-vlan", "#ct-filter-match"]
     .forEach((sel) => $(sel).addEventListener(evt, renderCircuits));
 });
 
@@ -2715,6 +2769,7 @@ function renderInventory() {
     ...cols.map((f) => {
       const v = invValue(r, f.key);
       if (f.key === "name") return h("td", {}, h("span", { class: "link", onclick: () => invEdit(r) }, v || "(no name)"));
+      if (f.key === "site" && siteOf(v)) return h("td", {}, siteLink(v));
       const auto = (r.values[f.key] === null || r.values[f.key] === "" || r.values[f.key] === undefined) && r.auto[f.key];
       return h("td", { class: f.key === "notes" || f.max_length > 1000 ? "wrap" : "", title: auto ? "From the device" : "" },
         auto ? h("span", { class: "muted" }, v) : String(v ?? ""));
@@ -2916,12 +2971,13 @@ $("#inv-template").addEventListener("click", () => templateDialog(invDialog, "/a
 
 // ---------- sites ----------
 
-const site = { meta: null, data: { sites: [], unlisted: [] } };
+const site = { meta: null, data: { sites: [], unlisted: [] }, loading: Promise.resolve() };
 const siteColsKey = () => `site-columns:${state.user ? state.user.username : ""}`;
-const SITE_DEFAULT_COUNTS = ["#items", "#devices", "#backup_failed"];
+const SITE_DEFAULT_COUNTS = ["#items", "#devices", "#backup_failed", "#circuits"];
 
 function siteAllColumns() {
-  return [...site.meta.fields, ...site.meta.counts.map((c) => ({ key: `#${c.key}`, label: c.label, group: "From the inventory" }))];
+  return [...site.meta.fields, ...site.meta.counts.map((c) => ({ key: `#${c.key}`, label: c.label,
+    group: c.key === "circuits" ? "From the circuit list" : "From the inventory" }))];
 }
 
 function siteColumns() {
@@ -2940,9 +2996,14 @@ function siteDialog(title, ...content) {
 const siteClose = () => $("#site-dialog").close();
 $("#site-dialog-close").addEventListener("click", siteClose);
 
-async function loadSites() {
+function loadSites() {
+  site.loading = fetchSites();
+  return site.loading;
+}
+
+async function fetchSites() {
   try {
-    [site.meta, site.data] = await Promise.all([api("/api/sites/meta"), api("/api/sites")]);
+    [site.meta, site.data] = await Promise.all([api("/api/sites/meta"), api("/api/sites"), loadSiteIndex()]);
   } catch (e) {
     return toast(e.message);
   }
@@ -2991,6 +3052,9 @@ function renderSites() {
     if (c.key === "name") return h("td", {}, h("span", { class: "link", onclick: () => siteEdit(r) }, r.values.name));
     if (c.key.startsWith("#")) {
       const n = r.counts[c.key.slice(1)];
+      if (c.key === "#circuits") {
+        return h("td", {}, h("span", { class: "count-link", onclick: () => openSiteCircuits(r.id), title: "See this site's circuits" }, n));
+      }
       const cls = c.key === "#backup_failed" || c.key === "#behind" ? (n ? "badge failed" : "muted") : "count-link";
       return h("td", {}, h("span", { class: cls, onclick: () => siteEdit(r, true), title: "See what's at this site" }, n));
     }
@@ -3037,7 +3101,10 @@ async function siteEdit(r = null, itemsFirst = false) {
   if (!r) return siteDialog("Add a site", form, buttons);
 
   const items = h("div", {}, h("p", { class: "muted" }, "Loading…"));
-  const parts = [h("h3", {}, `At this site (${r.counts.items})`), items];
+  const parts = [h("h3", {}, `At this site (${r.counts.items})`),
+    r.counts.circuits !== undefined && can("circuits", "view")
+      ? h("p", {}, h("button", { type: "button", onclick: () => openSiteCircuits(r.id) }, `Circuits at this site (${r.counts.circuits})`)) : "",
+    items];
   const details = [form, h("p", { class: "muted" }, "Renaming the site, or changing its code, changes the Site on the items and devices that use the old one."), buttons];
   siteDialog(r.values.name, ...(itemsFirst ? [...parts, ...details] : [...details, ...parts]));
   try {
@@ -3045,7 +3112,8 @@ async function siteEdit(r = null, itemsFirst = false) {
     items.replaceChildren(list.length ? h("table", {},
       h("thead", {}, h("tr", {}, ["Name", "Type", "Model", "Address", "Where", "Status", "Tools"].map((t) => h("th", {}, t)))),
       h("tbody", {}, list.map((i) => h("tr", {},
-        h("td", { class: "name" }, i.name), h("td", {}, i.type || "—"), h("td", {}, i.model || "—"),
+        h("td", { class: "name" }, h("span", { class: "link", title: "Open in the inventory", onclick: () => openItem(i.id) }, i.name)),
+        h("td", {}, i.type || "—"), h("td", {}, i.model || "—"),
         h("td", {}, i.mgmt_ip ? h("code", {}, i.mgmt_ip) : "—"),
         h("td", {}, [i.building, i.room, i.rack].filter(Boolean).join(" / ") || "—"),
         h("td", {}, i.status || "—"), h("td", {}, invTools(i))))))

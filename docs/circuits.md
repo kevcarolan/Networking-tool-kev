@@ -27,7 +27,7 @@ Expected columns, from the current template:
 |---|---|
 | SERVICE | IP Partition, Service |
 | DEVICE INFORMATION | Engineering prefix, Device Name, Device Type, Manufacturer, Hardware Mac Address |
-| LOCATION | Floor Level, Room / Area |
+| LOCATION | Site, Floor Level, Room / Area |
 | IP DETAILS | IP Address, Subnet Mask, Default Gateway |
 | NETWORK PORT | VLAN, TYPE, PORT, **DEVICE** |
 | DRAWING DETAILS | Drawing Number, Device Drawing Reference |
@@ -49,6 +49,21 @@ the upload reads:
 Fill it in, one row per circuit, and upload it. The upload replaces the whole list, so
 start from **Export CSV** instead when you only want to change a few rows.
 
+## Which site a circuit is at
+
+Each circuit is linked to a site on the **Sites** page ([sites.md](sites.md)):
+
+1. the list's **Site** column (a site's name or code; *Site name* and *Site code* headers
+   work too);
+2. else the site of the switch it is documented on (DEVICE);
+3. else the site of the switch where the network scan last found it.
+
+The **Site** column shows the site as a link (and *from its switch* or *from where it was
+found* when it didn't come from the list), or *not on the site list* for a name the Sites
+page doesn't have. Filter by site with **All sites**; *Not at a listed site* shows the rest.
+The exports have the list's *Site* and the **Linked site**. Renaming a site, or its code,
+also changes it in the live circuit list (and a pending upload).
+
 ## Choosing the columns you see
 
 **Columns** (everyone): tick the columns you want and put them in order. It is remembered
@@ -56,7 +71,7 @@ for you, in your browser; others keep their own. **Reset to the defaults** goes 
 
 * **Combined** columns show two or three values in one cell: *Service* (with IP
   partition), *Device* (name, engineering prefix, warnings), *Type / make*, *Location*,
-  *IP* (with gateway and mask), *VLAN* (with connection type), *Switch / port (list)*,
+  *Site*, *IP* (with gateway and mask), *VLAN* (with connection type), *Switch / port (list)*,
   *On the network* and *Drawing*. These are the default view.
 * Every value also has a column of its own (*Subnet Mask*, *Drawing Number*...), plus
   *Warnings* and the custom columns.

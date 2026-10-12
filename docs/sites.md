@@ -12,8 +12,8 @@ unless someone typed a different one on its inventory row.
 * Give each site a short **site code** (e.g. `DC1`, `HQ`) and use either the code or the
   name on items and devices.
 * Names and codes are unique across the list, so a *Site* value always means one site.
-* **Renaming** a site, or changing its code, changes the *Site* on the items and devices
-  that used the old value, so nothing loses its site. The activity report says how many.
+* **Renaming** a site, or changing its code, changes the *Site* on the items, devices and
+  the live circuit list that used the old value, so nothing loses its site. The activity report says how many.
 * **Deleting** a site only removes it from this list: items keep their *Site* value.
 
 When the inventory uses a site that isn't on the list, the page says so above the table.
@@ -24,9 +24,16 @@ When the inventory uses a site that isn't on the list, the page says so above th
 * Tiles: sites, live sites, items at a site, managed devices, backups failing.
 * Search any column, filter by type, region and status.
 * Counts per site: **Items**, **Managed devices**, **Backups failing**, **Firmware behind**
-  (the last two only when those tools are licensed). Click a count or a name to open the
+  and **Circuits** (backups, firmware and circuits only count when those tools are
+  licensed). How a circuit gets its site: [circuits.md](circuits.md#which-site-a-circuit-is-at). Click a count or a name to open the
   site: its details, and a table of everything at the site with its backup and firmware
-  state and buttons to its backups and logs.
+  state and buttons to its backups and logs. Click an item to open it in the Inventory.
+
+## Linked everywhere
+
+A Site value that is on the list is a link to its site on every page: **Config backups**,
+**Firmware**, **Inventory** and **Circuits**. The **Circuits** count, and **Circuits at
+this site** in the site view, open the Circuits page filtered to that site.
 
 ## The columns
 

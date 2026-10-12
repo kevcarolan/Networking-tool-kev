@@ -46,6 +46,8 @@ racks, UPSs, PDUs, patch panels and so on.
 * Search any column, filter by type, site, status or managed, and click a name to see or
   change the details.
 * **Columns**: choose which columns you see and their order (remembered for you).
+* **Site**: from the list's Site column, else from the circuit's switch. Filter by site, or
+  click it to open the site.
 * **CSV** / **Excel**: export everything. **Import** (needs *Devices and credentials:
   manage*) shows what would change before it changes anything.
 * **Blank template**: a sheet with just the column names (the ones you see, or all), to
@@ -58,8 +60,10 @@ More: [inventory.md](../inventory.md).
 The list of your sites (data centres, offices, branches...) and what the inventory has at
 each one. An item is at a site when its *Site* is the site's name or code.
 
-* Counts per site: items, managed devices, backups failing, firmware behind. Click a name
-  or a count to see the site's details and everything at it.
+* Counts per site: items, managed devices, backups failing, firmware behind, circuits.
+  Click a name or a count to see the site's details and everything at it; the circuits
+  count opens the Circuits page for that site.
+* A site name anywhere (Config backups, Firmware, Inventory, Circuits) is a link to it.
 * A note above the table lists sites the inventory uses that aren't on the list yet.
 * **Columns**, **CSV** / **Excel**, **Blank template** and **Import** work as on the
   Inventory page. Changes need *Devices and credentials: manage*.
@@ -123,6 +127,8 @@ The master circuit list: every end device or service and the switch port it uses
 * **Blank template**: a sheet with just the column names (the ones you see, or all), in
   the form the upload reads. MAC and IP address are always in it.
 * **Columns**: choose which columns you see and their order (remembered for you).
+* **Site**: from the list's Site column, else from the circuit's switch. Filter by site, or
+  click it to open the site.
 * **On the network:** where each circuit was really seen in the switches' MAC and ARP
   tables:
   * **Matches the list**;

@@ -31,7 +31,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 - [x] Syslog: a central receiver (UDP/TCP 514) with a search page (device, severity, period, text, timeline), retention by days and size, suggested device configs per platform, demo messages ([syslog.md](syslog.md))
 - [x] Network inventory: every device plus anything else (racks, servers, UPSs…), admins' custom columns, per-person columns, import/export ([inventory.md](inventory.md))
 - [x] Circuit list like the inventory: admins' custom columns (read from uploads by name), per-person columns, CSV uploads, blank templates ([circuits.md](circuits.md)); blank templates for the inventory too
-- [x] Sites: the list of sites with counts of items, devices, failing backups and firmware behind; site detail with everything at the site; custom columns, import/export, blank template ([sites.md](sites.md))
+- [x] Sites: the list of sites with counts of items, devices, failing backups, firmware behind and circuits; circuits linked to sites; site names are links on every page; site detail with everything at the site; custom columns, import/export, blank template ([sites.md](sites.md))
 - [ ] Full install test on Ubuntu (owner, after the demo)
 - [ ] Rack view: a picture of each rack from the inventory's Rack, Position and Height (owner: build later)
 - [ ] Later: one overview of several servers (the display feed is the starting point); several customers on one server kept as an idea
@@ -102,6 +102,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-12 | Admins add custom columns for everyone at the site; each person chooses and orders the columns they see (kept in their browser) | The owner: every customer's inventory is different |
 | 2026-10-12 | Ubuntu only: no Windows or Mac builds or installers of the full product (the demo still runs anywhere Python does) | The owner: the product is deployed on Ubuntu servers |
 | 2026-10-12 | Circuit list custom columns are text, read from uploads by their name; a header row with only known names is accepted (a blank template with few columns) | Circuit lists come from spreadsheets; checks belong in the sheet, and a template must import whatever columns were chosen |
+| 2026-10-12 | A circuit's site is the list's Site column, else its switch's site, else the site of the switch it was found on (migration 0008) | The owner: circuits linked to sites, "everything linked through"; most lists have no site column, and the switch's site is right for them |
 | 2026-10-12 | Sites are a list of their own (table `sites`); items and devices keep a Site text, matched to a site's name or code; renaming a site rewrites that text | The owner: a site list cross-referenced with the inventory, without changing how devices and backups store their site |
 
 ## Open questions
@@ -129,7 +130,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 
 - Product name?
 - Editions: which sets of modules to sell, and their names and prices (any set works without code changes)
-- Sites next steps: a map, or a site tile on the wall display? Should the circuit list link circuits to sites (it has floor and room, no site)?
+- Sites next steps: a map, or a site tile on the wall display?
 - Syslog next steps: a wall display tile for Critical and worse messages?
 - Later: two servers (main and standby) with copies of the data and the syslog files
 - Syslog forwarding is plain UDP (`rsyslog-forward.conf`); offer TLS forwarding for sites whose log server supports it?
@@ -171,3 +172,4 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-12 | Networking-tool-kev | Demo launchers (run-demo.bat / run-demo.sh), a try-it guide with a test checklist, the demo runs on Windows (no fcntl needed); product names checked on the web |
 | 2026-10-12 | Networking-tool-kev | Circuit list: admins' custom columns (migration 0006), per-person columns, CSV uploads, blank templates (CSV/Excel, the columns you see or all); blank templates for the inventory |
 | 2026-10-12 | Networking-tool-kev | Sites tab (migration 0007): site list with counts from the inventory, site detail, sites the inventory uses but aren't listed, renames carried to items and devices, custom columns, import/export, blank template; demo has four sites |
+| 2026-10-12 | Networking-tool-kev | Circuits linked to sites (Site column, else the switch's site; migration 0008), circuit counts on Sites, site names linked on every page, site items open in the inventory |

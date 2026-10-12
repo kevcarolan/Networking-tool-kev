@@ -16,7 +16,7 @@ from pydantic import Field as PField
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core import exports
+from app.core import exports, licence
 from app.core.audit import audit
 from app.core.auth import User, current_user, require, require_admin
 from app.core.db import get_db, session_scope
@@ -51,7 +51,12 @@ STANDARD: tuple[Field, ...] = (
     Field("notes", "Notes", "Other", max_length=5000),
 )
 COUNTS = (("items", "Items"), ("devices", "Managed devices"), ("backup_failed", "Backups failing"),
-          ("behind", "Firmware behind"))
+          ("behind", "Firmware behind"), ("circuits", "Circuits"))
+
+
+def _counts(db: Session) -> list[tuple[str, str]]:
+    """The counts shown: circuits only when the licence includes the circuit list."""
+    return [c for c in COUNTS if c[0] != "circuits" or licence.has_module("circuits", db)]
 
 
 def all_fields(db: Session) -> list[Field]:
@@ -102,6 +107,12 @@ def overview(db: Session) -> dict:
             c["devices"] += 1
             c["backup_failed"] += row["backup"] == "failed"
             c["behind"] += row["compliance"] == "behind"
+    if licence.has_module("circuits", db):
+        from app.tools.circuits.api import site_counts
+
+        for site_id, n in site_counts(db).items():
+            if site_id in counts:
+                counts[site_id]["circuits"] = n
     return {"sites": [{"id": s.id, "values": _values(s, custom), "counts": counts[s.id],
                        "updated_at": s.updated_at, "updated_by": s.updated_by} for s in sites],
             "unlisted": sorted(unlisted.values(), key=lambda u: u["name"].lower())}
@@ -110,8 +121,14 @@ def overview(db: Session) -> dict:
 @router.get("/meta")
 def meta(db: Session = Depends(get_db), user: User = Depends(current_user)):
     return {"fields": fl.describe(all_fields(db)), "kinds": fl.KINDS,
-            "counts": [{"key": k, "label": label} for k, label in COUNTS],
+            "counts": [{"key": k, "label": label} for k, label in _counts(db)],
             "can_manage": user.can("inventory", "manage"), "is_admin": user.is_admin}
+
+
+@router.get("/index")
+def site_index(db: Session = Depends(get_db), _: User = Depends(current_user)):
+    """Every site's id, name and code: the pages link a Site value to its site with it."""
+    return [{"id": s.id, "name": s.name, "code": s.code} for s in _sites(db)]
 
 
 @router.get("")
@@ -177,7 +194,10 @@ def _set(db: Session, site: Site, values: dict, user: User) -> list[str]:
 
 
 def _rename(db: Session, old: str, new: str) -> int:
-    """Change a site's name or code on the inventory rows and devices that use it."""
+    """Change a site's name or code on the inventory rows, devices and the circuit list
+    (live and pending versions) that use it. Returns how many inventory rows and devices."""
+    from app.tools.circuits.models import ACTIVE, PENDING, Circuit, CircuitImport
+
     if not old.strip() or _key(old) == _key(new):
         return 0
     n = 0
@@ -185,6 +205,10 @@ def _rename(db: Session, old: str, new: str) -> int:
         for row in db.scalars(select(model).where(func.lower(func.trim(model.site)) == _key(old))):
             row.site = new
             n += 1
+    current = select(CircuitImport.id).where(CircuitImport.status.in_((ACTIVE, PENDING)))
+    for c in db.scalars(select(Circuit).where(Circuit.import_id.in_(current),
+                                              func.lower(func.trim(Circuit.site)) == _key(old))):
+        c.site = new
     return n
 
 
@@ -256,9 +280,10 @@ def delete_field(key: str, db: Session = Depends(get_db), user: User = Depends(r
 def _table(db: Session) -> tuple[list[str], list[list]]:
     fields = all_fields(db)
     data = overview(db)
-    head = [f.label for f in fields] + [label for _, label in COUNTS]
+    counts = _counts(db)
+    head = [f.label for f in fields] + [label for _, label in counts]
     body = [[inv._plain(s["values"].get(f.key)) for f in fields]
-            + [s["counts"][k] for k, _ in COUNTS] for s in data["sites"]]
+            + [s["counts"][k] for k, _ in counts] for s in data["sites"]]
     return head, body
 
 
@@ -330,8 +355,10 @@ def plan_import(db: Session, table: list[list]) -> dict:
     if not table or not any(str(c).strip() for c in table[0]):
         raise HTTPException(422, "The first row must hold the column names")
     header = [str(c).strip() for c in table[0]]
-    columns = {i: names[h.lower()] for i, h in enumerate(header) if h.lower() in names}
-    counts = {label.lower() for _, label in COUNTS}
+    # The counts in an export are not read back (Circuits is also a column's key).
+    counts = {label.lower() for _, label in COUNTS} - {f.label.lower() for f in fields}
+    columns = {i: names[h.lower()] for i, h in enumerate(header)
+               if h.lower() in names and h.lower() not in counts}
     unknown = [h for i, h in enumerate(header) if h and i not in columns and h.lower() not in counts]
     if not any(f.key == "name" for f in columns.values()):
         raise HTTPException(422, "A 'Name' column is needed")

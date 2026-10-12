@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 
 FIELDS = (
     "ip_partition", "service", "eng_prefix", "device_name", "device_type", "manufacturer",
-    "mac", "floor", "room", "ip", "mask", "gateway", "vlan", "conn_type", "port", "switch",
+    "mac", "site", "floor", "room", "ip", "mask", "gateway", "vlan", "conn_type", "port", "switch",
     "drawing_number", "drawing_ref",
 )
 
@@ -22,7 +22,7 @@ FIELDS = (
 LABELS = {
     "ip_partition": "IP Partition", "service": "Service", "eng_prefix": "Engineering prefix",
     "device_name": "Device Name", "device_type": "Device Type", "manufacturer": "Manufacturer",
-    "mac": "Hardware Mac Address", "floor": "Floor Level", "room": "Room / Area",
+    "mac": "Hardware Mac Address", "site": "Site", "floor": "Floor Level", "room": "Room / Area",
     "ip": "IP Address", "mask": "Subnet Mask", "gateway": "Default Gateway", "vlan": "VLAN",
     "conn_type": "TYPE", "port": "PORT", "switch": "DEVICE", "drawing_number": "Drawing Number",
     "drawing_ref": "Device Drawing Reference",
@@ -37,6 +37,7 @@ _HEADERS = {
     "device type": "device_type",
     "manufacturer": "manufacturer", "manufacture": "manufacturer",
     "hardware mac address": "mac", "mac address": "mac", "mac": "mac",
+    "site": "site", "site name": "site", "site code": "site",
     "floor level": "floor", "floor": "floor",
     "room area": "room", "room": "room",
     "ip address": "ip", "ip": "ip",
