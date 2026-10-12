@@ -39,6 +39,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 - [x] Firmware: version report, standards, image library, upgrade jobs for every platform
 - [x] Circuits: Excel import, live location from MAC/ARP tables
 - [ ] Lab-test the upgrade paths and the MAC/ARP parsing ([upgrade-lab-tests.md](upgrade-lab-tests.md))
+- [x] Email alerts through the customer's mail server: failing backups, upgrade results, licence, upgrade worker ([customer/admin-guide.md](customer/admin-guide.md#email-alerts))
 - [x] Demo mode: `python -m app.demo`, the product on a simulated 25-device network ([demo.md](demo.md))
 
 ## Decisions
@@ -73,6 +74,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-09 | No remote collectors: devices are reached over SSH from the server inside each company's network | The owner: production sites can reach their devices from a central management server |
 | 2026-10-09 | Several customers on one server is kept as an idea, not built | Not needed while each company runs its own server |
 | 2026-10-09 | A read-only wall display on its own port (8443) with a per-screen key, rather than a signed-in session | A wall screen can't sign in every few hours; the separate port and key let the firewall and admins limit it to the screens |
+| 2026-10-12 | Email alerts look at the state every minute and send each event once, rather than being sent from inside each tool | One place to switch alerts on and off; events from the worker process are covered too; a failed send is simply tried again |
 | 2026-10-12 | The network simulator and sample outputs moved from `tests/` to `app/demo/` (tests keep the old names) | One simulator for the tests and the demo, so the demo shows exactly what the tests check |
 
 ## Open questions
@@ -104,4 +106,5 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-08 | Networking-tool-kev | Licence keys: trial, signed licences, Settings page and banner, signing tool; wrong setup codes are now kept in the audit log (they were rolled back) |
 | 2026-10-08 | Networking-tool-kev | Online installer (`deploy/install-online.sh`), shared Ubuntu package list; tested end to end in an Ubuntu container (bundle built, verified and installed) |
 | 2026-10-09 | Networking-tool-kev | Wall display: overview and upgrades pages rotating, own nginx site on 8443 (checked with a real nginx: refused on the main port, only the display there), per-screen links on the Settings page |
+| 2026-10-12 | Networking-tool-kev | Email alerts (Settings › Email alerts, test email, sent once each, tried again after a failure); firewall template allows the mail relay |
 | 2026-10-12 | Networking-tool-kev | Demo mode (`python -m app.demo`): 25 simulated devices, failing backups, circuits, live upgrades in about 40 s, wall display; sign-in now returns the site name (it only showed after a reload) |

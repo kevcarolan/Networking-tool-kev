@@ -80,6 +80,33 @@ A setting shown as **"Set in netops.env"** is fixed in the server's settings fil
 over this page. To manage it here instead, comment that line out with `#` in
 `/etc/netops/netops.env`, then run `sudo systemctl restart netops netops-worker`.
 
+### Email alerts
+
+Sent through your own mail server to the addresses you choose. Each event is sent once,
+and the server checks every minute.
+
+| Alert | When |
+|---|---|
+| Backups | A device's backup has been failing for longer than the hours you set (24 by default; 0 switches this off). The failing devices go in one email |
+| Upgrades | An upgrade job (live or dry run) has completed, failed, rolled back, or needs attention |
+| Licence | 30 and 7 days before the licence ends, and when it (or the trial) has ended |
+| Upgrade worker | The upgrade worker has been stopped for more than 10 minutes |
+
+1. Fill in:
+   * the mail server, port and security (STARTTLS on 587, TLS on 465, or none on port 25
+     for an internal relay that doesn't offer encryption);
+   * a username and password if the server needs them;
+   * the From address and the recipients.
+2. Tick **Send email alerts**, then press **Save**.
+3. Press **Send test email**: it says straight away if the mail server refused it.
+
+* Only events after you switch alerts on are sent, not the history.
+* If the mail server can't be reached, the last error shows here, and the alerts are tried
+  again at the next check.
+* The hardened firewall needs the mail relay allowed: `SMTP_HOSTS` in `/etc/nftables.conf`.
+* The relay's certificate is checked. For an internal CA, add it to the server's trusted
+  CAs (`sudo cp corp-ca.crt /usr/local/share/ca-certificates/ && sudo update-ca-certificates`).
+
 ### Wall displays
 
 A read-only status screen for a NOC or an engineers' office, readable from across the
@@ -234,6 +261,7 @@ Settings, the key and the licence are kept. See [install-airgap.md](../install-a
 | Device backups fail | The reason is on Config backups: wrong account, the device's SSH access list, or the server's firewall to the device |
 | "The upgrade worker isn't running" | `systemctl status netops-worker`; `journalctl -u netops-worker -n 50` |
 | Can't add devices or start upgrades | The trial or licence has ended: Settings › Licence |
+| No email alerts arrive | Settings › Email alerts › **Send test email** shows the mail server's answer. Check `SMTP_HOSTS` in the firewall and the relay's certificate |
 | A wall display shows "No data since …" | The screen can't reach port 8443 (`DISPLAY_NETS` in the firewall), or its link was removed: add it again on Settings › Wall displays |
 | A setting is greyed out ("Set in netops.env") | See *Site and defaults* above |
 | Forgot the admin password | Another admin resets it on the Users page. If there is no other admin, set a break-glass admin in `netops.env` (`sudo netops-cli hash-password`), restart, and sign in with it |

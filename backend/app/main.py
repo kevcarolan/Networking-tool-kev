@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.core import appsettings, auth, display, inventory, licence, setup, users
+from app.core import alerts, appsettings, auth, display, inventory, licence, setup, users
 from app.core.config import Settings, get_settings
 from app.core.crypto import CredentialCipher
 from app.core.db import init_engine, session_scope
@@ -38,7 +38,7 @@ _SECURITY_HEADERS = {
 
 def create_app(settings: Settings | None = None, fetcher=fetch_config,
                start_scheduler: bool | None = None, fw_collector=run_commands,
-               upgrade_io: DeviceIO | None = None) -> FastAPI:
+               upgrade_io: DeviceIO | None = None, mailer=None) -> FastAPI:
     settings = settings or get_settings()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     init_engine(settings.database_url)
@@ -47,6 +47,7 @@ def create_app(settings: Settings | None = None, fetcher=fetch_config,
     backup_service = BackupService(settings, cipher, store, fetcher=fetcher)
     firmware_service = FirmwareService(settings, cipher, collector=fw_collector)
     circuit_scan = CircuitScanService(settings, cipher, collector=fw_collector)
+    alert_service = alerts.AlertService(settings, cipher, mailer or alerts.smtp_send)
     upgrade_io = upgrade_io or DeviceIO(fw_collector)
     # Upgrade jobs run in the separate worker process (app.worker); the web app only
     # queues requests. This instance is for tests and the CLI.
@@ -66,10 +67,12 @@ def create_app(settings: Settings | None = None, fetcher=fetch_config,
             backup_service.start()
             firmware_service.start()
             circuit_scan.start()
+            alert_service.start()
         yield
         backup_service.stop()
         firmware_service.stop()
         circuit_scan.stop()
+        alert_service.stop()
 
     docs = settings.api_docs
     app = FastAPI(title=settings.product_name, lifespan=lifespan, redoc_url=None,
@@ -82,6 +85,7 @@ def create_app(settings: Settings | None = None, fetcher=fetch_config,
     app.state.backup_service = backup_service
     app.state.firmware_service = firmware_service
     app.state.circuit_scan = circuit_scan
+    app.state.alert_service = alert_service
     app.state.job_service = job_service
     app.state.upgrade_io = upgrade_io
 
@@ -105,6 +109,7 @@ def create_app(settings: Settings | None = None, fetcher=fetch_config,
     app.include_router(licence.router)
     app.include_router(display.admin_router)
     app.include_router(display.router)
+    app.include_router(alerts.router)
     app.include_router(backup_api.router)
     app.include_router(firmware_api.router)
     app.include_router(jobs_api.router)
