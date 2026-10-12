@@ -175,6 +175,10 @@ preset:
 * A change applies straight away.
 * A disabled user is signed out at their next click.
 
+* **Devices and credentials** has four levels. *manage* edits device details; *addresses*
+  also adds devices and changes their address or credential profile, which decides where
+  a device account's password is sent; *credentials* also manages the credential profiles.
+
 All the levels are explained in [users.md](../users.md).
 
 **Activity** shows who did what: sign-ins, backups run, configs viewed, upgrade jobs and

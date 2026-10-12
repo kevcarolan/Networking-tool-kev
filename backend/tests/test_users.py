@@ -168,3 +168,33 @@ def test_no_access_level_blocks_reading(admin, client, path):
     _login(client, "nobody")
     assert client.get(path).status_code == 403
     assert client.get("/api/devices").status_code == 200  # everyone sees the device list
+
+
+@pytest.mark.parametrize("level, edit, move, add, profiles", [
+    ("manage", 200, 403, 403, 403),
+    ("addresses", 200, 200, 201, 403),
+    ("credentials", 200, 200, 201, 201),
+])
+def test_who_may_decide_where_a_device_account_goes(app, admin, device, credential,
+                                                    level, edit, move, add, profiles):
+    """Editing a device's details, pointing it (address, credential profile) somewhere
+    else, and managing the profiles themselves are separate levels."""
+    from fastapi.testclient import TestClient
+
+    _add(admin, f"inv-{level}", permissions={"inventory": level})
+    with TestClient(app) as c:
+        assert _login(c, f"inv-{level}").status_code == 200
+        url = f"/api/devices/{device['id']}"
+        assert c.put(url, json={**device, "site": "DC2"}).status_code == edit
+        r = c.put(url, json={**device, "address": "10.66.66.66"})
+        assert r.status_code == move
+        if move == 403:
+            assert "addresses" in r.json()["detail"]
+        assert c.put(url, json={**device, "credential_id": None}).status_code == move
+        assert c.post("/api/devices", json={"name": "new-sw", "address": "10.0.0.50",
+                                           "platform": "cisco_ios"}).status_code == add
+        assert c.post("/api/credentials", json={"name": "mine", "username": "u",
+                                               "password": "p"}).status_code == profiles
+        assert c.get("/api/credentials").status_code == 200  # names, to show in the dialog
+    if move == 403:
+        assert admin.get(url).json()["address"] == "10.0.0.1"
