@@ -277,3 +277,39 @@ textarea.pem { width: 100%; box-sizing: border-box; min-height: 120px; font-fami
 .kv dt { color: var(--muted); }
 .kv dd { margin: 0; overflow-wrap: anywhere; }
 @media (max-width: 600px) { .setup-card { padding: 18px; } .kv { grid-template-columns: 1fr; } }
+
+/* Syslog */
+.sev-filter { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.sev { cursor: pointer; border: 1px solid var(--border); font-size: 12px; padding: 2px 8px; border-radius: 10px; background: var(--surface); color: var(--text); }
+.sev.off { opacity: .45; }
+.sev.s0, .sev.s1, .sev.s2, .sev.s3, .badge.s0, .badge.s1, .badge.s2, .badge.s3 { background: var(--fail-bg); color: var(--fail); }
+.sev.s4, .badge.s4 { background: var(--warn-bg); color: var(--warn); }
+.sev.s5, .badge.s5 { background: var(--surface); color: var(--accent); border: 1px solid var(--border); }
+.sev.s6, .sev.s7, .badge.s6, .badge.s7 { background: var(--idle-bg); color: var(--idle); }
+.badge.s0, .badge.s1, .badge.s2 { font-weight: 600; }
+.timeline { display: flex; align-items: flex-end; gap: 1px; height: 70px; padding: 6px; margin-bottom: 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.timeline .bar { flex: 1; display: flex; flex-direction: column-reverse; height: 100%; cursor: pointer; min-width: 2px; }
+.timeline .bar:hover { outline: 1px solid var(--accent); }
+.timeline .seg.bad { background: var(--fail); }
+.timeline .seg.warn { background: var(--warn); }
+.timeline .seg.note { background: var(--accent); }
+.timeline .seg.info { background: var(--idle); }
+#sl-table td.msg { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+#sl-table td.when { white-space: nowrap; font-size: 13px; }
+#sl-table .link { cursor: pointer; color: var(--accent); }
+#sl-help-general { margin: 0; padding-left: 18px; }
+.bad-text { color: var(--fail); }
+@media (max-width: 600px) { #sl-table th:nth-child(4), #sl-table td:nth-child(4) { display: none; } }
+
+/* Settings: email alert recipients */
+table.recipients td, table.recipients th { text-align: center; padding: 4px 6px; }
+table.recipients td:first-child, table.recipients th:first-child { text-align: left; }
+table.recipients input[type=email] { min-width: 220px; }
+.panel h3 { margin: 6px 0 0; font-size: 15px; }
+
+/* Tools the licence doesn't unlock */
+#nav button.locked { opacity: .45; }
+#nav button.locked::after { content: " 🔒"; font-size: 11px; }
+.locked-card { max-width: 620px; padding: 24px; display: grid; gap: 8px; }
+.locked-card h2 { margin: 0; }

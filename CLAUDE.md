@@ -18,6 +18,7 @@ one database.
 | Config Backup | `backend/app/tools/config_backup/` | Done |
 | Firmware (version report, image library, upgrade jobs) | `backend/app/tools/firmware_upgrade/` | Built for every platform; needs lab testing ([docs/upgrades.md](docs/upgrades.md), [docs/upgrade-lab-tests.md](docs/upgrade-lab-tests.md)) |
 | Circuits (circuit list from Excel, live location from MAC/ARP tables) | `backend/app/tools/circuits/` | Done; live locations need lab testing ([docs/circuits.md](docs/circuits.md)) |
+| Syslog (receiver on 514, one file per day, search page, device setup help) | `backend/app/tools/syslog/` | Done ([docs/syslog.md](docs/syslog.md)) |
 | Users and activity (per-area permissions, activity report) | `backend/app/core/users.py`, `permissions.py` | Done ([docs/users.md](docs/users.md)) |
 
 Design docs: [docs/design.md](docs/design.md) (platform and backup tool),
@@ -78,7 +79,11 @@ remote); never sync the two automatically.
   scheduler checks state every minute and sends each new event once (`alerts_sent` table);
   the mailer is injectable (`create_app(mailer=)`), tests never send mail. Licences (`core/licence.py`, made with `python -m app.licence_tool`, see
   [docs/licensing.md](docs/licensing.md)): a 60-day trial, then signed licences with an end
-  date and a device count. Without one, only new work is blocked (`licence.require_active`,
+  date, a device count and the tools it unlocks (`licence.MODULES`: backups, firmware,
+  upgrades, circuits, syslog; one full install, the licence unlocks parts of it). A tool's
+  router gets `Depends(licence.module(...))`, its scheduler checks `licence.has_module`,
+  and the GUI greys out its tab (`data-module`). The trial and older licences unlock
+  everything. Without a licence, only new work is blocked (`licence.require_active`,
   `licence.room_for`): never backups, checks, or an upgrade job already under way.
   `python -m app` is development mode, with no licence needed. Tools live in `tools/<name>/` with `models.py`, `service.py`, `api.py`.
 * **Database:** SQLite `data/app.db`, kept up to date by **Alembic** migrations, applied when
@@ -115,6 +120,13 @@ remote); never sync the two automatically.
   any new way of reaching a device must do the same. CSV/XLSX exports go through
   `core/exports.py` (`csv_writer`, `append_row`) so formula-like text stays text. Root scripts
   (`deploy/`) must never read, write or run anything the `netops` account can change.
+* Syslog: the receiver (`tools/syslog/receiver.py`, `python -m app.tools.syslog`,
+  `netops-syslog.service`, CAP_NET_BIND_SERVICE only) is the only writer; it keeps one
+  SQLite file per UTC day in `<data>/syslog/` (`store.py`, not Alembic: no migrations) and
+  writes `status.json` for the web app, which only reads. The sender is the source
+  address, matched to the inventory in `sources.py`. Suggested device configs per platform
+  are in `howto.py`: add one for every new platform (a test checks). The demo fills it from
+  `app/demo/syslog.py`.
 * Device access is always injectable (`fetcher=` / `fw_collector=` in `create_app`), so tests
   never touch SSH. Parser tests use real sample output in `app/demo/samples.py` (alias
   `tests/firmware_samples.py`); the newer vendors' samples (`app/demo/vendor_samples.py`) are

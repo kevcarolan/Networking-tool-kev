@@ -5,7 +5,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
@@ -26,6 +26,7 @@ from app.tools.firmware_upgrade import jobs_api
 from app.tools.firmware_upgrade.deviceio import DeviceIO
 from app.tools.firmware_upgrade.jobs import JobService
 from app.tools.firmware_upgrade.service import FirmwareService
+from app.tools.syslog import api as syslog_api
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -113,9 +114,11 @@ def create_app(settings: Settings | None = None, fetcher=fetch_config,
     app.include_router(display.router)
     app.include_router(alerts.router)
     app.include_router(backup_api.router)
-    app.include_router(firmware_api.router)
-    app.include_router(jobs_api.router)
-    app.include_router(circuits_api.router)
+    # The tools a licence can leave out (licence.MODULES): refused unless unlocked.
+    app.include_router(firmware_api.router, dependencies=[Depends(licence.module("firmware"))])
+    app.include_router(jobs_api.router, dependencies=[Depends(licence.module("upgrades"))])
+    app.include_router(circuits_api.router, dependencies=[Depends(licence.module("circuits"))])
+    app.include_router(syslog_api.router, dependencies=[Depends(licence.module("syslog"))])
 
     @app.get("/api/health", include_in_schema=False)
     def health():

@@ -31,7 +31,7 @@ def _pair(days=30):
                               serialization.NoEncryption()))
 
 
-def _run(tmp_path, nginx_ok=True):
+def _run(tmp_path, nginx_ok=True, env_file=None):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     for name, body in (("nginx", "exit 0" if nginx_ok else "exit 1"),
@@ -40,7 +40,8 @@ def _run(tmp_path, nginx_ok=True):
         (bin_dir / name).chmod(0o755)
     env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}",
            "NETOPS_TLS_SRC": str(tmp_path / "src"), "NETOPS_TLS_DST": str(tmp_path / "dst"),
-           "NETOPS_TLS_STATUS_DIR": str(tmp_path / "status")}
+           "NETOPS_TLS_STATUS_DIR": str(tmp_path / "status"),
+           "NETOPS_ENV_FILE": str(env_file or tmp_path / "no-netops.env")}
     return subprocess.run(["bash", str(SCRIPT)], env=env, capture_output=True, text=True)
 
 
@@ -115,3 +116,15 @@ def test_a_pipe_or_a_linked_folder_is_refused(tmp_path):
     (tmp_path / "src").symlink_to(tmp_path / "real")
     assert _run(tmp_path).returncode == 1
     assert "is not a folder" in (tmp_path / "status" / "apply-status").read_text()
+
+
+@pytest.mark.parametrize("line, restarted", [("NETOPS_SYSLOG_TLS_PORT=6514", True),
+                                             ("NETOPS_SYSLOG_TLS_PORT=0", False),
+                                             ("# NETOPS_SYSLOG_TLS_PORT=6514", False)])
+def test_syslog_over_tls_gets_the_new_certificate(tmp_path, line, restarted):
+    env = tmp_path / "netops.env"
+    env.write_text(f"NETOPS_PORT=8710\n{line}\n")
+    _propose(tmp_path, *_pair())
+    assert _run(tmp_path, env_file=env).returncode == 0
+    log = (tmp_path / "systemctl.log").read_text()
+    assert ("try-restart netops-syslog.service" in log) is restarted

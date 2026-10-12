@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core import licence
 from app.core.audit import audit
 from app.core.auth import User, current_user, require
 from app.core.db import get_db
@@ -15,6 +16,11 @@ from app.core.inventory import DeviceOut, device_out
 from app.core.models import Device
 from app.tools.config_backup.models import BackupRun, BackupState
 from app.tools.config_backup.service import BackupService, ensure_states
+
+# The device list, summary and backup settings stay open without the Backups module (the
+# Config backups page is also where devices are managed); running backups, history and
+# configs need it.
+BACKUPS_LICENSED = [Depends(licence.module("backups"))]
 
 router = APIRouter(prefix="/api/backup", tags=["config-backup"])
 
@@ -112,7 +118,7 @@ def update_settings(device_id: int, body: SettingsIn, request: Request,
     return _row(device, state, svc)
 
 
-@router.post("/devices/{device_id}/run", status_code=202)
+@router.post("/devices/{device_id}/run", status_code=202, dependencies=BACKUPS_LICENSED)
 def run_now(device_id: int, request: Request, db: Session = Depends(get_db),
             user: User = Depends(BACKUPS_RUN)):
     svc = _service(request)
@@ -123,7 +129,7 @@ def run_now(device_id: int, request: Request, db: Session = Depends(get_db),
     return {"queued": queued, "message": "Backup queued" if queued else "Backup already running"}
 
 
-@router.get("/devices/{device_id}/runs")
+@router.get("/devices/{device_id}/runs", dependencies=BACKUPS_LICENSED)
 def list_runs(device_id: int, limit: int = 50, db: Session = Depends(get_db),
               _: User = Depends(BACKUPS_VIEW)):
     runs = db.scalars(select(BackupRun).where(BackupRun.device_id == device_id)
@@ -152,7 +158,7 @@ def _config_path(db: Session, device_id: int) -> str:
     return state.config_path
 
 
-@router.get("/devices/{device_id}/versions")
+@router.get("/devices/{device_id}/versions", dependencies=BACKUPS_LICENSED)
 def list_versions(device_id: int, request: Request, db: Session = Depends(get_db),
                   _: User = Depends(config_reader)):
     return _service(request).store.history(_config_path(db, device_id))
@@ -165,7 +171,7 @@ def _resolve(versions: list[dict], commit: str) -> dict:
     raise HTTPException(404, "Version not found for this device")
 
 
-@router.get("/devices/{device_id}/config", response_class=PlainTextResponse)
+@router.get("/devices/{device_id}/config", response_class=PlainTextResponse, dependencies=BACKUPS_LICENSED)
 def get_config(device_id: int, request: Request, version: str | None = None,
                db: Session = Depends(get_db), user: User = Depends(config_reader)):
     store = _service(request).store
@@ -178,7 +184,7 @@ def get_config(device_id: int, request: Request, version: str | None = None,
     return store.read(v["path"], v["commit"])
 
 
-@router.get("/devices/{device_id}/diff", response_class=PlainTextResponse)
+@router.get("/devices/{device_id}/diff", response_class=PlainTextResponse, dependencies=BACKUPS_LICENSED)
 def get_diff(device_id: int, request: Request, to: str | None = None,
              from_: str | None = Query(None, alias="from"), db: Session = Depends(get_db),
              _: User = Depends(config_reader)):

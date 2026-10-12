@@ -7,7 +7,8 @@
 Sign in as ``demo`` / ``demo-password``. Backups, version checks, circuit scans and upgrade
 jobs (live ones too) all run against the simulator in app/demo/simnet.py; nothing is sent
 to a real device, and the device addresses are documentation addresses that are never
-routed. The upgrade worker runs inside this process. Uses its own data folder, never the
+routed. The upgrade worker runs inside this process. Syslog messages are made up
+(app/demo/syslog.py): three days of history, then one every few seconds. Uses its own data folder, never the
 real one, and needs no licence.
 """
 
@@ -23,6 +24,7 @@ from fastapi.testclient import TestClient
 from app.core import licence
 from app.core.config import REPO_ROOT, Settings
 from app.demo import seed
+from app.demo import syslog as demo_syslog
 from app.main import create_app
 from app.worker import UpgradeWorker
 
@@ -106,6 +108,7 @@ def main(argv=None) -> None:
     # The first run's TestClient closed the app; build it again (same network) to serve it.
     app, net, worker = build(args.data, args.port, net)
     threading.Thread(target=worker.run_forever, name="demo-worker", daemon=True).start()
+    demo_syslog.start(app.state.settings, threading.Event())  # history, then a trickle
 
     url = f"http://127.0.0.1:{args.port}"
     print(f"\n  Demo running on {url}  (sign in as {seed.ADMIN_USER} / {seed.ADMIN_PASSWORD})")

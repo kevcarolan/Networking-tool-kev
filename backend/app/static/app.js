@@ -94,6 +94,34 @@ function can(area, level) {
 }
 // data-perm="area:level" (or several, separated by |: any one is enough)
 const permitted = (spec) => spec.split("|").some((p) => { const [a, l] = p.split(":"); return can(a, l); });
+// Tools the licence unlocks (app/core/licence.py MODULES); everything until the licence is read.
+const hasModule = (m) => !state.licence || state.licence.modules.includes(m);
+const VIEW_MODULE = { firmware: "firmware", circuits: "circuits", syslog: "syslog" };
+
+/** Locked tools: greyed out in the top bar, other controls of theirs hidden. */
+function applyModules() {
+  $$("[data-module]").forEach((el) => {
+    const ok = hasModule(el.dataset.module);
+    if (el.closest("#nav")) {
+      el.classList.toggle("locked", !ok);
+      el.title = ok ? "" : "Not in your licence";
+    } else if (!ok) {
+      el.hidden = true;
+    }
+  });
+  $("#bk-unlicensed").hidden = hasModule("backups");
+}
+
+function showLocked(view) {
+  const l = state.licence;
+  const name = l.module_labels[VIEW_MODULE[view]];
+  $("#locked-title").textContent = `${name} isn't in your licence`;
+  $("#locked-text").textContent = `This tool is installed but not unlocked. Ask your supplier to add ${name} to the licence; ` +
+    "an admin adds the new licence on the Settings page, and it unlocks straight away.";
+  $("#locked-have").textContent = `Your licence unlocks: ${l.modules.map((m) => l.module_labels[m]).join(", ") || "no tools"}.`;
+  $$(".view").forEach((s) => (s.hidden = s.id !== "view-locked"));
+}
+
 const canRunJob = (j) => canUpgrade() && (j.dry_run || can("upgrades", "live"));
 
 // ---------- auth ----------
@@ -118,8 +146,10 @@ async function showApp(user) {
   $$("[data-upgrader]").forEach((el) => (el.hidden = !canUpgrade()));
   $$("[data-perm]").forEach((el) => (el.hidden = !permitted(el.dataset.perm)));
   state.platforms = await api("/api/platforms");
+  state.licence = await api("/api/licence").catch(() => null);
+  applyModules();
   showLicenceBanner();
-  const first = $$("#nav button").find((b) => !b.hidden);
+  const first = $$("#nav button").find((b) => !b.hidden && !b.classList.contains("locked"));
   if (first) switchView(first.dataset.view);
   clearInterval(state.refreshTimer);
   state.refreshTimer = setInterval(() => {
@@ -157,8 +187,9 @@ $("#logout").addEventListener("click", async () => {
 function switchView(view) {
   state.view = view;
   $$("#nav button").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
+  if (VIEW_MODULE[view] && !hasModule(VIEW_MODULE[view])) return showLocked(view);
   $$(".view").forEach((s) => (s.hidden = s.id !== `view-${view}`));
-  ({ backups: loadBackups, firmware: loadFirmware, circuits: loadCircuits, credentials: loadCredentials,
+  ({ backups: loadBackups, firmware: loadFirmware, circuits: loadCircuits, syslog: loadSyslog, credentials: loadCredentials,
     audit: loadAudit, users: loadUsers, settings: loadSettings })[view]();
 }
 $$("#nav button").forEach((b) => b.addEventListener("click", () => switchView(b.dataset.view)));
@@ -234,9 +265,14 @@ function deviceRow(r) {
   } else {
     result = h("span", { class: `badge ${st}` }, STATUS_LABEL[st] || st);
   }
-  const actions = [h("button", { class: "small", onclick: () => openDetail(r) }, "History")];
-  if (can("backups", "run")) {
+  const actions = [];
+  if (hasModule("backups")) actions.push(h("button", { class: "small", onclick: () => openDetail(r) }, "History"));
+  if (can("backups", "run") && hasModule("backups")) {
     actions.push(h("button", { class: "small", disabled: b.busy, onclick: () => runNow(d) }, "Backup now"));
+  }
+  if (can("syslog", "view") && hasModule("syslog")) {
+    actions.push(h("button", { class: "small", title: "This device's syslog messages",
+      onclick: () => { sl.pick = String(d.id); switchView("syslog"); } }, "Logs"));
   }
   if (can("inventory", "manage")) {
     actions.push(
@@ -2042,6 +2078,8 @@ async function licencePanel() {
     h("p", { class: s.active ? "" : "error" }, s.message),
     s.warning && s.active && s.mode !== "trial" ? h("p", { class: "muted" }, s.warning) : "",
     h("dl", { class: "kv" },
+      h("dt", {}, "Tools unlocked"), h("dd", {}, h("span", { class: "chips" }, Object.entries(s.module_labels).map(([m, label]) =>
+        h("span", { class: `chip ${s.modules.includes(m) ? "" : "off"}`, title: s.modules.includes(m) ? "Unlocked" : "Not in the licence" }, label)))),
       h("dt", {}, "Devices"), h("dd", {}, s.max_devices == null ? `${s.devices} (no limit)` : `${s.devices} of ${s.max_devices}`),
       ...(l ? [h("dt", {}, "Licence"), h("dd", {}, `${l.id}${l.kind === "internal" ? " (internal use)" : ""}, issued ${l.issued}`)] : []),
       h("dt", {}, "Installation ID"), h("dd", {}, h("code", {}, s.install_id))),
@@ -2052,8 +2090,7 @@ async function licencePanel() {
       try {
         await api("/api/licence", { method: "POST", body: { text: text.value } });
         toast("Licence added");
-        showLicenceBanner();
-        loadSettings();
+        setTimeout(() => location.reload(), 800);  // the tools it unlocks appear straight away
       } catch (e) { showError(err, e); }
     } }, "Add licence")));
   return box;
@@ -2157,6 +2194,22 @@ async function alertsPanel() {
     .map(([v, l]) => h("option", { value: v, selected: a.smtp_security === v }, l)));
   f.smtp_password = h("input", { type: "password", autocomplete: "new-password", placeholder: a.has_password ? "saved (leave empty to keep it)" : "" });
   f.clear_password = h("input", { type: "checkbox" });
+  f.syslog_level = h("select", {}, ...[[0, "Emergency only"], [1, "Alert and worse"], [2, "Critical and worse"], [3, "Error and worse"]]
+    .map(([v, l]) => h("option", { value: v, selected: a.syslog_level === v }, l)));
+  // One row per recipient: the address and a tick for each kind of alert they get.
+  const kinds = Object.entries(a.kinds);
+  const rows = h("tbody");
+  const recipientsTable = h("div", { class: "table-wrap" }, h("table", { class: "recipients" },
+    h("thead", {}, h("tr", {}, h("th", {}, "Email address"), ...kinds.map(([, label]) => h("th", {}, label)), h("th", {}))), rows));
+  const addRecipient = (r = { address: "", kinds: ["backups", "upgrades", "licence", "worker"] }) => {
+    const tr = h("tr", {},
+      h("td", {}, h("input", { type: "email", value: r.address, placeholder: "noc@corp.local", "aria-label": "Email address" })),
+      ...kinds.map(([k, label]) => h("td", {}, h("input", { type: "checkbox", "data-kind": k, checked: r.kinds.includes(k), "aria-label": label }))),
+      h("td", {}, h("button", { type: "button", class: "small ghost", title: "Remove", onclick: () => tr.remove() }, "✕")));
+    rows.append(tr);
+  };
+  a.recipients.forEach(addRecipient);
+  if (!a.recipients.length) addRecipient();
   const box = h("div", { class: "panel" });
   box.replaceChildren(
     h("h2", {}, "Email alerts"),
@@ -2169,11 +2222,19 @@ async function alertsPanel() {
     h("label", {}, "Password", f.smtp_password),
     a.has_password ? h("label", { class: "check" }, f.clear_password, " Remove the saved password") : "",
     text("mail_from", "From address", { placeholder: "e.g. netops@corp.local" }),
-    text("mail_to", "Send to (comma separated)", { placeholder: "e.g. noc@corp.local, oncall@corp.local" }),
-    text("backup_hours", "Backups: alert when failing for more than (hours, 0 = never)", { type: "number", min: 0, max: 720 }),
-    check("upgrades", "Upgrades: when a job completes, fails, rolls back or needs attention"),
-    check("licence", "Licence: 30 and 7 days before it ends, and when it has ended"),
-    check("worker", "Upgrade worker: stopped for more than 10 minutes"),
+    h("h3", {}, "What is sent"),
+    h("ul", { class: "muted" },
+      h("li", {}, "Backups: a device's backup has been failing for longer than the hours below."),
+      h("li", {}, "Upgrades: a job completes, fails, rolls back or needs attention."),
+      h("li", {}, "Licence: 30 and 7 days before it ends, and when it has ended."),
+      h("li", {}, "Upgrade worker: stopped for more than 10 minutes."),
+      h("li", {}, "Syslog: device messages at the level below or worse, gathered into one email.")),
+    text("backup_hours", "Backups: alert when failing for more than (hours)", { type: "number", min: 1, max: 720 }),
+    h("label", {}, "Syslog: messages at", f.syslog_level),
+    text("syslog_minutes", "Syslog: at most one email every (minutes)", { type: "number", min: 1, max: 60 }),
+    h("h3", {}, "Who gets what"),
+    recipientsTable,
+    h("div", { class: "actions" }, h("button", { type: "button", class: "small", onclick: () => addRecipient() }, "+ Add recipient")),
     a.last_error ? h("p", { class: "error" }, `Last error: ${a.last_error}`) : "",
     err, result,
     h("div", { class: "actions" },
@@ -2181,8 +2242,10 @@ async function alertsPanel() {
         err.hidden = true;
         const body = { enabled: f.enabled.checked, smtp_host: f.smtp_host.value.trim(), smtp_port: Number(f.smtp_port.value),
           smtp_security: f.smtp_security.value, smtp_user: f.smtp_user.value.trim(), mail_from: f.mail_from.value.trim(),
-          mail_to: f.mail_to.value, backup_hours: Number(f.backup_hours.value), upgrades: f.upgrades.checked,
-          licence: f.licence.checked, worker: f.worker.checked };
+          backup_hours: Number(f.backup_hours.value), syslog_level: Number(f.syslog_level.value),
+          syslog_minutes: Number(f.syslog_minutes.value),
+          recipients: $$("tr", rows).map((tr) => ({ address: $("input[type=email]", tr).value.trim(),
+            kinds: $$("input[data-kind]", tr).filter((c) => c.checked).map((c) => c.dataset.kind) })).filter((r) => r.address) };
         if (f.smtp_password.value) body.smtp_password = f.smtp_password.value;
         else if (f.clear_password.checked) body.smtp_password = "";
         try { await api("/api/alerts", { method: "PUT", body }); toast("Email alerts saved"); loadSettings(); } catch (e) { showError(err, e); }
@@ -2218,3 +2281,236 @@ async function loadSettings() {
 api("/api/setup/status")
   .then((s) => (s.needed ? showSetup() : api("/api/auth/me").then(showApp).catch(showLogin)))
   .catch(showLogin);
+
+// ---------- syslog ----------
+
+const SEV_NAMES = ["Emergency", "Alert", "Critical", "Error", "Warning", "Notice", "Informational", "Debug"];
+const sl = { sev: null, next: null, timer: null, devices: [], howto: null, counts: [0, 0, 0, 0, 0, 0, 0, 0] };
+
+/** The filters as query parameters (severities only when asked: the counts show them all). */
+function slParams(withSev = true) {
+  const p = new URLSearchParams();
+  const range = $("#sl-range").value;
+  if (range === "custom") {
+    if ($("#sl-from").value) p.set("since", new Date($("#sl-from").value).toISOString());
+    if ($("#sl-to").value) p.set("until", new Date($("#sl-to").value).toISOString());
+  } else {
+    p.set("since", new Date(Date.now() - Number(range) * 1000).toISOString());
+  }
+  if ($("#sl-device").value) p.set("device", $("#sl-device").value);
+  if ($("#sl-search").value.trim()) p.set("q", $("#sl-search").value.trim());
+  if (withSev && sl.sev) p.set("severities", [...sl.sev].join(","));
+  return p;
+}
+
+async function loadSyslog() {
+  const chosen = $("#sl-device").value;
+  sl.devices = await api("/api/devices").catch(() => sl.devices);
+  {
+    $("#sl-device").replaceChildren(h("option", { value: "" }, "All devices"),
+      h("option", { value: "unknown" }, "Senders not in the inventory"),
+      ...sl.devices.map((d) => h("option", { value: d.id }, d.name)));
+    $("#sl-device").value = chosen;
+  }
+  if (sl.pick !== undefined) {  // from a device's Logs button
+    $("#sl-device").value = sl.pick;
+    delete sl.pick;
+  }
+  await Promise.all([slStatus(), slSearch()]);
+}
+
+async function slStatus() {
+  const s = await api("/api/syslog/status").catch(() => null);
+  if (!s) return;
+  const used = (s.bytes / 2 ** 30).toFixed(s.bytes < 2 ** 30 ? 2 : 1);
+  const r = s.receiver;
+  const parts = [s.running ? "Receiving" : "The syslog receiver isn't running (netops-syslog service)",
+    r && r.last_message ? `last message ${fmtAgo(new Date(r.last_message * 1000).toISOString())}` : null,
+    r && r.tls_port ? (r.tls_error ? `TLS NOT LISTENING: ${r.tls_error}` : `TLS on port ${r.tls_port}`) : null,
+    `${s.days} day(s) kept, ${used} GB of ${s.max_bytes / 2 ** 30} GB, up to ${s.keep_days} days`,
+    r && r.stopped_reason ? `NOT STORING: ${r.stopped_reason}` : null,
+    r && r.dropped_rate ? `${r.dropped_rate} dropped (too many from one sender)` : null];
+  $("#sl-status").textContent = parts.filter(Boolean).join(" · ");
+  $("#sl-status").classList.toggle("bad-text", !s.running || !!(r && (r.stopped_reason || r.tls_error)));
+}
+
+async function slSearch() {
+  const p = slParams();
+  $("#sl-export").href = `/api/syslog/export.log?${p}`;
+  try {
+    const [page, sum] = await Promise.all([api(`/api/syslog/messages?${p}`),
+      api(`/api/syslog/summary?${slParams(false)}&buckets=80`)]);
+    sl.next = page.next;
+    $("#sl-table tbody").replaceChildren(...page.rows.map(slRow));
+    $("#sl-empty").hidden = page.rows.length > 0;
+    $("#sl-empty").textContent = "No messages for these filters. Widen the period, or use Help to set up the devices.";
+    $("#sl-more").hidden = !sl.next;
+    sl.counts = sum.severity;
+    slSevChips();
+    slTimeline(sum);
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+async function slMore() {
+  if (!sl.next) return;
+  const p = slParams();
+  p.set("before", sl.next);
+  const page = await api(`/api/syslog/messages?${p}`).catch((e) => toast(e.message));
+  if (!page) return;
+  sl.next = page.next;
+  $("#sl-table tbody").append(...page.rows.map(slRow));
+  $("#sl-more").hidden = !sl.next;
+}
+
+function slRow(r) {
+  const when = new Date(r.time);
+  const device = r.device
+    ? h("span", { class: "link", title: `Only ${r.device}`, onclick: () => slPick(String(r.device_id)) }, r.device)
+    : h("span", { class: "link", title: "Only senders not in the inventory", onclick: () => slPick("unknown") }, r.src);
+  return h("tr", {},
+    h("td", { class: "when", title: when.toISOString() },
+      when.toLocaleString(undefined, { dateStyle: "short", timeStyle: "medium" })),
+    h("td", {}, device, r.device ? h("small", { class: "muted" }, ` ${r.src}`) : null),
+    h("td", {}, h("span", { class: `badge s${r.sev}` }, SEV_NAMES[r.sev] || r.sev)),
+    h("td", {}, r.tag || "", h("small", { class: "muted" }, ` ${r.facility}`)),
+    h("td", { class: "msg", title: r.text }, r.message));
+}
+
+function slPick(device) {
+  $("#sl-device").value = device;
+  slSearch();
+}
+
+function slSevChips() {
+  $("#sl-sev").replaceChildren(...SEV_NAMES.map((name, i) => h("button", {
+    class: `sev s${i}${sl.sev && !sl.sev.has(i) ? " off" : ""}`,
+    title: sl.sev && !sl.sev.has(i) ? `Show ${name}` : `Hide ${name}`,
+    onclick: () => {
+      const all = new Set(sl.sev || [0, 1, 2, 3, 4, 5, 6, 7]);
+      all.has(i) ? all.delete(i) : all.add(i);
+      sl.sev = all.size === 8 ? null : all;
+      slSearch();
+    },
+  }, `${name} ${sl.counts[i]}`)));
+}
+
+function slTimeline(sum) {
+  // Only the severities chosen above (the counts on the buttons show them all).
+  const shown = sum.timeline.map((b) => b.map((n, s) => (!sl.sev || sl.sev.has(s) ? n : 0)));
+  sum = { ...sum, timeline: shown };
+  const totals = sum.timeline.map((b) => b.reduce((a, n) => a + n, 0));
+  const max = Math.max(1, ...totals);
+  const start = new Date(sum.since).getTime();
+  const groups = [["bad", [0, 1, 2, 3]], ["warn", [4]], ["note", [5]], ["info", [6, 7]]];
+  $("#sl-timeline").replaceChildren(...sum.timeline.map((b, i) => {
+    const from = new Date(start + i * sum.bucket_seconds * 1000);
+    const to = new Date(from.getTime() + sum.bucket_seconds * 1000);
+    const bar = h("div", {
+      class: "bar",
+      title: `${from.toLocaleString()} – ${to.toLocaleTimeString()}: ${totals[i]} message(s)` +
+        (b[0] + b[1] + b[2] + b[3] ? `, ${b[0] + b[1] + b[2] + b[3]} error(s) or worse` : "") +
+        (b[4] ? `, ${b[4]} warning(s)` : "") + "\nClick to look at this period",
+      onclick: () => slZoom(from, to),
+    }, ...groups.map(([cls, sevs]) => {
+      const n = sevs.reduce((a, s) => a + b[s], 0);
+      if (!n) return null;
+      const seg = h("div", { class: `seg ${cls}` });
+      seg.style.height = `${(n / max) * 100}%`;
+      return seg;
+    }));
+    return bar;
+  }));
+}
+
+function toLocalInput(d) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function slZoom(from, to) {
+  $("#sl-range").value = "custom";
+  $("#sl-custom").hidden = false;
+  $("#sl-from").value = toLocalInput(from);
+  $("#sl-to").value = toLocalInput(new Date(to.getTime() + 60000));
+  $("#sl-live").checked = false;
+  slLive();
+  slSearch();
+}
+
+function slLive() {
+  clearInterval(sl.timer);
+  if ($("#sl-live").checked && $("#sl-range").value !== "custom") {
+    sl.timer = setInterval(() => {
+      if (state.view === "syslog" && !document.hidden) { slSearch(); slStatus(); }
+    }, 5000);
+  }
+}
+
+$("#sl-range").addEventListener("change", () => {
+  const custom = $("#sl-range").value === "custom";
+  $("#sl-custom").hidden = !custom;
+  if (custom && !$("#sl-from").value) {
+    $("#sl-from").value = toLocalInput(new Date(Date.now() - 86400000));
+    $("#sl-to").value = toLocalInput(new Date(Date.now() + 60000));
+  }
+  if (custom) $("#sl-live").checked = false;
+  slLive();
+  slSearch();
+});
+["#sl-from", "#sl-to", "#sl-device"].forEach((s) => $(s).addEventListener("change", slSearch));
+let slTyping;
+$("#sl-search").addEventListener("input", () => { clearTimeout(slTyping); slTyping = setTimeout(slSearch, 400); });
+$("#sl-live").addEventListener("change", slLive);
+$("#sl-more").addEventListener("click", slMore);
+$$(".sev-filter [data-sev]").forEach((b) => b.addEventListener("click", () => {
+  sl.sev = b.dataset.sev ? new Set(b.dataset.sev.split(",").map(Number)) : null;
+  slSearch();
+}));
+
+// Help: suggested device configs, with this server's address filled in.
+async function slHelp() {
+  if (!sl.howto) sl.howto = await api("/api/syslog/howto").catch((e) => toast(e.message));
+  if (!sl.howto) return;
+  const hw = sl.howto;
+  const sel = $("#sl-help-platform");
+  if (!sel.options.length) {
+    sel.replaceChildren(...hw.platforms.map((p, i) => h("option", { value: i }, p.title)));
+    $("#sl-help-server").value = hw.server;
+  }
+  slHelpShow();
+  $("#sl-help-dialog").showModal();
+}
+
+function slHelpShow() {
+  const hw = sl.howto;
+  const p = hw.platforms[Number($("#sl-help-platform").value) || 0];
+  const server = $("#sl-help-server").value.trim() || "<server address>";
+  const tls = $("#sl-help-mode").value === "tls";
+  const general = tls ? [...hw.tls_general, ...hw.general.slice(0, 2)] : hw.general;
+  if (tls && !hw.tls_port) general.unshift("Syslog over TLS is OFF on this server: an admin switches it on first (docs/syslog.md).");
+  $("#sl-help-general").replaceChildren(...general.map((g) => h("li", {}, g)));
+  if (tls && !p.tls) {
+    $("#sl-help-text").textContent = `${p.title} can't send syslog over TLS (or not on every release). ` +
+      "Use plain syslog over the management network, or check the vendor's documentation for your release.";
+    $("#sl-help-notes").textContent = "";
+    return;
+  }
+  $("#sl-help-text").textContent = (tls ? p.tls : p.text).replaceAll("{server}", server);
+  $("#sl-help-notes").textContent = (p.kind === "gui" ? "In the device's web page. " : "") + (tls ? "" : p.notes || "");
+}
+
+$("#sl-help").addEventListener("click", slHelp);
+$("#sl-help-close").addEventListener("click", () => $("#sl-help-dialog").close());
+$("#sl-help-platform").addEventListener("change", slHelpShow);
+$("#sl-help-server").addEventListener("input", slHelpShow);
+$("#sl-help-mode").addEventListener("change", slHelpShow);
+$("#sl-help-copy").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText($("#sl-help-text").textContent);
+    toast("Copied");
+  } catch {
+    toast("Select the text and copy it (the browser blocked copying)");
+  }
+});

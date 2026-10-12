@@ -43,6 +43,7 @@ Each user has a level in each area. Each level includes the ones before it.
 | Firmware | none · **view**: versions, standards, image library · **manage**: check versions, upload images, set standards and device upgrade settings |
 | Upgrade jobs | none · **view**: jobs and reports · **dry run**: plan and run dry-run jobs · **live**: plan and run live upgrades |
 | Circuits | none · **view**: the list and exports · **manage**: upload the list and scan the network |
+| Syslog | none · **view**: search and download the devices' log messages (users added before syslog existed get **view**) |
 
 **Administrator** (a tick box) means the top level everywhere, plus the Users and
 Activity pages.
@@ -61,11 +62,11 @@ split keep *manage*: give *addresses* to those who add devices.
 
 **Presets** fill in the levels; adjust them after:
 
-| Preset | Devices | Backups | Firmware | Upgrades | Circuits |
-|---|---|---|---|---|---|
-| Viewer | view | view | view | view | view |
-| Backup operator | view | run | view | view | view |
-| Upgrader | view | configs | view | live | view |
+| Preset | Devices | Backups | Firmware | Upgrades | Circuits | Syslog |
+|---|---|---|---|---|---|---|
+| Viewer | view | view | view | view | view | view |
+| Backup operator | view | run | view | view | view | view |
+| Upgrader | view | configs | view | live | view | view |
 | Administrator | everything, plus users and activity | | | | |
 
 A **live** upgrade still needs everything it needed before: the platform in

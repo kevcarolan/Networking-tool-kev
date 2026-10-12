@@ -38,8 +38,9 @@
       <span id="site-name" class="site-name muted" hidden></span>
       <nav id="nav">
         <button data-view="backups" class="active" data-perm="backups:view">Config backups</button>
-        <button data-view="firmware" data-perm="firmware:view|upgrades:view">Firmware</button>
-        <button data-view="circuits" data-perm="circuits:view">Circuits</button>
+        <button data-view="firmware" data-perm="firmware:view|upgrades:view" data-module="firmware">Firmware</button>
+        <button data-view="circuits" data-perm="circuits:view" data-module="circuits">Circuits</button>
+        <button data-view="syslog" data-perm="syslog:view" data-module="syslog">Syslog</button>
         <button data-view="credentials" data-perm="inventory:credentials">Credentials</button>
         <button data-view="users" data-admin>Users</button>
         <button data-view="audit" data-admin>Activity</button>
@@ -56,6 +57,7 @@
     <main>
       <!-- Config backups -->
       <section id="view-backups" class="view">
+        <p id="bk-unlicensed" class="licence-banner" hidden>Config backups aren't in your licence: the devices are listed here for the other tools, but nothing is backed up.</p>
         <div id="summary" class="tiles"></div>
         <div class="toolbar">
           <input id="search" type="search" placeholder="Search name, address, site…">
@@ -88,7 +90,7 @@
           <button data-tab="versions" class="active" data-perm="firmware:view">Versions</button>
           <button data-tab="standards" data-perm="firmware:view">Standards</button>
           <button data-tab="images" data-perm="firmware:view">Image library</button>
-          <button data-tab="jobs" data-perm="upgrades:view">Upgrade jobs</button>
+          <button data-tab="jobs" data-perm="upgrades:view" data-module="upgrades">Upgrade jobs</button>
         </div>
 
         <div id="fw-versions" class="fw-pane">
@@ -214,6 +216,58 @@
           </table>
           <p id="ct-empty" class="empty" hidden></p>
         </div>
+      </section>
+
+      <!-- A tool the licence doesn't unlock -->
+      <section id="view-locked" class="view" hidden>
+        <div class="card locked-card">
+          <h2 id="locked-title"></h2>
+          <p id="locked-text"></p>
+          <p id="locked-have" class="muted"></p>
+        </div>
+      </section>
+
+      <!-- Syslog -->
+      <section id="view-syslog" class="view" hidden>
+        <p id="sl-status" class="muted"></p>
+        <div class="toolbar">
+          <select id="sl-range" aria-label="Period">
+            <option value="900">Last 15 minutes</option>
+            <option value="3600">Last hour</option>
+            <option value="21600">Last 6 hours</option>
+            <option value="86400" selected>Last 24 hours</option>
+            <option value="604800">Last 7 days</option>
+            <option value="2592000">Last 30 days</option>
+            <option value="custom">Choose the period…</option>
+          </select>
+          <span id="sl-custom" class="actions" hidden>
+            <input id="sl-from" type="datetime-local" aria-label="From"> to
+            <input id="sl-to" type="datetime-local" aria-label="To">
+          </span>
+          <select id="sl-device" aria-label="Device"><option value="">All devices</option></select>
+          <input id="sl-search" type="search" placeholder="Search text or code, e.g. %LINK or Gi1/0/5">
+          <label class="check" title="Show new messages every 5 seconds"><input id="sl-live" type="checkbox"> Live</label>
+          <span class="spacer"></span>
+          <a id="sl-export" class="button" href="/api/syslog/export.log" download>Download .log</a>
+          <button id="sl-help">Help: set up devices</button>
+        </div>
+        <div class="sev-filter">
+          <div id="sl-sev" class="chips"></div>
+          <span class="actions">
+            <button class="small" data-sev="0,1,2,3">Errors and worse</button>
+            <button class="small" data-sev="0,1,2,3,4">Warnings and worse</button>
+            <button class="small" data-sev="">All</button>
+          </span>
+        </div>
+        <div id="sl-timeline" class="timeline" aria-label="Messages over time"></div>
+        <div class="table-wrap">
+          <table id="sl-table">
+            <thead><tr><th>Time</th><th>Device</th><th>Severity</th><th>Code / program</th><th>Message</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <p id="sl-empty" class="empty" hidden></p>
+        </div>
+        <div class="actions"><button id="sl-more" hidden>Load older messages</button></div>
       </section>
 
       <!-- Credentials -->
@@ -383,16 +437,37 @@
   </dialog>
 
   <!-- Device detail -->
+  <dialog id="sl-help-dialog" class="wide">
+    <div class="detail-head">
+      <h2>Send syslog to this server</h2>
+      <button id="sl-help-close" class="ghost">Close</button>
+    </div>
+    <div class="form">
+      <ul id="sl-help-general" class="muted"></ul>
+      <div class="grid2">
+        <label>Platform <select id="sl-help-platform"></select></label>
+        <label>Address the devices send to <input id="sl-help-server" placeholder="10.1.1.50"></label>
+        <label>Send as <select id="sl-help-mode">
+          <option value="plain">Plain syslog (UDP 514)</option>
+          <option value="tls">Encrypted: syslog over TLS (TCP 6514)</option>
+        </select></label>
+      </div>
+      <pre id="sl-help-text" class="config"></pre>
+      <p id="sl-help-notes" class="muted"></p>
+      <div class="dialog-actions"><button id="sl-help-copy" class="primary">Copy</button></div>
+    </div>
+  </dialog>
+
   <dialog id="detail-dialog" class="wide">
     <div class="detail-head">
       <h2 id="detail-title"></h2>
       <button id="detail-close" class="ghost">Close</button>
     </div>
     <div class="tabs" id="detail-tabs">
-      <button data-tab="runs" class="active">Backup history</button>
-      <button data-tab="versions" data-perm="backups:configs">Config versions</button>
-      <button data-tab="circuits" data-perm="circuits:view">Circuits</button>
-      <button data-tab="upgrades" data-perm="upgrades:view">Upgrade history</button>
+      <button data-tab="runs" class="active" data-module="backups">Backup history</button>
+      <button data-tab="versions" data-perm="backups:configs" data-module="backups">Config versions</button>
+      <button data-tab="circuits" data-perm="circuits:view" data-module="circuits">Circuits</button>
+      <button data-tab="upgrades" data-perm="upgrades:view" data-module="upgrades">Upgrade history</button>
     </div>
     <div id="detail-runs" class="detail-pane"></div>
     <div id="detail-versions" class="detail-pane" hidden></div>

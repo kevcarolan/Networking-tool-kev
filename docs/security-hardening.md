@@ -171,7 +171,7 @@ be able to use this server to reach anything except the devices it manages.
 
 ```bash
 sudo cp /opt/netops/current/deploy/hardening/nftables.conf /etc/nftables.conf
-sudo nano /etc/nftables.conf        # set ADMIN_NETS, GUI_NETS, DISPLAY_NETS, DEVICE_NETS, FDM_HOSTS (FTD, FortiGate, PAN-OS), DC/DNS/NTP/SYSLOG/SMTP hosts
+sudo nano /etc/nftables.conf        # set ADMIN_NETS, GUI_NETS, DISPLAY_NETS, DEVICE_NETS, SYSLOG_SOURCES, FDM_HOSTS (FTD, FortiGate, PAN-OS), DC/DNS/NTP/SYSLOG/SMTP hosts
 sudo nft -c -f /etc/nftables.conf   # syntax check only
 ```
 
@@ -238,6 +238,18 @@ What the installer set up, for your security review:
   is always checked against the server's trusted CAs. To trust an internal CA, add it with
   `update-ca-certificates`. The SMTP password is encrypted with the credential key and never
   shown again. Alerts hold device names, sites and versions, never configs or credentials.
+* **Syslog over TLS (TCP 6514, off by default):** encrypted syslog, TLS 1.2 or newer, with
+  the web server's certificate passed in by systemd (`LoadCredential`), so the key stays
+  root-only. You can require a certificate from every device
+  (`NETOPS_SYSLOG_TLS_CLIENT_CA`). Use it wherever syslog crosses a network you don't control.
+* **Syslog receiver (UDP and TCP 514):** its own service, `netops-syslog`, as the `netops`
+  account with the same sandbox and one extra right (to listen below port 1024). Only
+  `SYSLOG_SOURCES` may send. It reads nothing from the network but log lines, which are kept as
+  text and shown as text. One sender is limited to 2000 messages a second, lines are cut at
+  8 KB, and storing stops before the disk fills. A sender is identified by its address (UDP
+  addresses can be faked, so treat syslog as a diagnostic aid, not evidence). The messages
+  can hold user names and addresses: the **Syslog** permission controls who sees them,
+  and downloads are in the activity report ([syslog.md](syslog.md)).
 * **Licence:** checked on the server against a public key built into the code. Nothing is
   sent anywhere, and no outbound access is needed ([licensing.md](licensing.md)).
 * **Certificates:** the app can't write to `/etc/netops/tls` or reload nginx. A certificate

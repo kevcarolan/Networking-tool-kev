@@ -105,10 +105,26 @@ class Settings(BaseSettings):
 
     # Circuit list tool
     circuits_max_upload_mb: int = 25
-    # When to read every device's MAC and ARP tables (server local time), e.g. "sun 02:00"
+    # When to read every device's MAC and ARP tables (server local time), e.g. "daily 03:00"
     # or "daily 02:00". Empty = no scheduled scan (upgrade jobs still read their device).
-    circuit_scan_schedule: str = "sun 02:00"
+    circuit_scan_schedule: str = "daily 03:00"  # every night, when the network is quiet
     circuit_scan_workers: int = 5
+
+    # Syslog (the receiver is its own service, netops-syslog; app/tools/syslog/receiver.py)
+    syslog_udp_port: int = 514  # 0 = don't listen on UDP
+    syslog_tcp_port: int = 514  # 0 = don't listen on TCP
+    syslog_bind: str = "0.0.0.0"  # "::" for IPv6 and IPv4
+    # Syslog over TLS (RFC 5425), usually 6514; 0 = off. The certificate is the web
+    # server's (handed to the service by systemd, LoadCredential) unless these name others.
+    syslog_tls_port: int = 0
+    syslog_tls_cert: str = ""
+    syslog_tls_key: str = ""
+    syslog_tls_client_ca: str = ""  # set: every device must show a certificate from this CA
+    syslog_keep_days: int = 30  # Settings page
+    syslog_max_gb: int = 20  # Settings page; the oldest days go first
+    syslog_inventory_only: bool = False  # Settings page: drop senders not in the inventory
+    syslog_keep_free_mb: int = 2048  # stop storing while this much disk is still free
+    syslog_rate_per_source: int = 2000  # messages a second from one sender; more are dropped
 
 
     def record_env(self) -> frozenset[str]:
@@ -128,6 +144,10 @@ class Settings(BaseSettings):
     @property
     def firmware_dir(self) -> Path:
         return self.data_dir / "firmware"
+
+    @property
+    def syslog_dir(self) -> Path:
+        return self.data_dir / "syslog"
 
     def prepare(self) -> "Settings":
         """Create the data directory and fill in generated secrets."""

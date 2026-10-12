@@ -50,6 +50,10 @@ Wrong codes are slowed down and written to the activity log. The steps:
 ### Licence
 
 * **State:** trial (with the days left), licensed (with the customer and end date), or ended.
+* **Tools unlocked:** the tools the licence covers (Config backups, Firmware, Upgrade jobs,
+  Circuits, Syslog). Others are greyed out with a padlock in the top bar, and their
+  scheduled work doesn't run. To add one, ask your supplier for a new licence that
+  includes it.
 * **Devices:** how many are in the inventory, and how many the licence covers.
 * **Installation ID:** send it when you ask for a licence or a renewal.
 * **Adding a licence:** paste the licence text and press **Add licence**. A new licence
@@ -71,7 +75,7 @@ Admins see a notice from 30 days before the licence ends.
 | Retry a failed backup or version check after | How soon a failed device is tried again |
 | Keep backup and check history for | Run history only; every config version is always kept |
 | Read each device's software version every | The Firmware version report |
-| Circuit location scan | When every switch's MAC and ARP tables are read: `sun 02:00`, `daily 02:00`, or empty for none |
+| Circuit location scan | When every switch's MAC and ARP tables are read and compared with the circuit list: `daily 03:00` (every night, the default), `sun 02:00` (weekly), or empty for none |
 | Viewers may read device configs | Configs contain password hashes and keys, so the default is no |
 | Upgrade pre-check limits | When CPU or memory use gives a warning in an upgrade pre-check (a warning never blocks) |
 | Fresh backup before an upgrade | An upgrade takes a new config backup first if the last one is older than this |
@@ -82,8 +86,9 @@ over this page. To manage it here instead, comment that line out with `#` in
 
 ### Email alerts
 
-Sent through your own mail server to the addresses you choose. Each event is sent once,
-and the server checks every minute.
+Sent through your own mail server. Each recipient chooses which kinds of alert they get
+(**Who gets what**: one row per address, a tick per kind). Each event is sent once, and the
+server checks every minute.
 
 | Alert | When |
 |---|---|
@@ -91,12 +96,15 @@ and the server checks every minute.
 | Upgrades | An upgrade job (live or dry run) has completed, failed, rolled back, or needs attention |
 | Licence | 30 and 7 days before the licence ends, and when it (or the trial) has ended |
 | Upgrade worker | The upgrade worker has been stopped for more than 10 minutes |
+| Syslog | Devices sent messages at the level you choose (Critical and worse by default) or worse. They are gathered into at most one email every few minutes (5 by default), listing up to 50, so a storm of messages is one email |
 
 1. Fill in:
    * the mail server, port and security (STARTTLS on 587, TLS on 465, or none on port 25
      for an internal relay that doesn't offer encryption);
    * a username and password if the server needs them;
-   * the From address and the recipients.
+   * the From address;
+   * under **Who gets what**, each recipient's address and the alerts they get
+     (**+ Add recipient** for more, ✕ to remove one).
 2. Tick **Send email alerts**, then press **Save**.
 3. Press **Send test email**: it says straight away if the mail server refused it.
 
@@ -156,7 +164,7 @@ purpose:
 * the break-glass admin;
 * ports, worker counts and timeouts.
 
-Edit `/etc/netops/netops.env`, then run `sudo systemctl restart netops netops-worker`.
+Edit `/etc/netops/netops.env`, then run `sudo systemctl restart netops netops-worker netops-syslog`.
 
 ## 3. Users and permissions
 
@@ -164,11 +172,11 @@ Edit `/etc/netops/netops.env`, then run `sudo systemctl restart netops netops-wo
 anyone without AD; at least 12 characters). Give each a level per area, or start from a
 preset:
 
-| Preset | Devices | Backups | Firmware | Upgrades | Circuits |
-|---|---|---|---|---|---|
-| Viewer | view | view | view | view | view |
-| Backup operator | view | run | view | view | view |
-| Upgrader | view | configs | view | live | view |
+| Preset | Devices | Backups | Firmware | Upgrades | Circuits | Syslog |
+|---|---|---|---|---|---|---|
+| Viewer | view | view | view | view | view | view |
+| Backup operator | view | run | view | view | view | view |
+| Upgrader | view | configs | view | live | view | view |
 | Administrator | everything, plus Users, Activity and Settings | | | | |
 
 * AD users who aren't on the Users page get access from the AD groups.
@@ -238,6 +246,28 @@ The full procedure is in [upgrades.md](../upgrades.md).
   ([security-hardening.md](../security-hardening.md) §9).
 * **Daily look:** the **Config backups** tiles show failing and never-backed-up devices,
   with the reason (wrong password, unreachable, timeout…).
+* **The devices' syslog:** the server collects it on the **Syslog** page (next section).
+
+## 6a. Syslog from the devices
+
+The server receives the devices' syslog on UDP and TCP 514 (the `netops-syslog` service)
+and keeps it in one file per day under `/var/lib/netops/syslog/`.
+
+1. **Firewall:** in `/etc/nftables.conf`, set `SYSLOG_SOURCES` to the devices' management
+   networks, then `sudo nft -f /etc/nftables.conf`.
+2. **Devices:** on the Syslog page, click **Help: set up devices**. Choose the platform, check
+   the server address, and copy the suggested config to the device. Send from the
+   management address that is in the inventory, and use NTP.
+3. **How long:** on **Settings › Site and defaults**, set *Keep syslog messages for (days)*
+   (30 by default) and *Keep at most this much syslog (GB)* (20). The oldest days go first.
+   *Keep messages only from inventory devices* drops everything else.
+4. **Who sees it:** the **Syslog** permission (none or view) on the Users page.
+5. **Encrypted (optional):** for syslog that crosses networks you don't control, switch on
+   syslog over TLS: `NETOPS_SYSLOG_TLS_PORT=6514` in `netops.env`, then
+   `sudo systemctl restart netops-syslog`. It uses the server's certificate. The help has
+   *Send as: Encrypted* examples for the devices that support it.
+
+Sizing, the limits that protect the disk, and troubleshooting: [syslog.md](../syslog.md).
 
 ## 7. Backing up the server
 
@@ -276,6 +306,8 @@ Settings, the key and the licence are kept. See [install-airgap.md](../install-a
 | "The device's SSH key has changed" | The device was replaced or reinstalled: an admin clicks **Forget** next to the key in its edit dialog. If it wasn't, investigate before forgetting it |
 | "Your session has expired" | Sign-ins last at most `NETOPS_SESSION_MAX_AGE_HOURS` (12 by default), even while in use: sign in again |
 | "The upgrade worker isn't running" | `systemctl status netops-worker`; `journalctl -u netops-worker -n 50` |
+| "The syslog receiver isn't running" | `systemctl status netops-syslog`; `journalctl -u netops-syslog -n 50` |
+| A device's syslog doesn't arrive, or shows as "not in the inventory" | `SYSLOG_SOURCES` in the firewall; the device's logging source interface must be the inventory address ([syslog.md](../syslog.md)) |
 | Can't add devices or start upgrades | The trial or licence has ended: Settings › Licence |
 | No email alerts arrive | Settings › Email alerts › **Send test email** shows the mail server's answer. Check `SMTP_HOSTS` in the firewall and the relay's certificate |
 | A wall display shows "No data since …" | The screen can't reach port 8443 (`DISPLAY_NETS` in the firewall), or its link was removed: add it again on Settings › Wall displays |

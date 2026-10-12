@@ -22,9 +22,10 @@ def signing_key(monkeypatch):
     monkeypatch.setattr(licence, "DEVELOPMENT", False)
 
 
-def _lic(customer="Acme Ltd", days=365, devices=100, install_id="", kind="customer", key=KEY):
+def _lic(customer="Acme Ltd", days=365, devices=100, install_id="", kind="customer", key=KEY,
+         modules=None):
     expires = TODAY + datetime.timedelta(days=days) if days is not None else None
-    return licence_tool.make(key, customer, expires, devices, install_id, kind)
+    return licence_tool.make(key, customer, expires, devices, install_id, kind, modules)
 
 
 def _set(**values):
@@ -193,3 +194,91 @@ def test_signing_tool(tmp_path, monkeypatch, capsys):
     assert licence_tool.main(["sign", "--key", str(key_file), "--customer", "Acme"]) == 2
     assert licence_tool.main(["sign", "--key", str(key_file), "--internal"]) == 0
     assert "BEGIN LICENCE" in capsys.readouterr().out
+
+
+
+# --- modules: one install, the licence unlocks tools ----------------------------------------
+
+def test_a_licence_unlocks_only_its_tools(admin, device):
+    r = admin.post("/api/licence", json={"text": _lic(modules=["backups", "syslog"])})
+    assert r.status_code == 200 and r.json()["modules"] == ["backups", "syslog"]
+    for path in ("/api/firmware/devices", "/api/firmware/jobs", "/api/circuits"):
+        r = admin.get(path)
+        assert r.status_code == 403 and "isn't in your licence" in r.json()["detail"], path
+    assert admin.get("/api/syslog/messages").status_code == 200
+    assert admin.get(f"/api/backup/devices/{device['id']}/runs").status_code == 200
+
+
+def test_without_backups_the_devices_can_still_be_managed(admin, device):
+    admin.post("/api/licence", json={"text": _lic(modules=["syslog"])})
+    assert admin.get("/api/backup/devices").status_code == 200  # the device list
+    assert admin.post("/api/devices", json={"name": "sw2", "address": "10.0.0.2",
+                                            "platform": "cisco_ios"}).status_code == 201
+    for r in (admin.post(f"/api/backup/devices/{device['id']}/run"),
+              admin.get(f"/api/backup/devices/{device['id']}/config")):
+        assert r.status_code == 403 and "Config backups isn't in your licence" in r.json()["detail"]
+
+
+def test_upgrades_bring_firmware(admin):
+    s = admin.post("/api/licence", json={"text": _lic(modules=["upgrades"])}).json()
+    assert s["modules"] == ["firmware", "upgrades"]
+    assert admin.get("/api/firmware/devices").status_code == 200
+
+
+def test_the_trial_older_licences_and_internal_ones_have_everything(admin):
+    assert admin.get("/api/licence").json()["modules"] == list(licence.MODULES)
+    from app.licence_tool import make
+
+    old = licence.parse(make(KEY, "Old", None, None))
+    old.pop("modules")  # made before modules existed
+    assert licence.licensed_modules(old) == list(licence.MODULES)
+    internal = admin.post("/api/licence", json={"text": _lic(kind="internal", days=None, devices=None,
+                                                            modules=["syslog"])}).json()
+    assert internal["modules"] == list(licence.MODULES)
+
+
+def test_scheduled_work_follows_the_licence(app, admin, device, settings):
+    from app.tools.syslog.receiver import Receiver
+    from app.tools.syslog.store import SyslogStore
+
+    admin.post("/api/licence", json={"text": _lic(modules=["firmware"])})
+    assert app.state.backup_service.tick() == 0
+    assert app.state.circuit_scan.tick() is False
+    rx = Receiver(settings, SyslogStore(settings.syslog_dir))
+    rx.housekeeping()
+    rx.accept(b"<10>not kept", "10.0.0.1")
+    assert rx.full == "Syslog isn't in the licence" and rx.counts["dropped_full"] == 1
+
+
+def test_the_signing_tool_picks_modules(tmp_path, capsys, monkeypatch):
+    from cryptography.hazmat.primitives import serialization
+
+    key_file = tmp_path / "k.pem"
+    key_file.write_bytes(KEY.private_bytes(serialization.Encoding.PEM,
+                                           serialization.PrivateFormat.PKCS8,
+                                           serialization.NoEncryption()))
+    lic = tmp_path / "a.lic"
+    args = ["sign", "--key", str(key_file), "--customer", "Acme", "--expires", "2030-01-31",
+            "--devices", "50", "--out", str(lic)]
+    assert licence_tool.main([*args, "--modules", "backups,upgrades"]) == 0
+    capsys.readouterr()
+    assert licence_tool.main(["show", str(lic)]) == 0
+    assert "modules      backups, firmware, upgrades" in capsys.readouterr().out
+    assert licence_tool.main([*args, "--modules", "backups,fax"]) == 2
+    assert licence_tool.main([*args]) == 0  # default: every module
+    assert licence.parse(lic.read_text())["modules"] == list(licence.MODULES)
+
+
+def test_alerts_follow_the_licence(app, admin):
+    from app.core.db import utcnow
+    from app.tools.firmware_upgrade.models import WorkerStatus
+    from tests.test_alerts import CONFIG, Outbox
+
+    app.state.alert_service.mailer = box = Outbox()
+    admin.post("/api/licence", json={"text": _lic(modules=["backups"])})
+    admin.put("/api/alerts", json=CONFIG)
+    with session_scope() as db:
+        db.merge(WorkerStatus(id=1, beat_at=utcnow() - datetime.timedelta(minutes=20), pid=1,
+                              host="x", started_at=utcnow() - datetime.timedelta(days=1)))
+    app.state.alert_service.tick()
+    assert not any("upgrade worker" in m["Subject"] for m in box)  # Upgrades isn't licensed

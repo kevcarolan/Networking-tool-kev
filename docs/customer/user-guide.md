@@ -16,6 +16,8 @@ A coloured line under the top bar is a notice from the server, for example that 
 licence has ended. While a licence has ended, nobody can add devices or start upgrades,
 but everything else works. Tell your admin.
 
+A tab with a padlock is a tool your licence doesn't include. Clicking it tells you so.
+
 ## Config backups
 
 The device list shows each device's backup status:
@@ -101,3 +103,23 @@ The master circuit list: every end device or service and the switch port it uses
 
 Upgrade jobs save the circuits on the device before and after, and warn about any that
 haven't come back. Details: [circuits.md](../circuits.md).
+
+## Syslog
+
+The devices' log messages, in one place: the first place to look when something goes wrong.
+
+* **Period:** the last 15 minutes to 30 days, or *Choose the period…* for exact times.
+  Click a bar in the **timeline** to look at just that slice of time.
+* **Device:** one device, or *Senders not in the inventory*. Click a device name in the
+  list to see only that device. On **Config backups**, a device's **Logs** button does the
+  same.
+* **Severity:** the buttons show how many messages there are of each, from Emergency to
+  Debug. Click one to hide or show it, or use **Errors and worse** or **Warnings and worse**.
+* **Search:** any text in the message, or its code: `%LINK`, `BGP`, `Gi1/0/14`, `%ASA-4`.
+* **Live:** shows new messages every 5 seconds.
+* **Download .log:** what you are looking at, as a plain text file (oldest first).
+* **Help: set up devices:** a suggested config for each kind of device, with the
+  server's address filled in, ready to copy.
+
+Times are shown in your computer's time zone, by when the server received the message.
+Hover over a message to see the whole line as the device sent it.

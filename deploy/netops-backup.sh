@@ -6,6 +6,7 @@
 #   - /etc/netops/credential.key: keep it in your offline key store, so a stolen
 #     backup can't be used to decrypt the device passwords
 #   - data/firmware/: images can be downloaded from the vendor again
+#   - data/syslog/: the devices' log messages (large, and kept only for a set time anyway)
 # Copy /var/backups/netops off the server with your normal backup system.
 #
 # Runs as root (to write /var/backups/netops), but the database and the config archive

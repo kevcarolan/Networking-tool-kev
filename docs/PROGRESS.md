@@ -19,6 +19,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 - [x] Per-customer settings: customer or site name (header, reports) and day-to-day defaults on the Settings page; safety gates stay in `netops.env`
 - [ ] Product name and branding (GUI title, logo, docs). The name is now one setting,
   `NETOPS_PRODUCT_NAME`; still to do: choose the name, a logo, and rename the docs
+- [x] Licence modules: the licence unlocks tools (backups, firmware, upgrades, circuits, syslog); locked tabs greyed out ([licensing.md](licensing.md))
 - [ ] Licence terms: draft agreement in [legal/EULA-draft.md](legal/EULA-draft.md); decisions listed at its end, then a solicitor's review
 - [ ] Owner: make the licence signing key and commit its public key ([licensing.md](licensing.md#one-time-make-the-signing-key))
 - [x] First-run setup screen (admin account, AD settings, certificate) instead of editing `netops.env`; AD and the certificate stay on a Settings page for admins
@@ -27,6 +28,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 - [x] Licence keys: 60-day trial, signed licences (end date, devices, optional installation), read-only for new work without one ([licensing.md](licensing.md))
 - [x] Wall display for NOC screens: overview and upgrades pages, own port (8443), per-screen links ([customer/admin-guide.md](customer/admin-guide.md#wall-displays))
 - [x] Security review of the whole product, with fixes (see the session log of 2026-10-12)
+- [x] Syslog: a central receiver (UDP/TCP 514) with a search page (device, severity, period, text, timeline), retention by days and size, suggested device configs per platform, demo messages ([syslog.md](syslog.md))
 - [ ] Later: one overview of several servers (the display feed is the starting point); several customers on one server kept as an idea
 
 ### Platform (inherited)
@@ -84,12 +86,22 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-12 | Devices and credentials gets two more levels: *addresses* (add devices, change a device's address or credential profile) and *credentials* (manage the profiles); *manage* keeps only device details | The owner: whoever sets the address decides where a device account's password goes, so it is given per user on the Users page |
 | 2026-10-12 | The network simulator and sample outputs moved from `tests/` to `app/demo/` (tests keep the old names) | One simulator for the tests and the demo, so the demo shows exactly what the tests check |
 | 2026-10-12 | Captures replace IP and MAC addresses with consistent stand-ins by default, and never include the running configuration | Captures are sent outside the customer's network for parser fixes; the tables still match up, so the readers can be tested |
+| 2026-10-12 | Syslog is kept in one SQLite file per day, written only by its own receiver service | Quick search by device, severity and time; old days go by deleting files; the web app can restart without losing messages |
+| 2026-10-12 | The syslog sender is the packet's source address, matched to the inventory; the server never changes device logging itself (configs are suggested on a Help page) | The host name in a message can be anything; device changes need an admin |
+| 2026-10-12 | Syslog files stay out of the nightly server backup | The owner: the backup is fine as it is; a standby server with copies is the plan for later |
+| 2026-10-12 | Email alerts: each recipient ticks the kinds they get (backups, upgrades, licence, worker, syslog); syslog alerts at Critical and worse by default, at most one email every 5 minutes | The owner asked for syslog alerts to be optional per recipient; a storm of messages must not become hundreds of emails |
+| 2026-10-12 | The circuit list is compared with the network every night at 03:00 by default (was Sundays 02:00) | The owner: nightly, late at night |
+| 2026-10-12 | Syslog over TLS (6514) is built in, off by default, switched on in netops.env; it reuses the web certificate through systemd LoadCredential, with optional device certificates | The owner: syslog may cross other networks; a port is a netops.env setting, and the key must stay root-only |
+| 2026-10-12 | One full install; the licence lists the tools it unlocks (backups, firmware, upgrades, circuits, syslog); one licence per customer, replaced to add a tool | The owner: unlock parts of one product rather than separate products; one licence keeps one end date and one device count |
 
 ## Open questions
 
 - Licence agreement: per installation or per site? Managed-service use? Support terms, warranty, liability cap, governing law ([legal/EULA-draft.md](legal/EULA-draft.md))
 
 - Product name?
+- Editions: which sets of modules to sell, and their names and prices (any set works without code changes)
+- Syslog next steps: a wall display tile for Critical and worse messages?
+- Later: two servers (main and standby) with copies of the data and the syslog files
 - Syslog forwarding is plain UDP (`rsyslog-forward.conf`); offer TLS forwarding for sites whose log server supports it?
 - Docker image: `--forwarded-allow-ips "*"` trusts any proxy's client address; fine behind the bundled nginx, but should it be narrowed?
 - The air-gapped bundle has a SHA-256 but no signature; sign bundles once the product is sold?
@@ -121,3 +133,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-12 | Networking-tool-kev | Security review (sign-in, setup/licence/display, device access, deployment, browser): fixed a root escalation through the certificate status file, the sign-in throttle bypass, sign-in with a trusted domain's name, root git in the backup script, the online installer trusting a user's clone, unchecked SSH host keys, sessions that never ended, formula injection in exports, failed sign-ins missing from the activity report, and smaller upload and licence gaps |
 | 2026-10-12 | Networking-tool-kev | Demo mode (`python -m app.demo`): 25 simulated devices, failing backups, circuits, live upgrades in about 40 s, wall display; sign-in now returns the site name (it only showed after a reload) |
 | 2026-10-12 | Networking-tool-kev | Lab capture tool (`netops-cli capture`); blocks anything but read-only commands, including `| redirect` and `| tee` |
+| 2026-10-12 | Networking-tool-kev | Syslog: receiver service on 514 (rate limit per sender, disk guard), daily store, Syslog page with severity buttons, timeline and download, Help with suggested configs for every platform, Logs button per device, demo history with BGP, PSU, failover, BPDU guard and brute-force incidents |
+| 2026-10-12 | Networking-tool-kev | Email alerts per recipient, syslog alerts (Critical and worse, gathered), nightly circuit scan by default |
+| 2026-10-12 | Networking-tool-kev | Syslog over TLS: third listener (6514), web certificate via systemd, optional device certificates, TLS examples in the device help, receiver restarted on a new certificate |
+| 2026-10-12 | Networking-tool-kev | Licence modules: one install, the licence unlocks Config backups, Firmware, Upgrade jobs, Circuits and Syslog; locked tabs greyed out with a padlock; scheduled work and alerts follow the licence; signing tool --modules |

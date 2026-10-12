@@ -101,6 +101,10 @@ class BackupService:
 
     def tick(self) -> int:
         """Queue every device that is due. Returns how many were queued."""
+        from app.core import licence
+
+        if not licence.has_module("backups"):
+            return 0  # not in the licence: no scheduled backups
         queued = sum(self.submit(device_id, "schedule") for device_id in self.due_device_ids())
         self._prune_history()
         return queued

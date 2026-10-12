@@ -7,6 +7,10 @@
     python -m app.licence_tool sign --key ~/licence-signing.key --customer "Acme Ltd" \\
             --expires 2027-10-31 --devices 500 [--install-id 1A2B-3C4D-5E6F-7A8B] --out acme.lic
         A customer licence. --install-id ties it to one server (shown on its Settings page).
+        --modules picks the tools it unlocks (default: all of them), e.g.
+        --modules backups,syslog   or   --modules backups,firmware,upgrades
+        (upgrades always brings firmware). Another module later: make a new licence with
+        all the modules the customer has; it replaces the old one.
 
     python -m app.licence_tool sign --key ~/licence-signing.key --internal --out internal.lic
         Your own licence for testing: no end date, any number of devices.
@@ -56,11 +60,14 @@ def _load_key(path: str) -> Ed25519PrivateKey:
 
 
 def make(key: Ed25519PrivateKey, customer: str, expires: datetime.date | None,
-         max_devices: int | None, install_id: str = "", kind: str = "customer") -> str:
+         max_devices: int | None, install_id: str = "", kind: str = "customer",
+         modules: list[str] | None = None) -> str:
     payload = {"v": 1, "id": secrets.token_hex(4).upper(), "customer": customer,
                "issued": datetime.date.today().isoformat(),
                "expires": expires.isoformat() if expires else None,
-               "max_devices": max_devices, "install_id": install_id or None, "kind": kind}
+               "max_devices": max_devices, "install_id": install_id or None, "kind": kind,
+               "modules": licence.licensed_modules({"modules": modules if modules is not None
+                                                    else list(licence.MODULES)})}
     data = licence.signed_bytes(payload)
     return licence.encode(payload, key.sign(data))
 
@@ -75,8 +82,15 @@ def _sign(args) -> int:
             print("A customer licence needs --customer, --expires and --devices "
                   "(or use --internal)", file=sys.stderr)
             return 2
+        modules = [m.strip() for m in args.modules.split(",") if m.strip()] if args.modules \
+            else list(licence.MODULES)
+        unknown = [m for m in modules if m not in licence.MODULES]
+        if unknown or not modules:
+            print(f"Unknown module(s): {', '.join(unknown) or '(none given)'}. Choose from: "
+                  f"{', '.join(licence.MODULES)}", file=sys.stderr)
+            return 2
         text = make(key, args.customer, datetime.date.fromisoformat(args.expires),
-                    args.devices, args.install_id)
+                    args.devices, args.install_id, modules=modules)
     if args.out:
         Path(args.out).write_text(text)
         print(f"Licence written to {args.out}")
@@ -93,6 +107,7 @@ def _show(args) -> int:
         return 1
     for k in ("id", "customer", "kind", "issued", "expires", "max_devices", "install_id"):
         print(f"{k:12} {payload.get(k) if payload.get(k) is not None else '-'}")
+    print(f"{'modules':12} {', '.join(licence.licensed_modules(payload))}")
     return 0
 
 
@@ -109,6 +124,8 @@ def main(argv=None) -> int:
     p.add_argument("--expires", help="last day the licence is valid, YYYY-MM-DD")
     p.add_argument("--devices", type=int, help="most devices in the inventory")
     p.add_argument("--install-id", default="", help="tie the licence to one server")
+    p.add_argument("--modules", default="",
+                   help=f"tools it unlocks, comma separated (default all): {','.join(licence.MODULES)}")
     p.add_argument("--internal", action="store_true", help="no end date, any number of devices")
     p.add_argument("--out")
     p.set_defaults(func=_sign)

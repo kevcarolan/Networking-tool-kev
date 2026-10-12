@@ -11,6 +11,11 @@ and an admin pastes on the Settings page. It is checked here against the public 
   work: nobody can add devices or plan or start upgrade jobs. Everything else keeps working:
   backups, version checks, circuit scans, viewing, and upgrade jobs already under way (they
   can always continue or roll back). Nothing is ever deleted.
+* **Modules:** one full install, and the licence says which tools it unlocks (``MODULES``:
+  backups, firmware, upgrades, circuits, syslog). A tool that isn't in the licence shows as
+  locked; its scheduled work doesn't run. Upgrades always bring Firmware (the image library).
+  The trial, licences made before modules existed, and an install without a licence have
+  every module, so nothing that ran before stops.
 * ``python -m app`` (development and the owner's own testing) is never limited.
 """
 
@@ -37,6 +42,11 @@ TRIAL_DAYS = 60
 WARN_DAYS = 30
 KEYS_FILE = Path(__file__).with_name("licence_keys.txt")
 BEGIN, END = "-----BEGIN LICENCE-----", "-----END LICENCE-----"
+
+# The tools a licence can unlock. Inventory, users, settings, alerts and the wall display are
+# always there.
+MODULES = {"backups": "Config backups", "firmware": "Firmware", "upgrades": "Upgrade jobs",
+           "circuits": "Circuits", "syslog": "Syslog"}
 
 INSTALL_ID = "install_id"
 TRIAL_STARTED = "trial_started_at"
@@ -115,6 +125,17 @@ def parse(text: str) -> dict:
     return payload
 
 
+def licensed_modules(payload: dict) -> list[str]:
+    """The modules a licence unlocks (every one for licences made before modules)."""
+    wanted = payload.get("modules")
+    if wanted is None or payload.get("kind") == "internal":
+        return list(MODULES)
+    found = {m for m in wanted if m in MODULES}
+    if "upgrades" in found:
+        found.add("firmware")  # upgrade jobs need the image library
+    return [m for m in MODULES if m in found]
+
+
 def _date(value) -> datetime.date | None:
     return datetime.date.fromisoformat(value) if value else None
 
@@ -147,7 +168,8 @@ def status(db: Session, today: datetime.date | None = None) -> dict:
     devices = _device_count(db)
     out = {"mode": "", "active": True, "message": "", "warning": "", "devices": devices,
            "max_devices": None, "ends": None, "days_left": None, "licence": None,
-           "install_id": values[INSTALL_ID], "development": DEVELOPMENT}
+           "install_id": values[INSTALL_ID], "development": DEVELOPMENT,
+           "modules": list(MODULES), "module_labels": MODULES}
 
     licence = None
     if values.get(LICENCE):
@@ -167,7 +189,7 @@ def status(db: Session, today: datetime.date | None = None) -> dict:
     if licence:
         ends = _date(licence.get("expires"))
         out.update(mode="licensed", licence=_summary(licence), max_devices=licence.get("max_devices"),
-                   ends=ends.isoformat() if ends else None)
+                   ends=ends.isoformat() if ends else None, modules=licensed_modules(licence))
         who = licence.get("customer") or "?"
         if ends is None:
             out["message"] = f"Licensed to {who}, no end date"
@@ -206,8 +228,8 @@ def status(db: Session, today: datetime.date | None = None) -> dict:
 
 
 def _summary(p: dict) -> dict:
-    return {k: p.get(k) for k in ("id", "customer", "issued", "expires", "max_devices",
-                                  "install_id", "kind")}
+    return {**{k: p.get(k) for k in ("id", "customer", "issued", "expires", "max_devices",
+                                     "install_id", "kind")}, "modules": licensed_modules(p)}
 
 
 # --- checks used by the tools -----------------------------------------------------
@@ -233,6 +255,29 @@ def room_for(db: Session, adding: int = 1) -> int | None:
         raise HTTPException(403, f"The licence covers {s['max_devices']} devices and "
                                  f"{s['devices']} are in the inventory")
     return room
+
+
+def has_module(module: str, db: Session | None = None) -> bool:
+    """Is the tool unlocked? (For scheduled work; opens its own session if needed.)"""
+    if db is None:
+        from app.core.db import session_scope
+
+        with session_scope() as own:
+            return has_module(module, own)
+    return module in status(db)["modules"]
+
+
+def not_licensed(module: str) -> HTTPException:
+    return HTTPException(403, f"{MODULES[module]} isn't in your licence. Ask your supplier to add "
+                              f"it; an admin adds the new licence on the Settings page.")
+
+
+def module(name: str):
+    """Dependency for a tool's endpoints: refused unless the licence unlocks it."""
+    def check(db: Session = Depends(get_db)) -> None:
+        if not has_module(name, db):
+            raise not_licensed(name)
+    return check
 
 
 # --- API --------------------------------------------------------------------------
@@ -269,5 +314,6 @@ def install(body: LicenceIn, db: Session = Depends(get_db),
     audit(db, user.username, "licence.install",
           f"{payload.get('id')} for {payload.get('customer')}, until "
           f"{payload.get('expires') or 'no end date'}, "
-          f"{payload.get('max_devices') or 'any number of'} devices")
+          f"{payload.get('max_devices') or 'any number of'} devices, "
+          f"modules {', '.join(licensed_modules(payload))}")
     return status(db)

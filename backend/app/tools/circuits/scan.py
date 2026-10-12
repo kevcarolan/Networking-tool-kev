@@ -106,6 +106,10 @@ class CircuitScanService:
         return None if done else trigger
 
     def tick(self) -> bool:
+        from app.core import licence
+
+        if not licence.has_module("circuits"):
+            return False  # not in the licence: no scheduled scan
         trigger = self.due_trigger()
         return bool(trigger) and self.scan(trigger) is not None
 

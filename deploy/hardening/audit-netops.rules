@@ -8,6 +8,7 @@
 -w /opt/netops/ -p wa -k netops-code
 -w /etc/systemd/system/netops.service -p wa -k netops-config
 -w /etc/systemd/system/netops-worker.service -p wa -k netops-config
+-w /etc/systemd/system/netops-syslog.service -p wa -k netops-config
 -w /etc/systemd/system/netops-backup.service -p wa -k netops-config
 -w /etc/systemd/system/netops-backup.timer -p wa -k netops-config
 -w /etc/systemd/system/netops-tls.path -p wa -k netops-config

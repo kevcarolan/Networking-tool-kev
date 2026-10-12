@@ -8,6 +8,7 @@ For the owner: how licences work, how to make them, and what customers see.
   * who it is for;
   * the last day it is valid;
   * the most devices it covers;
+  * **which tools it unlocks** (its *modules*);
   * optionally, the one server it is for (its **installation ID**).
 * The server checks the signature itself, so nothing is sent anywhere. It works the same on
   air-gapped sites. Changing any part of the text breaks the signature.
@@ -18,6 +19,36 @@ For the owner: how licences work, how to make them, and what customers see.
 | **Trial**: the first 60 days of a new install (or of an install upgraded to this version) | Everything |
 | **Licensed** | Everything, up to the licence's number of devices. Admins see a notice 30 days before the end date |
 | **Trial over, or licence ended** | Everything **except** adding devices and planning or starting upgrade jobs. Backups, version checks, circuit scans and viewing keep working. An upgrade job already under way can always continue or roll back. Nothing is deleted |
+
+### Modules: one install, the licence unlocks the tools
+
+Every server gets the full product. The licence decides which tools are unlocked:
+
+| Module | Unlocks |
+|---|---|
+| `backups` | Config backups: scheduled and manual backups, history, configs and changes |
+| `firmware` | Firmware: version report, standards, image library, version checks |
+| `upgrades` | Upgrade jobs (always brings `firmware`, which holds the images) |
+| `circuits` | Circuits: the circuit list and the nightly comparison with the network |
+| `syslog` | Syslog: the receiver, the Syslog page and syslog email alerts |
+
+Always included: the device inventory and credentials, users and the activity report,
+Settings, email alerts for whatever is unlocked, and the wall display.
+
+* A tool that isn't unlocked is greyed out with a padlock in the top bar. Clicking it
+  says it isn't in the licence and lists what is.
+* Its scheduled work doesn't run: no backups, version checks, circuit scans, or syslog
+  stored. Its pages and API are refused.
+* Without **backups**, the Config backups page still lists the devices and lets you manage
+  them, because the other tools need the inventory.
+* The **trial**, licences made before modules existed, and your own internal licence
+  unlock everything.
+* A module left out at renewal keeps its data. Nothing is deleted, and an upgrade job
+  already under way still finishes or rolls back.
+
+Editions are only names for a set of modules, for example *Essentials* = backups + syslog,
+*Professional* = + firmware and upgrades, *Complete* = everything. You can rename or
+re-bundle them at any time without changing the software.
 
 When the trial or licence has ended, everyone sees a notice at the top of the page.
 During the trial, and when a licence is ending, only admins see one.
@@ -63,6 +94,11 @@ To move to a new signing key later:
 python -m app.licence_tool sign --key ~/licence-signing.key \
     --customer "Acme Ltd" --expires 2027-10-31 --devices 500 --out acme-2027.lic
 
+# Only some tools (default: all of them)
+python -m app.licence_tool sign --key ~/licence-signing.key \
+    --customer "Acme Ltd" --expires 2027-10-31 --devices 500 \
+    --modules backups,syslog --out acme-2027.lic
+
 # Tied to one server: ask for the installation ID shown on its Settings page
 python -m app.licence_tool sign --key ~/licence-signing.key \
     --customer "Acme Ltd" --expires 2027-10-31 --devices 500 \
@@ -77,12 +113,19 @@ python -m app.licence_tool show acme-2027.lic
 
 * `--expires` is the **last day** the licence works.
 * `--devices` counts every device in the inventory.
+* `--modules`: `backups`, `firmware`, `upgrades`, `circuits`, `syslog`, comma separated.
+  Leave it out for all of them. `show` lists what a licence unlocks.
 * Send the `.lic` file, or its text, to the customer. It is not secret.
 
 ## Renewing
 
 Make a new licence with a later end date and send it. The admin pastes it on the Settings
 page, and it replaces the old one straight away.
+
+**Adding a tool** works the same way. Make a new licence listing *all* the modules the
+customer now has, not just the new one. It replaces the old licence, so there is still
+one licence with one end date and one device count. The new tool unlocks as soon as it
+is pasted in.
 
 ## Notes
 
