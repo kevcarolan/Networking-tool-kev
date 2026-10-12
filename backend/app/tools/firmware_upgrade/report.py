@@ -1,10 +1,11 @@
 """The upgrade job report: a self-contained page (prints well, no external
 files) and a CSV of the checks. Every value is HTML-escaped."""
 
-import csv
 import io
 from datetime import datetime
 from html import escape
+
+from app.core import exports
 
 STATUS_TEXT = {
     "planned": "Planned", "pre_checking": "Pre-checking", "blocked": "Blocked by pre-checks",
@@ -140,7 +141,7 @@ def render_html(job: dict, product_name: str = "NetOps Tools", site_name: str = 
 
 def render_csv(job: dict) -> str:
     out = io.StringIO()
-    w = csv.writer(out)
+    w = exports.csv_writer(out)
     w.writerow(["job", "device", "phase", "run", "check", "severity", "result", "value", "detail",
                 "overridden_by", "override_reason"])
     for phase in ("pre", "stage", "post"):

@@ -110,6 +110,11 @@ remote); never sync the two automatically.
   * tests drive every path against the network simulator `app/demo/simnet.py` (also the demo's
     network; `tests/fake_network.py` is kept as an alias). Extend the simulator with any new
     command a driver sends.
+* SSH host keys: `core/ssh.py` records a device's key on first use (`<data>/known_hosts`) and
+  every SSH or SCP connection then checks it (`ssh.trust_on_first_use`, `ssh.strict_params()`);
+  any new way of reaching a device must do the same. CSV/XLSX exports go through
+  `core/exports.py` (`csv_writer`, `append_row`) so formula-like text stays text. Root scripts
+  (`deploy/`) must never read, write or run anything the `netops` account can change.
 * Device access is always injectable (`fetcher=` / `fw_collector=` in `create_app`), so tests
   never touch SSH. Parser tests use real sample output in `app/demo/samples.py` (alias
   `tests/firmware_samples.py`); the newer vendors' samples (`app/demo/vendor_samples.py`) are

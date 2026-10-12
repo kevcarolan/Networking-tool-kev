@@ -12,6 +12,7 @@ import socket
 import time
 from pathlib import Path
 
+from app.core import ssh
 from app.core.platforms import PLATFORMS
 from app.core.ssh import ERROR, SETUP, TIMEOUT, DeviceError, Target, run_commands
 from app.tools.firmware_upgrade import fdm, fortios, panos
@@ -74,11 +75,12 @@ class DeviceIO:
         platform = PLATFORMS.get(target.platform)
         if platform is None:
             raise DeviceError(SETUP, f"Unsupported platform '{target.platform}'")
+        ssh.trust_on_first_use(target.address, target.ssh_timeout)
         conn = ConnectHandler(
             device_type=platform.netmiko_type, host=target.address, username=target.username,
             password=target.password, secret=target.enable_secret or "",
             conn_timeout=target.ssh_timeout, auth_timeout=target.ssh_timeout,
-            banner_timeout=target.ssh_timeout, fast_cli=False)
+            banner_timeout=target.ssh_timeout, fast_cli=False, **ssh.strict_params())
         if platform.needs_enable and not conn.check_enable_mode():
             conn.enable()
         return conn
@@ -183,7 +185,12 @@ def _scp_put(target: Target, local: Path, remote: str, timeout: float) -> str:
     from scp import SCPClient
 
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # noqa: S507 - same as netmiko
+    ssh.trust_on_first_use(target.address, target.ssh_timeout)
+    if ssh.strict_params():
+        client.load_host_keys(ssh.strict_params()["alt_key_file"])
+        client.set_missing_host_key_policy(paramiko.RejectPolicy())
+    else:  # (tests and the CLI before start-up)
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # noqa: S507
     client.connect(target.address, username=target.username, password=target.password,
                    timeout=target.ssh_timeout, look_for_keys=False, allow_agent=False)
     try:

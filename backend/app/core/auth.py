@@ -14,8 +14,10 @@ Who can sign in, in this order:
        isn't set: may plan and run upgrade jobs (live included).
 """
 
+import hashlib
 import json
 import logging
+import secrets
 import ssl
 import threading
 import time
@@ -100,10 +102,38 @@ class LoginThrottle:
     def fail(self, key: str) -> None:
         with self._lock:
             self._recent(key).append(time.monotonic())
+            if len(self._failures) > 10000:  # many different names: forget the stale ones
+                for k in [k for k in self._failures if not self._recent(k)]:
+                    del self._failures[k]
 
     def reset(self, key: str) -> None:
         with self._lock:
             self._failures.pop(key, None)
+
+
+_DUMMY: list[str] = []
+
+
+def _dummy_hash() -> str:
+    if not _DUMMY:
+        _DUMMY.append(hash_password(secrets.token_urlsafe(16)))
+    return _DUMMY[0]
+
+
+def _sam_in_domain(username: str, domain: str) -> str:
+    """The account name if the user typed no domain or this one (CORP\\jsmith,
+    jsmith@corp.local, jsmith); "" for any other domain."""
+    domain = domain.lower()
+    if "\\" in username:
+        typed, sam = username.split("\\", 1)
+        ok = typed.lower() in (domain, domain.split(".")[0])
+    elif "@" in username:
+        sam, typed = username.rsplit("@", 1)
+        ok = typed.lower() == domain
+    else:
+        sam, ok = username, True
+    sam = sam.strip()
+    return sam if ok and sam and not any(c in sam for c in "\\@") else ""
 
 
 class Authenticator:
@@ -145,6 +175,7 @@ class Authenticator:
                 return user_from_account(acc, display)
         if s.ldap_url:
             return self._ldap_safe(username, password, groups=True)
+        verify_password(password, _dummy_hash())  # same time as for a real local user
         return None
 
     def _ldap_safe(self, username: str, password: str, groups: bool) -> User | None:
@@ -168,8 +199,11 @@ class Authenticator:
             s.ldap_url, use_ssl=s.ldap_url.lower().startswith("ldaps://"),
             tls=tls, get_info=NONE, connect_timeout=5,
         )
-        sam = username.split("\\")[-1].split("@")[0]
-        principal = username if ("@" in username or "\\" in username) else f"{sam}@{s.ldap_domain}"
+        sam = _sam_in_domain(username, s.ldap_domain)
+        if not sam:
+            return None  # another domain: never bind there (a trusted domain's jsmith
+            # would otherwise be signed in as this domain's jsmith)
+        principal = f"{sam}@{s.ldap_domain}"
         conn = Connection(server, user=principal, password=password,
                           authentication=SIMPLE, receive_timeout=10)
         conn.open()
@@ -210,10 +244,26 @@ class Authenticator:
 
 # --- FastAPI dependencies -------------------------------------------------
 
+def _fingerprint(password_hash: str) -> str:
+    return hashlib.sha256(password_hash.encode()).hexdigest()[:16]
+
+
 def current_user(request: Request) -> User:
     data = request.session.get("user")
     if not data:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not logged in")
+    settings = request.app.state.settings
+    # The cookie is renewed on every request, so it would never expire while in use:
+    # a sign-in lasts at most session_max_age_hours, however busy.
+    issued = request.session.get("issued", 0)
+    if time.time() - issued > settings.session_max_age_hours * 3600:
+        request.session.clear()
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Your session has expired: sign in again")
+    if data.get("source") == "break-glass" and (
+            not settings.local_admin_password_hash
+            or request.session.get("bg") != _fingerprint(settings.local_admin_password_hash)):
+        request.session.clear()  # the break-glass password was changed or removed
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sign in again")
     if data.get("user_id"):
         # A user added in NetOps: read their permissions again, so a change (or a
         # disabled or deleted account) applies straight away.
@@ -266,17 +316,25 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     authenticator: Authenticator = request.app.state.authenticator
     throttle: LoginThrottle = request.app.state.login_throttle
     client = request.client.host if request.client else "unknown"
-    key = f"{body.username.lower()}|{client}"
-    if throttle.blocked(key):
+    # One count per account however the name is written (admin, " admin", CORP\admin,
+    # admin@x), and one per address across all names (password spraying).
+    key = f"{account_key(body.username)}|{client}"
+    by_address = f"address|{client}"
+    if throttle.blocked(key) or request.app.state.address_throttle.blocked(by_address):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many failed logins, try later")
     user = authenticator.authenticate(body.username.strip(), body.password)
     if user is None:
         throttle.fail(key)
+        request.app.state.address_throttle.fail(by_address)
         audit(db, body.username.strip()[:200], "login.failed", f"from {client}")
+        db.commit()  # keep the record: raising below rolls the session back
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid username or password")
     throttle.reset(key)
     request.session.clear()
     request.session["user"] = user.__dict__
+    request.session["issued"] = int(time.time())
+    if user.source == "break-glass":
+        request.session["bg"] = _fingerprint(authenticator.settings.local_admin_password_hash)
     audit(db, user.username, "login",
           f"{'admin' if user.is_admin else 'user'} ({user.source or 'ad-group'}) from {client}")
     return signed_in(request, user)

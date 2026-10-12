@@ -7,6 +7,15 @@
 -w /etc/netops/tls/ -p rwa -k netops-secrets
 -w /opt/netops/ -p wa -k netops-code
 -w /etc/systemd/system/netops.service -p wa -k netops-config
+-w /etc/systemd/system/netops-worker.service -p wa -k netops-config
+-w /etc/systemd/system/netops-backup.service -p wa -k netops-config
+-w /etc/systemd/system/netops-backup.timer -p wa -k netops-config
+-w /etc/systemd/system/netops-tls.path -p wa -k netops-config
+-w /etc/systemd/system/netops-tls.service -p wa -k netops-config
+# The scripts that run as root: a change here runs with full rights at the next run
+-w /usr/local/sbin/netops-backup -p wa -k netops-code
+-w /usr/local/sbin/netops-cli -p wa -k netops-code
+-w /usr/local/sbin/netops-tls-apply -p wa -k netops-code
 -w /etc/nginx/ -p wa -k netops-web
 -w /etc/nftables.conf -p wa -k firewall
 -w /etc/ssh/sshd_config -p wa -k sshd

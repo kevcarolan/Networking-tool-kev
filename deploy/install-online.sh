@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # Installs or upgrades NetOps Tools on an Ubuntu server that can reach the internet.
 #
-#     git clone <repository> netops && cd netops
-#     sudo deploy/install-online.sh
+#     sudo git clone <repository> /usr/local/src/netops    # as root: see below
+#     cd /usr/local/src/netops && sudo deploy/install-online.sh
 #
-# To upgrade later:  git pull && sudo deploy/install-online.sh
+# To upgrade later:  sudo git pull && sudo deploy/install-online.sh
+#
+# The copy of the code must belong to root and not be writable by anyone else (checked):
+# the installer runs it as root.
 #
 # It does the same as the air-gapped install (docs/install-airgap.md), on the server
 # itself: it installs the Ubuntu packages from Ubuntu's repositories, builds an install
@@ -38,9 +41,22 @@ die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 [[ $EUID -eq 0 ]] || die "run with sudo"
 . /etc/os-release
 [[ "${ID:-}" == "ubuntu" ]] || die "this installer is for Ubuntu; this is ${PRETTY_NAME:-unknown}"
-git -C "$REPO_ROOT" -c safe.directory='*' rev-parse --git-dir >/dev/null 2>&1 || \
+# Everything here runs as root, so the copy of the code must be root's own: anyone who
+# could change it (or a folder above it) could otherwise run commands as root.
+dir="$REPO_ROOT"
+while :; do
+  [[ "$(stat -c %u "$dir")" == 0 ]] || die "$dir isn't owned by root: clone the code as root (see docs/install-online.md)"
+  [[ "$(stat -c %A "$dir")" != ?????w???? && "$(stat -c %A "$dir")" != ????????w? ]] || \
+    [[ -k "$dir" && "$dir" != "$REPO_ROOT" ]] || \
+    die "$dir can be changed by other users: clone the code as root into a root-only folder"
+  [[ "$dir" == / ]] && break
+  dir="$(dirname "$dir")"
+done
+other="$(find "$REPO_ROOT" \( ! -user root -o -perm -0002 -o -perm -0020 \) -print -quit)"
+[[ -z "$other" ]] || die "$other can be changed by other users: clone the code as root"
+git -C "$REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1 || \
   die "run it from a git clone of the repository (the install is built from the checked-out commit)"
-if [[ -n "$(git -C "$REPO_ROOT" -c safe.directory='*' status --porcelain)" ]]; then
+if [[ -n "$(git -C "$REPO_ROOT" status --porcelain)" ]]; then
   echo "WARNING: this copy has uncommitted changes; they are NOT installed (the install uses the last commit)."
 fi
 
@@ -52,18 +68,19 @@ if [[ -z "$SKIP_OS" ]]; then
 fi
 
 say "Building the install bundle"
-before="$(mktemp)"
-trap 'rm -f "$before"' EXIT
-SKIP_DEBS=1 "$REPO_ROOT/deploy/airgap/build-bundle.sh"
-BUNDLE_TGZ="$(find "$REPO_ROOT/dist" -maxdepth 1 -name 'netops-bundle-*.tar.gz' -newer "$before" \
-              -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-)"
+OUT="$(mktemp -d)"   # root's own folder: nothing else can swap the bundle
+WORK="$(mktemp -d)"
+trap 'rm -rf "$OUT" "$WORK"' EXIT
+SKIP_DEBS=1 DIST_DIR="$OUT" "$REPO_ROOT/deploy/airgap/build-bundle.sh"
+BUNDLE_TGZ="$(find "$OUT" -maxdepth 1 -name 'netops-bundle-*.tar.gz' -print -quit)"
 [[ -n "$BUNDLE_TGZ" ]] || die "the bundle wasn't built (see above)"
 
 say "Installing"
-WORK="$(mktemp -d)"
-trap 'rm -f "$before"; rm -rf "$WORK"' EXIT
 tar -xzf "$BUNDLE_TGZ" -C "$WORK"
 "$WORK"/netops-bundle-*/install.sh --skip-os-packages
+install -d -m 0755 "$REPO_ROOT/dist"
+cp "$OUT"/netops-bundle-* "$REPO_ROOT/dist/"
+BUNDLE_TGZ="$REPO_ROOT/dist/$(basename "$BUNDLE_TGZ")"
 
 echo
 echo "The bundle is kept as $BUNDLE_TGZ (with its .sha256 and MANIFEST),"
