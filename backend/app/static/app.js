@@ -2315,7 +2315,7 @@ function slRow(r) {
     h("td", {}, device, r.device ? h("small", { class: "muted" }, ` ${r.src}`) : null),
     h("td", {}, h("span", { class: `badge s${r.sev}` }, SEV_NAMES[r.sev] || r.sev)),
     h("td", {}, r.tag || "", h("small", { class: "muted" }, ` ${r.facility}`)),
-    h("td", { class: "msg" }, r.text));
+    h("td", { class: "msg", title: r.text }, r.message));
 }
 
 function slPick(device) {
@@ -2337,6 +2337,9 @@ function slSevChips() {
 }
 
 function slTimeline(sum) {
+  // Only the severities chosen above (the counts on the buttons show them all).
+  const shown = sum.timeline.map((b) => b.map((n, s) => (!sl.sev || sl.sev.has(s) ? n : 0)));
+  sum = { ...sum, timeline: shown };
   const totals = sum.timeline.map((b) => b.reduce((a, n) => a + n, 0));
   const max = Math.max(1, ...totals);
   const start = new Date(sum.since).getTime();

@@ -30,6 +30,25 @@ services:
     restart: unless-stopped
     stop_grace_period: 45m   # let a running step finish; jobs pause before the next one
 
+  # Receives the devices' syslog (UDP and TCP 514); shares the data volume.
+  netops-syslog:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: ["python", "-m", "app.tools.syslog"]
+    env_file: ../.env
+    environment:
+      NETOPS_DATA_DIR: /data
+      NETOPS_CREDENTIAL_KEY_FILE: /secrets/credential.key
+      # The image runs as a normal account, which can't listen below 1024: 514 -> 5514
+      NETOPS_SYSLOG_UDP_PORT: "5514"
+      NETOPS_SYSLOG_TCP_PORT: "5514"
+    volumes:
+      - netops-data:/data
+      - ./secrets:/secrets
+    ports: ["514:5514/udp", "514:5514/tcp"]
+    restart: unless-stopped
+
   caddy:
     image: caddy:2
     ports: ["80:80", "443:443"]

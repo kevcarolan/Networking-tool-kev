@@ -12,7 +12,7 @@ from app.core.audit import audit
 from app.core.auth import User, require
 from app.core.db import get_db
 from app.tools.syslog import howto
-from app.tools.syslog.parse import LABELS, SEVERITIES, facility_name
+from app.tools.syslog.parse import LABELS, SEVERITIES, body, facility_name
 from app.tools.syslog.sources import device_addresses
 from app.tools.syslog.store import Filter, SyslogStore
 
@@ -71,7 +71,7 @@ def _row(r: dict, addresses: dict) -> dict:
     return {**r, "time": dt.datetime.fromtimestamp(r["ts"], dt.UTC).isoformat(),
             "device_id": dev[0] if dev else None, "device": dev[1] if dev else None,
             "severity": SEVERITIES[r["sev"]] if 0 <= r["sev"] < 8 else str(r["sev"]),
-            "facility": facility_name(r["fac"])}
+            "facility": facility_name(r["fac"]), "message": body(r["text"], r["tag"])}
 
 
 @router.get("/messages")

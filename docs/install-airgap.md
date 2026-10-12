@@ -198,7 +198,8 @@ The installer:
    read-only to the service) and points `/opt/netops/current` at it;
 5. creates `/etc/netops/netops.env` and a new encryption key, `/etc/netops/credential.key`;
 6. installs:
-   * the sandboxed systemd service `netops`;
+   * the sandboxed systemd services `netops` (web app), `netops-worker` (upgrade jobs) and
+     `netops-syslog` (receives the devices' syslog on port 514, [syslog.md](syslog.md));
    * the nightly backup timer;
    * the `netops-cli` admin command;
    * the audit rules;
@@ -286,7 +287,7 @@ restart to manage it on the Settings page instead.
 * Sign in with an AD account in the admin group, then check that an account in the
   viewer group can sign in but can't change anything.
 * Admins can change AD and the certificate later: **Settings** in the top bar.
-* Status: `systemctl status netops netops-worker --no-pager` (both "active (running)").
+* Status: `systemctl status netops netops-worker netops-syslog --no-pager` (all "active (running)").
   If the page doesn't load, check `journalctl -u netops -n 30 --no-pager`.
 
 ### 3. Certificate by hand (instead of the setup screen)
@@ -431,5 +432,6 @@ device still works. That proves the stored passwords can still be decrypted.
 | Something was blocked | `journalctl -k | grep nft-` shows dropped traffic in and out |
 | Check the sandbox | `systemd-analyze security netops` and `… netops-worker` (a lower score is better) |
 | "The upgrade worker isn't running" in the GUI | `systemctl status netops-worker`; `journalctl -u netops-worker -n 50` |
+| "The syslog receiver isn't running" on the Syslog page | `systemctl status netops-syslog`; `journalctl -u netops-syslog -n 50` |
 | `install.sh` refuses: "a live upgrade job is running" | A device is being upgraded. Wait until the job has finished or paused (`sudo netops-cli upgrades-running`), or run with `FORCE=1` if you are sure |
 | FTD, FortiGate or PAN-OS upgrade: "API unreachable" | The firewall output rule to `FDM_HOSTS` on port 443, and the device's management access list (trusted hosts) |

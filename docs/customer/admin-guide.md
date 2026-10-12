@@ -156,7 +156,7 @@ purpose:
 * the break-glass admin;
 * ports, worker counts and timeouts.
 
-Edit `/etc/netops/netops.env`, then run `sudo systemctl restart netops netops-worker`.
+Edit `/etc/netops/netops.env`, then run `sudo systemctl restart netops netops-worker netops-syslog`.
 
 ## 3. Users and permissions
 
@@ -164,11 +164,11 @@ Edit `/etc/netops/netops.env`, then run `sudo systemctl restart netops netops-wo
 anyone without AD; at least 12 characters). Give each a level per area, or start from a
 preset:
 
-| Preset | Devices | Backups | Firmware | Upgrades | Circuits |
-|---|---|---|---|---|---|
-| Viewer | view | view | view | view | view |
-| Backup operator | view | run | view | view | view |
-| Upgrader | view | configs | view | live | view |
+| Preset | Devices | Backups | Firmware | Upgrades | Circuits | Syslog |
+|---|---|---|---|---|---|---|
+| Viewer | view | view | view | view | view | view |
+| Backup operator | view | run | view | view | view | view |
+| Upgrader | view | configs | view | live | view | view |
 | Administrator | everything, plus Users, Activity and Settings | | | | |
 
 * AD users who aren't on the Users page get access from the AD groups.
@@ -238,6 +238,24 @@ The full procedure is in [upgrades.md](../upgrades.md).
   ([security-hardening.md](../security-hardening.md) §9).
 * **Daily look:** the **Config backups** tiles show failing and never-backed-up devices,
   with the reason (wrong password, unreachable, timeout…).
+* **The devices' syslog:** the server collects it on the **Syslog** page (next section).
+
+## 6a. Syslog from the devices
+
+The server receives the devices' syslog on UDP and TCP 514 (the `netops-syslog` service)
+and keeps it in one file per day under `/var/lib/netops/syslog/`.
+
+1. **Firewall:** in `/etc/nftables.conf`, set `SYSLOG_SOURCES` to the devices' management
+   networks, then `sudo nft -f /etc/nftables.conf`.
+2. **Devices:** on the Syslog page, click **Help: set up devices**. Choose the platform, check
+   the server address, and copy the suggested config to the device. Send from the
+   management address that is in the inventory, and use NTP.
+3. **How long:** on **Settings › Site and defaults**, set *Keep syslog messages for (days)*
+   (30 by default) and *Keep at most this much syslog (GB)* (20). The oldest days go first.
+   *Keep messages only from inventory devices* drops everything else.
+4. **Who sees it:** the **Syslog** permission (none or view) on the Users page.
+
+Sizing, the limits that protect the disk, and troubleshooting: [syslog.md](../syslog.md).
 
 ## 7. Backing up the server
 
@@ -276,6 +294,8 @@ Settings, the key and the licence are kept. See [install-airgap.md](../install-a
 | "The device's SSH key has changed" | The device was replaced or reinstalled: an admin clicks **Forget** next to the key in its edit dialog. If it wasn't, investigate before forgetting it |
 | "Your session has expired" | Sign-ins last at most `NETOPS_SESSION_MAX_AGE_HOURS` (12 by default), even while in use: sign in again |
 | "The upgrade worker isn't running" | `systemctl status netops-worker`; `journalctl -u netops-worker -n 50` |
+| "The syslog receiver isn't running" | `systemctl status netops-syslog`; `journalctl -u netops-syslog -n 50` |
+| A device's syslog doesn't arrive, or shows as "not in the inventory" | `SYSLOG_SOURCES` in the firewall; the device's logging source interface must be the inventory address ([syslog.md](../syslog.md)) |
 | Can't add devices or start upgrades | The trial or licence has ended: Settings › Licence |
 | No email alerts arrive | Settings › Email alerts › **Send test email** shows the mail server's answer. Check `SMTP_HOSTS` in the firewall and the relay's certificate |
 | A wall display shows "No data since …" | The screen can't reach port 8443 (`DISPLAY_NETS` in the firewall), or its link was removed: add it again on Settings › Wall displays |

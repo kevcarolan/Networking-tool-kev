@@ -27,6 +27,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 - [x] Licence keys: 60-day trial, signed licences (end date, devices, optional installation), read-only for new work without one ([licensing.md](licensing.md))
 - [x] Wall display for NOC screens: overview and upgrades pages, own port (8443), per-screen links ([customer/admin-guide.md](customer/admin-guide.md#wall-displays))
 - [x] Security review of the whole product, with fixes (see the session log of 2026-10-12)
+- [x] Syslog: a central receiver (UDP/TCP 514) with a search page (device, severity, period, text, timeline), retention by days and size, suggested device configs per platform, demo messages ([syslog.md](syslog.md))
 - [ ] Later: one overview of several servers (the display feed is the starting point); several customers on one server kept as an idea
 
 ### Platform (inherited)
@@ -84,12 +85,15 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-12 | Devices and credentials gets two more levels: *addresses* (add devices, change a device's address or credential profile) and *credentials* (manage the profiles); *manage* keeps only device details | The owner: whoever sets the address decides where a device account's password goes, so it is given per user on the Users page |
 | 2026-10-12 | The network simulator and sample outputs moved from `tests/` to `app/demo/` (tests keep the old names) | One simulator for the tests and the demo, so the demo shows exactly what the tests check |
 | 2026-10-12 | Captures replace IP and MAC addresses with consistent stand-ins by default, and never include the running configuration | Captures are sent outside the customer's network for parser fixes; the tables still match up, so the readers can be tested |
+| 2026-10-12 | Syslog is kept in one SQLite file per day, written only by its own receiver service | Quick search by device, severity and time; old days go by deleting files; the web app can restart without losing messages |
+| 2026-10-12 | The syslog sender is the packet's source address, matched to the inventory; the server never changes device logging itself (configs are suggested on a Help page) | The host name in a message can be anything; device changes need an admin |
 
 ## Open questions
 
 - Licence agreement: per installation or per site? Managed-service use? Support terms, warranty, liability cap, governing law ([legal/EULA-draft.md](legal/EULA-draft.md))
 
 - Product name?
+- Syslog next steps: email alerts or a wall display tile for Critical and worse messages? Syslog over TLS (port 6514)? Keep the Syslog files in the nightly backup?
 - Syslog forwarding is plain UDP (`rsyslog-forward.conf`); offer TLS forwarding for sites whose log server supports it?
 - Docker image: `--forwarded-allow-ips "*"` trusts any proxy's client address; fine behind the bundled nginx, but should it be narrowed?
 - The air-gapped bundle has a SHA-256 but no signature; sign bundles once the product is sold?
@@ -121,3 +125,4 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-12 | Networking-tool-kev | Security review (sign-in, setup/licence/display, device access, deployment, browser): fixed a root escalation through the certificate status file, the sign-in throttle bypass, sign-in with a trusted domain's name, root git in the backup script, the online installer trusting a user's clone, unchecked SSH host keys, sessions that never ended, formula injection in exports, failed sign-ins missing from the activity report, and smaller upload and licence gaps |
 | 2026-10-12 | Networking-tool-kev | Demo mode (`python -m app.demo`): 25 simulated devices, failing backups, circuits, live upgrades in about 40 s, wall display; sign-in now returns the site name (it only showed after a reload) |
 | 2026-10-12 | Networking-tool-kev | Lab capture tool (`netops-cli capture`); blocks anything but read-only commands, including `| redirect` and `| tee` |
+| 2026-10-12 | Networking-tool-kev | Syslog: receiver service on 514 (rate limit per sender, disk guard), daily store, Syslog page with severity buttons, timeline and download, Help with suggested configs for every platform, Logs button per device, demo history with BGP, PSU, failover, BPDU guard and brute-force incidents |

@@ -23,14 +23,15 @@ FACILITIES = ("kern", "user", "mail", "daemon", "auth", "syslog", "lpr", "news",
 MAX_LENGTH = 8192  # longer messages are cut (a UDP packet can't carry much more anyway)
 
 _PRI = re.compile(r"^<(\d{1,3})>")
-_RFC5424 = re.compile(r"^1 (\S+) (\S+) (\S+) (\S+) (\S+) ")
+_RFC5424 = re.compile(r"^1 (\S+) (\S+) (\S+) (\S+) (\S+)(?: |$)")
 _MONTH = r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)"
 # "Oct 12 16:00:01", "Oct  2 2026 16:00:01", "*Oct 12 16:00:01.123", "2026 Oct 12 16:00:01"
 _STAMP = re.compile(r"^\*?(?:\d{4} )?" + _MONTH + r"\s+\d{1,2}(?: \d{4})? \d\d:\d\d:\d\d(?:\.\d+)?"
                     r"(?: [A-Z]{2,5})?:? ")
 _CISCO_CODE = re.compile(r"%([A-Z][A-Z0-9_]*(?:-[A-Z0-9_]+)?)-([0-7])-([A-Z0-9_]+)")
-_TAG = re.compile(r"^([A-Za-z0-9_./-]{1,48})(?:\[\d+\])?: ")
-_HOST_THEN_TAG = re.compile(r"^([A-Za-z0-9][A-Za-z0-9_.-]{0,62}) (?=[A-Za-z0-9_./-]{1,48}(?:\[\d+\])?: )")
+_TAG = re.compile(r"^(?:\d{5} )?([A-Za-z0-9_./,-]{1,48})(?:\[\d+\])?: ")  # "sshd[12]: ", "00076 ports: ", "system,info: "
+_HOST_THEN_TAG = re.compile(r"^([A-Za-z0-9][A-Za-z0-9_.-]{0,62}) (?=(?:\d{5} )?[A-Za-z0-9_./,-]{1,48}(?:\[\d+\])?: )")
+_PCT_CODE = re.compile(r"(?:^| )%([A-Z][A-Z0-9_]{2,}):")  # Dell OS10 and others: "%IFM_OSTATE_DN:"
 _KV_LEVEL = re.compile(r'\blevel="?(emergency|alert|critical|error|warning|notice|information|debug)')
 
 
@@ -79,8 +80,11 @@ def parse(raw: bytes | str) -> Message:
             tag = t.group(1)
 
     code = _CISCO_CODE.search(rest[:200])
+    other = _PCT_CODE.search(rest[:300])
     if code:
         tag = f"%{code.group(1)}-{code.group(2)}-{code.group(3)}"
+    elif other:
+        tag = f"%{other.group(1)}"
     elif not tag:
         kv = _KV_LEVEL.search(rest)
         if kv and "logid=" in rest:
@@ -95,3 +99,13 @@ def severity_label(sev: int) -> str:
 
 def facility_name(fac: int) -> str:
     return FACILITIES[fac] if 0 <= fac < len(FACILITIES) else str(fac)
+
+
+def body(text: str, tag: str) -> str:
+    """The message from its code or program on, without the device's own timestamp and
+    host name in front (for display; the full text is kept)."""
+    if tag:
+        i = text.find(tag)
+        if 0 < i < 120:
+            return text[i:]
+    return text

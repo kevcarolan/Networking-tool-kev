@@ -29,6 +29,17 @@ prints a link for the **wall display**: open it in a second window or on a big s
   building management, wireless). After the first scan, one has **moved** port and one is
   **not seen**.
 * **A wall display** called "Demo wall".
+* **Syslog:** three days of messages from every device, at every severity, then a new one
+  every few seconds (try **Live**). Some incidents run through them:
+  * BGP between dc1-spine1 and dc1-leaf3 drops (hold timer expired) and comes back;
+  * a power supply fails on hq-core1, and the vPC keepalive is lost;
+  * the HQ firewall loses its failover link, and wh-sw1 overheats (Emergency);
+  * someone tries passwords on hq-fw1 and dc1-spine2 from 203.0.113.66;
+  * BPDU guard shuts a user port on hq-acc-sw3;
+  * a VPN tunnel on bn-rtr1 keeps failing;
+  * an access point that isn't in the inventory (192.0.2.250) sends too.
+
+  Try **Errors and worse**, a device's **Logs** button, or a search for `BGP` or `%LINK`.
 
 ## Showing an upgrade
 
