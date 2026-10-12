@@ -2115,13 +2115,74 @@ async function displaysPanel() {
   return box;
 }
 
+/** Email alerts through the customer's mail server. */
+async function alertsPanel() {
+  const a = await api("/api/alerts");
+  const err = errorLine();
+  const result = h("p", { class: "muted", hidden: true });
+  const f = {};
+  const check = (name, label, hint) => {
+    f[name] = h("input", { type: "checkbox", checked: a[name] });
+    return h("label", { class: "check" }, f[name], " ", label, hint ? h("span", { class: "muted" }, ` (${hint})`) : "");
+  };
+  const text = (name, label, attrs = {}) => {
+    f[name] = h("input", { value: a[name] ?? "", ...attrs });
+    return h("label", {}, label, f[name]);
+  };
+  f.smtp_security = h("select", {}, ...[["starttls", "STARTTLS (usually port 587)"], ["tls", "TLS (usually port 465)"], ["none", "None (port 25, internal relay only)"]]
+    .map(([v, l]) => h("option", { value: v, selected: a.smtp_security === v }, l)));
+  f.smtp_password = h("input", { type: "password", autocomplete: "new-password", placeholder: a.has_password ? "saved (leave empty to keep it)" : "" });
+  f.clear_password = h("input", { type: "checkbox" });
+  const box = h("div", { class: "panel" });
+  box.replaceChildren(
+    h("h2", {}, "Email alerts"),
+    h("p", { class: "muted" }, "Sent through your own mail server. Each event is sent once; checked every minute."),
+    check("enabled", "Send email alerts"),
+    text("smtp_host", "Mail server", { placeholder: "e.g. smtp.corp.local" }),
+    text("smtp_port", "Port", { type: "number", min: 1, max: 65535 }),
+    h("label", {}, "Security", f.smtp_security),
+    text("smtp_user", "Username (if the server needs one)"),
+    h("label", {}, "Password", f.smtp_password),
+    a.has_password ? h("label", { class: "check" }, f.clear_password, " Remove the saved password") : "",
+    text("mail_from", "From address", { placeholder: "e.g. netops@corp.local" }),
+    text("mail_to", "Send to (comma separated)", { placeholder: "e.g. noc@corp.local, oncall@corp.local" }),
+    text("backup_hours", "Backups: alert when failing for more than (hours, 0 = never)", { type: "number", min: 0, max: 720 }),
+    check("upgrades", "Upgrades: when a job completes, fails, rolls back or needs attention"),
+    check("licence", "Licence: 30 and 7 days before it ends, and when it has ended"),
+    check("worker", "Upgrade worker: stopped for more than 10 minutes"),
+    a.last_error ? h("p", { class: "error" }, `Last error: ${a.last_error}`) : "",
+    err, result,
+    h("div", { class: "actions" },
+      h("button", { type: "button", onclick: async () => {
+        err.hidden = true;
+        const body = { enabled: f.enabled.checked, smtp_host: f.smtp_host.value.trim(), smtp_port: Number(f.smtp_port.value),
+          smtp_security: f.smtp_security.value, smtp_user: f.smtp_user.value.trim(), mail_from: f.mail_from.value.trim(),
+          mail_to: f.mail_to.value, backup_hours: Number(f.backup_hours.value), upgrades: f.upgrades.checked,
+          licence: f.licence.checked, worker: f.worker.checked };
+        if (f.smtp_password.value) body.smtp_password = f.smtp_password.value;
+        else if (f.clear_password.checked) body.smtp_password = "";
+        try { await api("/api/alerts", { method: "PUT", body }); toast("Email alerts saved"); loadSettings(); } catch (e) { showError(err, e); }
+      } }, "Save"),
+      h("button", { type: "button", onclick: async () => {
+        err.hidden = true;
+        try {
+          const r = await api("/api/alerts/test", { method: "POST" });
+          result.textContent = r.ok ? `Test email: ${r.message}` : `Test email not sent: ${r.message}`;
+          result.className = r.ok ? "ok-text" : "error";
+          result.hidden = false;
+        } catch (e) { showError(err, e); }
+      } }, "Send test email")),
+    a.recent.length ? h("div", {}, h("h2", {}, "Last alerts sent"), h("ul", {}, a.recent.map((r) => h("li", {}, `${fmtTime(r.sent_at)}: ${r.subject}`)))) : "");
+  return box;
+}
+
 async function loadSettings() {
   const body = $("#settings-body");
   body.replaceChildren(h("p", { class: "muted" }, "Loading…"));
   try {
-    const [lic, opts, disp, ad, cert] = await Promise.all([licencePanel(), optionsPanel(), displaysPanel(), adPanel(), certPanel()]);
+    const [lic, opts, mail, disp, ad, cert] = await Promise.all([licencePanel(), optionsPanel(), alertsPanel(), displaysPanel(), adPanel(), certPanel()]);
     body.replaceChildren(h("section", { class: "card" }, lic), h("section", { class: "card" }, opts),
-      h("section", { class: "card" }, disp), h("section", { class: "card" }, ad),
+      h("section", { class: "card" }, mail), h("section", { class: "card" }, disp), h("section", { class: "card" }, ad),
       h("section", { class: "card" }, cert));
   } catch (e) {
     body.replaceChildren(h("p", { class: "error" }, e.message));
