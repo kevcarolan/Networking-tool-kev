@@ -80,6 +80,42 @@ A setting shown as **"Set in netops.env"** is fixed in the server's settings fil
 over this page. To manage it here instead, comment that line out with `#` in
 `/etc/netops/netops.env`, then run `sudo systemctl restart netops netops-worker`.
 
+### Wall displays
+
+A read-only status screen for a NOC or an engineers' office, readable from across the
+room. Two pages take turns every 20 seconds:
+
+* **Overview:**
+  * tiles for failing backups, firmware on standard (a percentage, with how many are
+    behind), upgrades running, and server health (the upgrade worker and the licence);
+  * the devices whose backups are failing, with the reason and for how long;
+  * one box per site, coloured by its worst problem.
+* **Upgrades:**
+  * every upgrade under way: the device, live or dry run, the versions, the current step
+    with a progress bar, when the window ends, and the circuits it affects (by service and
+    VLAN), so alarms during a change can be put down to it;
+  * the upgrades coming up in the next 12 hours.
+
+  This page is skipped when there are none.
+
+The screen shows only names, counts and statuses: no configs, passwords or addresses.
+
+**To add a screen:**
+1. **Settings › Wall displays:** type a name (for example "NOC wall 1"), then **Add display**.
+2. Copy the link it shows. **It is shown only once**: it holds the screen's key.
+3. Open the link full screen in the screen's browser (kiosk mode).
+
+* **Settings** lists every screen, with when and from where it last connected.
+* **Remove** stops a screen's link straight away.
+* To show only the overview for longer, or rotate faster, add `&rotate=40` (seconds) to the
+  end of the link.
+
+**The port.** The display is served only on its own port, **8443**, and never on the
+normal web address. The hardened firewall keeps 8443 closed until you allow your screens'
+network: set `DISPLAY_NETS` in `/etc/nftables.conf`
+([security-hardening.md](../security-hardening.md) §5). If the screen shows **"No data
+since …"** in red, it has lost contact with the server; the time says since when.
+
 ### Active Directory and the certificate
 
 The same forms as the setup screen. Change and test AD at any time, and renew the
@@ -198,6 +234,7 @@ Settings, the key and the licence are kept. See [install-airgap.md](../install-a
 | Device backups fail | The reason is on Config backups: wrong account, the device's SSH access list, or the server's firewall to the device |
 | "The upgrade worker isn't running" | `systemctl status netops-worker`; `journalctl -u netops-worker -n 50` |
 | Can't add devices or start upgrades | The trial or licence has ended: Settings › Licence |
+| A wall display shows "No data since …" | The screen can't reach port 8443 (`DISPLAY_NETS` in the firewall), or its link was removed: add it again on Settings › Wall displays |
 | A setting is greyed out ("Set in netops.env") | See *Site and defaults* above |
 | Forgot the admin password | Another admin resets it on the Users page. If there is no other admin, set a break-glass admin in `netops.env` (`sudo netops-cli hash-password`), restart, and sign in with it |
 

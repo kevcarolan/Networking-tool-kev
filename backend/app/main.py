@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.core import appsettings, auth, inventory, licence, setup, users
+from app.core import appsettings, auth, display, inventory, licence, setup, users
 from app.core.config import Settings, get_settings
 from app.core.crypto import CredentialCipher
 from app.core.db import init_engine, session_scope
@@ -103,6 +103,8 @@ def create_app(settings: Settings | None = None, fetcher=fetch_config,
     app.include_router(users.router)
     app.include_router(setup.router)
     app.include_router(licence.router)
+    app.include_router(display.admin_router)
+    app.include_router(display.router)
     app.include_router(backup_api.router)
     app.include_router(firmware_api.router)
     app.include_router(jobs_api.router)

@@ -171,7 +171,7 @@ be able to use this server to reach anything except the devices it manages.
 
 ```bash
 sudo cp /opt/netops/current/deploy/hardening/nftables.conf /etc/nftables.conf
-sudo nano /etc/nftables.conf        # set ADMIN_NETS, GUI_NETS, DEVICE_NETS, FDM_HOSTS (FTD, FortiGate, PAN-OS), DC/DNS/NTP/SYSLOG hosts
+sudo nano /etc/nftables.conf        # set ADMIN_NETS, GUI_NETS, DISPLAY_NETS, DEVICE_NETS, FDM_HOSTS (FTD, FortiGate, PAN-OS), DC/DNS/NTP/SYSLOG hosts
 sudo nft -c -f /etc/nftables.conf   # syntax check only
 ```
 
@@ -226,6 +226,13 @@ What the installer set up, for your security review:
   can sign in to the server can finish setup. Wrong codes are slowed down like wrong
   passwords and written to the audit log. Once setup is finished the code is deleted and
   the setup pages answer only to signed-in admins. Finish setup straight after installing.
+* **Wall display (port 8443):** a separate nginx site that serves only the read-only
+  display page and its feed. The main site refuses both, and the display site refuses
+  everything else, drops sign-in cookies and allows only GET. Each screen has its own long
+  random key, which is kept in the link's `#` part so it never appears in web logs; the
+  server stores only a hash of it. Wrong keys are slowed down like wrong passwords. The
+  feed holds names, counts and statuses only. Allow port 8443 in the firewall only from
+  the screens' network (`DISPLAY_NETS`); with no screens, leave it closed.
 * **Licence:** checked on the server against a public key built into the code. Nothing is
   sent anywhere, and no outbound access is needed ([licensing.md](licensing.md)).
 * **Certificates:** the app can't write to `/etc/netops/tls` or reload nginx. A certificate

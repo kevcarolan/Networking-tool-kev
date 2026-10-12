@@ -21,3 +21,16 @@ def test_both_installers_read_the_same_package_list():
     assert {"python3-venv", "git", "sqlite3", "nginx", "openssl"} <= set(packages)
     for script in ("install-online.sh", "airgap/build-bundle.sh"):
         assert "deploy/os-packages.txt" in (DEPLOY / script).read_text()
+
+
+def test_the_wall_display_has_its_own_port_only():
+    main = (DEPLOY / "nginx-netops.conf").read_text()
+    assert "location ^~ /display/ { return 404; }" in main
+    assert "location ^~ /api/display/ { return 404; }" in main
+    wall = (DEPLOY / "nginx-netops-display.conf").read_text()
+    assert "listen 8443 ssl;" in wall and "location / { return 404; }" in wall
+    proxied = [line.split()[2] for line in wall.splitlines()
+               if line.strip().startswith("location") and "{" in line and "return" not in line]
+    assert proxied == ["/display/", "/api/display/data"]
+    assert "tcp dport 8443 ip saddr $DISPLAY_NETS accept" in (
+        DEPLOY / "hardening" / "nftables.conf").read_text()

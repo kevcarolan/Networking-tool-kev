@@ -91,3 +91,18 @@ class AppSetting(Base):
     value: Mapped[str] = mapped_column(Text, default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
     updated_by: Mapped[str] = mapped_column(String(200), default="")
+
+
+class DisplayScreen(Base):
+    """A wall display allowed to read the status dashboard (display.py). Only a hash of
+    its key is kept; the key itself is shown once, when an admin creates the screen."""
+
+    __tablename__ = "display_screens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_by: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_seen_from: Mapped[str] = mapped_column(String(100), default="")

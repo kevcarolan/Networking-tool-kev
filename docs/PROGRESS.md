@@ -25,7 +25,8 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 - [x] Installer for internet-connected and air-gapped sites (`deploy/install-online.sh` builds and installs the same bundle on the server; [install-online.md](install-online.md))
 - [x] Customer documentation: install guide, admin guide, user guide ([customer/](customer/README.md))
 - [x] Licence keys: 60-day trial, signed licences (end date, devices, optional installation), read-only for new work without one ([licensing.md](licensing.md))
-- [ ] Optional: multi-site support
+- [x] Wall display for NOC screens: overview and upgrades pages, own port (8443), per-screen links ([customer/admin-guide.md](customer/admin-guide.md#wall-displays))
+- [ ] Later: one overview of several servers (the display feed is the starting point); several customers on one server kept as an idea
 
 ### Platform (inherited)
 - [x] Core: AD and local login, per-area permissions, device inventory, encrypted credentials, audit and activity report
@@ -68,6 +69,9 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-08 | Without a valid licence only new work is blocked (adding devices, planning and starting upgrades); backups, checks, viewing and jobs under way go on | A customer's network is never left without backups, and a device is never left half-upgraded |
 | 2026-10-08 | No bypass login or setting; the owner uses an internal licence, and `python -m app` is development mode | A hidden bypass could be found in the shipped code |
 | 2026-10-08 | The online installer builds the air-gapped bundle on the server and runs the same `install.sh` | One install, upgrade and roll-back path to test and support; the bundle doubles as the record for the change ticket |
+| 2026-10-09 | No remote collectors: devices are reached over SSH from the server inside each company's network | The owner: production sites can reach their devices from a central management server |
+| 2026-10-09 | Several customers on one server is kept as an idea, not built | Not needed while each company runs its own server |
+| 2026-10-09 | A read-only wall display on its own port (8443) with a per-screen key, rather than a signed-in session | A wall screen can't sign in every few hours; the separate port and key let the firewall and admins limit it to the screens |
 
 ## Open questions
 
@@ -97,3 +101,4 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-08 | Networking-tool-kev | Per-customer settings on the Settings page (site name, defaults), applied live in the web app and the worker; circuit scan follows the schedule setting |
 | 2026-10-08 | Networking-tool-kev | Licence keys: trial, signed licences, Settings page and banner, signing tool; wrong setup codes are now kept in the audit log (they were rolled back) |
 | 2026-10-08 | Networking-tool-kev | Online installer (`deploy/install-online.sh`), shared Ubuntu package list; tested end to end in an Ubuntu container (bundle built, verified and installed) |
+| 2026-10-09 | Networking-tool-kev | Wall display: overview and upgrades pages rotating, own nginx site on 8443 (checked with a real nginx: refused on the main port, only the display there), per-screen links on the Settings page |
