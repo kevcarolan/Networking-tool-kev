@@ -74,7 +74,9 @@ remote); never sync the two automatically.
   installs it. The wall display (`core/display.py`, `static/display/`) is a read-only feed
   and page for NOC screens, reached with a per-screen key on its own nginx site and port
   (8443, `deploy/nginx-netops-display.conf`); the main site refuses it. Never put configs,
-  credentials or addresses in its feed. Licences (`core/licence.py`, made with `python -m app.licence_tool`, see
+  credentials or addresses in its feed. Email alerts (`core/alerts.py`): the web app's
+  scheduler checks state every minute and sends each new event once (`alerts_sent` table);
+  the mailer is injectable (`create_app(mailer=)`), tests never send mail. Licences (`core/licence.py`, made with `python -m app.licence_tool`, see
   [docs/licensing.md](docs/licensing.md)): a 60-day trial, then signed licences with an end
   date and a device count. Without one, only new work is blocked (`licence.require_active`,
   `licence.room_for`): never backups, checks, or an upgrade job already under way.

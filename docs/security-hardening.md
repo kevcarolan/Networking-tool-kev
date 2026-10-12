@@ -171,7 +171,7 @@ be able to use this server to reach anything except the devices it manages.
 
 ```bash
 sudo cp /opt/netops/current/deploy/hardening/nftables.conf /etc/nftables.conf
-sudo nano /etc/nftables.conf        # set ADMIN_NETS, GUI_NETS, DISPLAY_NETS, DEVICE_NETS, FDM_HOSTS (FTD, FortiGate, PAN-OS), DC/DNS/NTP/SYSLOG hosts
+sudo nano /etc/nftables.conf        # set ADMIN_NETS, GUI_NETS, DISPLAY_NETS, DEVICE_NETS, FDM_HOSTS (FTD, FortiGate, PAN-OS), DC/DNS/NTP/SYSLOG/SMTP hosts
 sudo nft -c -f /etc/nftables.conf   # syntax check only
 ```
 
@@ -233,6 +233,11 @@ What the installer set up, for your security review:
   server stores only a hash of it. Wrong keys are slowed down like wrong passwords. The
   feed holds names, counts and statuses only. Allow port 8443 in the firewall only from
   the screens' network (`DISPLAY_NETS`); with no screens, leave it closed.
+* **Email alerts:** sent only to the mail relay you set (allow it as `SMTP_HOSTS` in the
+  firewall). STARTTLS or TLS is used unless you choose "none", and the relay's certificate
+  is always checked against the server's trusted CAs. To trust an internal CA, add it with
+  `update-ca-certificates`. The SMTP password is encrypted with the credential key and never
+  shown again. Alerts hold device names, sites and versions, never configs or credentials.
 * **Licence:** checked on the server against a public key built into the code. Nothing is
   sent anywhere, and no outbound access is needed ([licensing.md](licensing.md)).
 * **Certificates:** the app can't write to `/etc/netops/tls` or reload nginx. A certificate
