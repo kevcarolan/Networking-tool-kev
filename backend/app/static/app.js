@@ -301,6 +301,98 @@ function switchView(view) {
 }
 $$("#nav button").forEach((b) => b.addEventListener("click", () => switchView(b.dataset.view)));
 
+// ---------- search box (top bar) ----------
+
+const gs = { timer: null, seq: 0, items: [], sel: -1 };
+
+const GS_GROUPS = [
+  ["devices", "Devices", (d) => [d.name, [d.address, d.site, d.platform, d.serial && `serial ${d.serial}`]], (d) => openDevice(d)],
+  ["items", "Inventory items", (i) => [i.name, [i.type, i.site, i.rack && `rack ${i.rack}`, i.model, i.serial && `serial ${i.serial}`]], (i) => openItem(i.id)],
+  ["sites", "Sites", (s) => [s.name, [s.code, s.city]], (s) => openSite(s.id)],
+  ["circuits", "Circuits", (c) => [c.name, [c.service, c.ip, c.mac, c.switch && `${c.switch} ${c.port}`]], (c) => openCircuit(c)],
+  ["network", "Seen on the network (last scan)", (n) => [n.mac, [n.ip, n.device ? `on ${n.device} ${n.port}` : "not on an edge port", n.vlan && `VLAN ${n.vlan}`, n.seen_at && fmtAgo(n.seen_at)]],
+    (n) => n.device_id ? openPorts({ id: n.device_id, name: n.device }) : toast("Not seen on a switch's edge port")],
+];
+
+function gsClose() {
+  $("#gs-results").hidden = true;
+  $("#gs").setAttribute("aria-expanded", "false");
+  gs.sel = -1;
+}
+
+async function gsRun() {
+  const q = $("#gs").value.trim();
+  const box = $("#gs-results");
+  if (q.length < 2) return gsClose();
+  const seq = ++gs.seq;
+  let res;
+  try { res = await api(`/api/search?q=${encodeURIComponent(q)}`); } catch (e) { return toast(e.message); }
+  if (seq !== gs.seq) return; // a newer search has started
+  gs.items = [];
+  gs.sel = -1;
+  const parts = [];
+  for (const [key, title, show, open] of GS_GROUPS) {
+    const g = res.groups[key];
+    if (!g) continue;
+    parts.push(h("h4", {}, title));
+    for (const item of g.items) {
+      const [name, sub] = show(item);
+      const go = () => { gsClose(); $("#gs").blur(); open(item); };
+      const el = h("button", { class: "gs-item", role: "option", onclick: go },
+        name || "—", h("span", { class: "sub" }, sub.filter(Boolean).join(" · ")));
+      gs.items.push({ el, go });
+      parts.push(el);
+    }
+    if (g.more) parts.push(h("div", { class: "gs-more" }, "More found: type more to narrow it down"));
+  }
+  if (!parts.length) parts.push(h("div", { class: "gs-empty" }, `Nothing found for “${q}”`));
+  box.replaceChildren(...parts);
+  box.hidden = false;
+  $("#gs").setAttribute("aria-expanded", "true");
+}
+
+function gsMove(step) {
+  if (!gs.items.length) return;
+  gs.sel = (gs.sel + step + gs.items.length) % gs.items.length;
+  gs.items.forEach((x, i) => x.el.classList.toggle("sel", i === gs.sel));
+  gs.items[gs.sel].el.scrollIntoView({ block: "nearest" });
+}
+
+$("#gs").addEventListener("input", () => { clearTimeout(gs.timer); gs.timer = setTimeout(gsRun, 250); });
+$("#gs").addEventListener("focus", () => { if ($("#gs").value.trim().length >= 2) gsRun(); });
+$("#gs").addEventListener("keydown", (ev) => {
+  if (ev.key === "ArrowDown") { ev.preventDefault(); gsMove(1); }
+  else if (ev.key === "ArrowUp") { ev.preventDefault(); gsMove(-1); }
+  else if (ev.key === "Enter") { ev.preventDefault(); (gs.items[gs.sel] || gs.items[0])?.go(); }
+  else if (ev.key === "Escape") { gsClose(); $("#gs").blur(); }
+});
+document.addEventListener("click", (ev) => { if (!ev.target.closest(".gsearch")) gsClose(); });
+document.addEventListener("keydown", (ev) => {
+  // "/" jumps to the search box, unless you are typing somewhere already
+  if (ev.key !== "/" || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+  const t = ev.target;
+  if (t.closest("input, textarea, select, [contenteditable]") || document.querySelector("dialog[open]")) return;
+  ev.preventDefault();
+  $("#gs").focus();
+  $("#gs").select();
+});
+
+/** Open a device's detail window on the first tab this person may see; else its inventory row. */
+function openDevice(d) {
+  const tabs = $$("#detail-tabs button").filter((b) => !b.hidden && !b.classList.contains("locked"));
+  if (!tabs.length) return d.asset_id ? openItem(d.asset_id) : toast("Nothing more to show for this device");
+  openDetail({ device: { address: "", ...d } });
+  selectDetailTab(tabs[0].dataset.tab);
+}
+
+/** Go to the Circuits page showing this circuit. */
+async function openCircuit(c) {
+  switchView("circuits");
+  await state.viewLoading;
+  $("#ct-search").value = c.name;
+  renderCircuits();
+}
+
 // ---------- config backups ----------
 
 function effectiveStatus(row) {
