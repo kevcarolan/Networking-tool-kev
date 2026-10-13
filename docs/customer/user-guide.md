@@ -11,6 +11,11 @@ some pages or buttons may be missing for you.
   with **Change password** (top right). It needs at least 12 characters.
 * You are signed out after 12 hours (an admin can change this), and straight away if an admin
   disables your account.
+* **Two-factor sign-in (optional):** after the password, a 6-digit code from an authenticator app on
+  your phone. Turn it on with **Two-factor** (top right): scan the QR code, type the code,
+  and keep the 10 recovery codes somewhere safe (each signs you in once without the phone).
+  Your admin may require it, and then you set it up the next time you sign in. Lost your
+  phone? Use a recovery code, or ask an admin to **Reset 2FA**.
 
 A coloured line under the top bar is a notice from the server, for example that the
 licence has ended. While a licence has ended, nobody can add devices or start upgrades,

@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.core import (alerts, appsettings, auth, display, inventory, licence, reports, search,
-                      setup, ssh, users)
+                      setup, ssh, twofactor, users)
 from app.core.config import Settings, get_settings
 from app.core.crypto import CredentialCipher
 from app.core.db import init_engine, session_scope
@@ -115,6 +115,7 @@ def create_app(settings: Settings | None = None, fetcher=fetch_config,
         return response
 
     app.include_router(auth.router)
+    app.include_router(twofactor.router)
     app.include_router(inventory.router)
     app.include_router(users.router)
     app.include_router(setup.router)

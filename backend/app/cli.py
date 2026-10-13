@@ -1,6 +1,8 @@
 """Admin command line.
 
   python -m app.cli hash-password            # for NETOPS_LOCAL_ADMIN_PASSWORD_HASH
+  python -m app.cli totp-secret              # two-factor for the break-glass admin:
+                                             # NETOPS_LOCAL_ADMIN_TOTP_SECRET and a QR code
   python -m app.cli import-csv devices.csv   # bulk-load devices
   python -m app.cli backup <device-name>     # run one backup now and print the result
   python -m app.cli firmware-check <device-name> [--raw]
@@ -27,6 +29,27 @@ from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy import select
+
+
+def _totp_secret(_args) -> int:
+    from app.core import totp
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    secret = totp.new_secret()
+    link = totp.uri(secret, settings.local_admin_user, settings.product_name)
+    print("Scan this with the authenticator app (or type the secret in by hand):\n")
+    try:
+        import segno
+
+        segno.make(link, error="m").terminal(compact=True)
+    except Exception:  # noqa: BLE001 - a terminal that can't draw it: the text is enough
+        pass
+    print(f"\nSecret: {secret}\n\nThen put this line in netops.env and restart the service:\n"
+          f"NETOPS_LOCAL_ADMIN_TOTP_SECRET={secret}\n\n"
+          "Keep a copy somewhere safe (a sealed envelope, the password vault): without it\n"
+          "and the phone, the break-glass account can't sign in until the line is removed.")
+    return 0
 
 
 def _hash_password(_args) -> int:
@@ -271,6 +294,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("hash-password").set_defaults(func=_hash_password)
+    sub.add_parser("totp-secret").set_defaults(func=_totp_secret)
     p = sub.add_parser("import-csv")
     p.add_argument("file")
     p.set_defaults(func=_import_csv)
@@ -290,7 +314,7 @@ def main(argv=None) -> int:
     sub.add_parser("upgrades-running").set_defaults(func=_upgrades_running)
     sub.add_parser("db-status").set_defaults(func=_db_status)
     args = parser.parse_args(argv)
-    if args.cmd != "hash-password":
+    if args.cmd not in ("hash-password", "totp-secret"):
         from app.core import ssh
         from app.core.config import get_settings
 
