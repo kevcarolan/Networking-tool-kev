@@ -49,7 +49,8 @@ PREFIX = "alerts_"
 KEYS = ("enabled", "smtp_host", "smtp_port", "smtp_security", "smtp_user", "mail_from",
         "mail_to", "backup_hours", "upgrades", "licence", "worker", "recipients",
         "syslog_level", "syslog_minutes", "changes_diff")
-KINDS = {"backups": "Backups", "changes": "Config changes", "upgrades": "Upgrades",
+KINDS = {"backups": "Backups", "changes": "Config changes", "compliance": "Compliance",
+         "upgrades": "Upgrades",
          "licence": "Licence", "worker": "Upgrade worker", "syslog": "Syslog"}
 CHANGES_LIMIT = 30  # devices listed in one email
 DIFF_LINES = 40  # changed lines shown per device, when the diff is included
@@ -199,6 +200,8 @@ def due(db: Session, cfg: Config, now: datetime | None = None, syslog_dir=None,
     out = []
     if cfg.backup_hours and cfg.wanted("backups") and "backups" in modules:
         out += _backups(db, cfg, now, done)
+    if cfg.wanted("compliance") and "backups" in modules:
+        out += _compliance(db, since, done)
     if cfg.wanted("changes") and "backups" in modules:
         out += _changes(db, cfg, since, done, configs_dir,
                         syslog_dir if "syslog" in modules else None)
@@ -304,6 +307,36 @@ def _changes(db, cfg: Config, since, done, configs_dir=None, syslog_dir=None) ->
     body = ("A config backup found these changes:\n\n" + "\n\n".join(blocks) + more +
             "\n\nSee each change on Config backups (History › compare versions).")
     return [Alert(keys, subject, body, kind="changes")]
+
+
+def _compliance(db, since, done) -> list[Alert]:
+    """Devices that started failing a compliance rule. Config lines are never included."""
+    from app.tools.config_backup.models import ComplianceResult, ComplianceRule
+
+    rows = []
+    for res, rule, device in db.execute(
+            select(ComplianceResult, ComplianceRule, Device)
+            .join(ComplianceRule, ComplianceRule.id == ComplianceResult.rule_id)
+            .join(Device, Device.id == ComplianceResult.device_id)
+            .where(ComplianceResult.passed.is_(False), ComplianceResult.failing_since >= since)):
+        key = f"compliance:{device.id}:{rule.id}:{res.failing_since.isoformat()}"
+        if key not in done:
+            rows.append((key, rule, device))
+    if not rows:
+        return []
+    rows.sort(key=lambda x: (x[1].severity != "critical", x[2].name.lower()))
+    lines = [f"  {d.name} ({d.site or '-'}): {r.name}"
+             f"{' (critical)' if r.severity == 'critical' else ''}" for _k, r, d in rows[:100]]
+    n = len(rows)
+    devices = sorted({d.name for _k, _r, d in rows})
+    critical = sum(1 for _k, r, _d in rows if r.severity == "critical")
+    return [Alert([k for k, _r, _d in rows], kind="compliance", **_text(
+        f"{n} new compliance failure{'s' if n > 1 else ''}"
+        f"{f' ({critical} critical)' if critical else ''}: {', '.join(devices[:4])}"
+        f"{' …' if len(devices) > 4 else ''}",
+        "These devices' configs now fail a compliance rule:\n\n" + "\n".join(lines) +
+        (f"\n\n...and {n - 100} more." if n > 100 else "") +
+        "\n\nThe details are on Config backups › Compliance."))]
 
 
 def _run_diff(store, state, run) -> list[str] | None:

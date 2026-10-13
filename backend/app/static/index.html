@@ -72,6 +72,7 @@
           </select>
           <select id="filter-site"><option value="">All sites</option></select>
           <span class="spacer"></span>
+          <button id="bk-compliance" data-module="backups" title="Rules every backed-up config is checked against">Compliance</button>
           <button id="add-device" class="primary" data-perm="inventory:addresses">+ Add device</button>
         </div>
         <div class="table-wrap">
@@ -549,14 +550,25 @@
     <div class="tabs" id="detail-tabs">
       <button data-tab="runs" class="active" data-module="backups">Backup history</button>
       <button data-tab="versions" data-perm="backups:configs" data-module="backups">Config versions</button>
+      <button data-tab="compliance" data-module="backups">Compliance</button>
       <button data-tab="circuits" data-perm="circuits:view" data-module="circuits">Circuits</button>
       <button data-tab="upgrades" data-perm="upgrades:view" data-module="upgrades">Upgrade history</button>
     </div>
     <div id="detail-runs" class="detail-pane"></div>
     <div id="detail-versions" class="detail-pane" hidden></div>
+    <div id="detail-compliance" class="detail-pane" hidden></div>
     <div id="detail-circuits" class="detail-pane" hidden></div>
     <div id="detail-upgrades" class="detail-pane" hidden></div>
     <pre id="detail-text" class="config" hidden></pre>
+  </dialog>
+
+  <!-- Config compliance: rules and results -->
+  <dialog id="cp-dialog" class="wide">
+    <div class="detail-head">
+      <h2 id="cp-dialog-title">Config compliance</h2>
+      <button id="cp-dialog-close" class="ghost" type="button">Close</button>
+    </div>
+    <div id="cp-dialog-body" class="form"></div>
   </dialog>
 
   <!-- Firmware standard add/edit -->

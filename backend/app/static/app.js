@@ -207,8 +207,13 @@ const STATUS_LABEL = { success: "OK", failed: "Failed", running: "Running", neve
 
 async function loadBackups() {
   try {
-    const [rows, summary] = await Promise.all([api("/api/backup/devices"), api("/api/backup/summary")]);
+    const [rows, summary, cp] = await Promise.all([api("/api/backup/devices"), api("/api/backup/summary"),
+      hasModule("backups") ? api("/api/compliance").catch(() => null) : null]);
     state.rows = rows;
+    state.cpFailing = new Map();
+    for (const x of (cp ? cp.results : [])) {
+      if (!x.passed) state.cpFailing.set(x.device_id, (state.cpFailing.get(x.device_id) || 0) + 1);
+    }
     renderSummary(summary);
     renderSiteFilter();
     renderDevices();
@@ -289,7 +294,9 @@ function deviceRow(r) {
     h("td", {}, fmtFreq(b.frequency_minutes)),
     h("td", { title: fmtTime(b.last_success) }, fmtAgo(b.last_success)),
     h("td", { title: fmtTime(b.last_change) }, b.last_change ? fmtAgo(b.last_change) : "—"),
-    h("td", { class: "result" }, result),
+    h("td", { class: "result" }, result,
+      state.cpFailing && state.cpFailing.get(d.id) ? h("small", { class: "sub" }, h("span", { class: "link errtext", title: "Compliance rules this config fails",
+        onclick: () => { openDetail(r); selectDetailTab("compliance"); } }, `⚠ ${state.cpFailing.get(d.id)} compliance rule(s)`)) : null),
     h("td", { class: "actions" }, actions));
 }
 
@@ -422,9 +429,11 @@ function selectDetailTab(tab) {
   $("#detail-runs").hidden = tab !== "runs";
   $("#detail-versions").hidden = tab !== "versions";
   $("#detail-circuits").hidden = tab !== "circuits";
+  $("#detail-compliance").hidden = tab !== "compliance";
   $("#detail-upgrades").hidden = tab !== "upgrades";
   $("#detail-text").hidden = true;
-  ({ runs: loadRuns, versions: loadVersions, circuits: loadDeviceCircuits, upgrades: loadDeviceUpgrades })[tab]();
+  ({ runs: loadRuns, versions: loadVersions, circuits: loadDeviceCircuits, upgrades: loadDeviceUpgrades,
+    compliance: loadDeviceCompliance })[tab]();
 }
 $$("#detail-tabs button").forEach((b) => b.addEventListener("click", () => selectDetailTab(b.dataset.tab)));
 $("#detail-close").addEventListener("click", () => $("#detail-dialog").close());
@@ -849,6 +858,133 @@ async function deleteImage(img) {
     toast(e.message);
   }
 }
+
+// ---------- config compliance ----------
+
+const CP_KIND = { must: "must have", must_not: "must not have" };
+
+async function loadDeviceCompliance() {
+  const pane = $("#detail-compliance");
+  pane.replaceChildren(h("p", { class: "muted" }, "Loading…"));
+  try {
+    const rows = await api(`/api/compliance/device/${state.detailDevice.id}`);
+    if (!rows.length) return pane.replaceChildren(h("p", { class: "empty" }, "No compliance rule applies to this device (or it hasn't been backed up yet)."));
+    pane.replaceChildren(h("table", {},
+      h("thead", {}, h("tr", {}, ["Rule", "Result", "Since", "Config lines"].map((t) => h("th", {}, t)))),
+      h("tbody", {}, rows.map((x) => h("tr", {},
+        h("td", {}, x.rule, x.severity === "critical" ? h("small", { class: "sub errtext" }, "critical") : null),
+        h("td", {}, h("span", { class: `badge ${x.passed ? "success" : "failed"}` }, x.passed ? "Pass" : "Fail")),
+        h("td", {}, x.failing_since ? fmtTime(x.failing_since) : "—"),
+        h("td", {}, x.detail === null ? h("span", { class: "muted" }, "needs Config backups: read configs") :
+          x.detail ? h("pre", { class: "config small" }, (x.passed ? "" : x.kind === "must" ? "Missing:\n" : "Found:\n") + x.detail) : "—"))))));
+  } catch (e) { pane.replaceChildren(h("p", { class: "error" }, e.message)); }
+}
+
+function cpDialog(...content) {
+  $("#cp-dialog-body").replaceChildren(...content);
+  if (!$("#cp-dialog").open) $("#cp-dialog").showModal();
+}
+$("#cp-dialog-close").addEventListener("click", () => { $("#cp-dialog").close(); loadBackups(); });
+
+/** Every rule, how many devices pass and fail it, and the failures. */
+async function openCompliance() {
+  let d;
+  try { d = await api("/api/compliance"); } catch (e) { return toast(e.message); }
+  const failing = d.results.filter((x) => !x.passed);
+  const devices = new Set(d.results.map((x) => x.device_id));
+  const badDevices = new Set(failing.map((x) => x.device_id));
+  const ruleOf = new Map(d.rules.map((r) => [r.id, r]));
+  const call = async (fn, msg) => { try { const r = await fn(); if (msg) toast(msg(r)); openCompliance(); } catch (e) { toast(e.message); } };
+  const tiles = h("div", { class: "tiles" },
+    ...[["", "Rules", d.rules.length], ["success", "Devices compliant", devices.size - badDevices.size],
+      ["failed", "Devices failing", badDevices.size], ["failed", "Critical failures", failing.filter((x) => (ruleOf.get(x.rule_id) || {}).severity === "critical").length]]
+      .map(([cls, lbl, n]) => h("div", { class: `tile ${cls}` }, h("span", { class: "num" }, n), h("span", { class: "lbl" }, lbl))));
+  const scope = (r) => [r.platforms.length ? r.platforms.map((p) => d.platforms[p] || p).join(", ") : "every platform",
+    r.sites.length ? `sites ${r.sites.join(", ")}` : ""].filter(Boolean).join(" · ");
+  const ruleRows = d.rules.map((r) => {
+    const res = d.results.filter((x) => x.rule_id === r.id);
+    const bad = res.filter((x) => !x.passed).length;
+    return h("tr", { class: r.enabled ? "" : "disabled" },
+      h("td", { class: "name" }, r.name, r.description ? h("small", {}, r.description) : null),
+      h("td", {}, CP_KIND[r.kind], h("pre", { class: "config small" }, r.lines), r.regex ? h("small", { class: "sub" }, "patterns") : null),
+      h("td", {}, scope(r)),
+      h("td", {}, h("span", { class: `badge ${r.severity === "critical" ? "failed" : "changed"}` }, r.severity)),
+      h("td", {}, r.enabled ? `${res.length - bad} pass, ${bad} fail` : "off"),
+      h("td", { class: "actions" }, d.can_manage ? [
+        h("button", { class: "small", onclick: () => cpRuleForm(d, r) }, "Edit"),
+        h("button", { class: "small danger", onclick: () => { if (confirm(`Delete the rule ${r.name}?`)) call(() => api(`/api/compliance/rules/${r.id}`, { method: "DELETE" })); } }, "Delete")] : null));
+  });
+  const failRows = failing.sort((a, b) => a.device.localeCompare(b.device)).map((x) => {
+    const r = ruleOf.get(x.rule_id) || { name: "?" };
+    return h("tr", {},
+      h("td", { class: "name" }, x.device, h("small", {}, x.site || "")),
+      h("td", {}, r.name, r.severity === "critical" ? h("small", { class: "sub errtext" }, "critical") : null),
+      h("td", {}, x.failing_since ? fmtTime(x.failing_since) : "—"),
+      h("td", {}, x.detail === null ? h("span", { class: "muted" }, "—") : h("pre", { class: "config small" }, x.detail)));
+  });
+  cpDialog(tiles,
+    h("p", { class: "muted" }, "Every device's config is checked after each backup. " +
+      (d.can_read_lines ? "" : "The config lines of a result need Config backups: read configs.")),
+    h("div", { class: "toolbar" },
+      can("backups", "run") ? h("button", { type: "button", onclick: () => call(() => api("/api/compliance/check", { method: "POST" }), (r) => `Checked ${r.checked} device(s)`) }, "Check now") : null,
+      h("a", { class: "button", href: "/api/compliance/export.csv", download: "" }, "Export CSV"),
+      h("span", { class: "spacer" }),
+      d.can_manage ? h("button", { type: "button", onclick: () => call(() => api("/api/compliance/examples", { method: "POST" }), (r) => `Added ${r.added.length} example rule(s)`) }, "Add example rules (Cisco IOS)") : null,
+      d.can_manage ? h("button", { type: "button", class: "primary", onclick: () => cpRuleForm(d) }, "+ Add rule") : null),
+    h("h3", {}, `Failing (${failing.length})`),
+    failing.length ? h("div", { class: "table-wrap" }, h("table", {},
+      h("thead", {}, h("tr", {}, ["Device", "Rule", "Failing since", "Config lines"].map((t) => h("th", {}, t)))), h("tbody", {}, failRows)))
+      : h("p", { class: "muted" }, d.rules.length ? "Nothing fails." : "No rules yet."),
+    h("h3", {}, `Rules (${d.rules.length})`),
+    d.rules.length ? h("div", { class: "table-wrap" }, h("table", {},
+      h("thead", {}, h("tr", {}, ["Rule", "Config", "Applies to", "Severity", "Devices", ""].map((t) => h("th", {}, t)))), h("tbody", {}, ruleRows)))
+      : h("p", { class: "muted" }, "Add a rule, or start from the examples."));
+}
+
+function cpRuleForm(d, r = null) {
+  const err = errorLine();
+  const v = r || { name: "", description: "", kind: "must", lines: "", regex: false, platforms: [], sites: [], severity: "warning", enabled: true };
+  const f = {
+    name: h("input", { value: v.name, maxlength: 100, placeholder: "e.g. NTP server set" }),
+    description: h("input", { value: v.description, maxlength: 2000 }),
+    kind: h("select", {}, ...Object.entries(CP_KIND).map(([k, l]) => h("option", { value: k, selected: v.kind === k }, `The config ${l}`))),
+    lines: h("textarea", { rows: 4, placeholder: "One config line per line, e.g.\nip ssh version 2\nservice password-encryption" }, v.lines),
+    regex: h("input", { type: "checkbox", checked: v.regex }),
+    sites: h("input", { value: v.sites.join(", "), placeholder: "Empty: every site" }),
+    severity: h("select", {}, ...["warning", "critical"].map((x) => h("option", { value: x, selected: v.severity === x }, x))),
+    enabled: h("input", { type: "checkbox", checked: v.enabled }),
+  };
+  const plats = h("div", { class: "chips" }, ...Object.entries(d.platforms).map(([k, l]) =>
+    h("label", { class: "check" }, h("input", { type: "checkbox", "data-platform": k, checked: v.platforms.includes(k) }), ` ${l}`)));
+  cpDialog(
+    h("h3", {}, r ? `Rule: ${r.name}` : "New rule"),
+    h("div", { class: "grid2" }, h("label", {}, "Name", f.name), h("label", {}, "Severity", f.severity)),
+    h("label", {}, "What it checks", f.description),
+    h("label", {}, "Kind", f.kind),
+    h("label", {}, "Config lines", f.lines),
+    h("label", { class: "check" }, f.regex, " The lines are patterns (regular expressions), searched in each config line"),
+    h("p", { class: "muted" }, "Must have: every line must be in the config. Must not have: any of them fails it. Without patterns, a line matches when it is the same, ignoring spaces at either end."),
+    h("label", {}, "Platforms (none ticked: every platform)"), plats,
+    h("label", {}, "Sites (names, separated by commas)", f.sites),
+    h("label", { class: "check" }, f.enabled, " On"),
+    err,
+    h("div", { class: "dialog-actions" },
+      h("button", { type: "button", onclick: () => openCompliance() }, "Cancel"),
+      h("button", { type: "button", class: "primary", onclick: async () => {
+        err.hidden = true;
+        const body = { name: f.name.value, description: f.description.value, kind: f.kind.value, lines: f.lines.value,
+          regex: f.regex.checked, severity: f.severity.value, enabled: f.enabled.checked,
+          platforms: $$("input[data-platform]", plats).filter((c) => c.checked).map((c) => c.dataset.platform),
+          sites: f.sites.value.split(",").map((x) => x.trim()).filter(Boolean) };
+        try {
+          await api(r ? `/api/compliance/rules/${r.id}` : "/api/compliance/rules", { method: r ? "PUT" : "POST", body });
+          toast("Saved; every device checked again");
+          openCompliance();
+        } catch (e) { showError(err, e); }
+      } }, "Save")));
+}
+
+$("#bk-compliance").addEventListener("click", openCompliance);
 
 // ---------- shared: links to sites ----------
 
@@ -2426,6 +2562,7 @@ async function alertsPanel() {
     h("ul", { class: "muted" },
       h("li", {}, "Backups: a device's backup has been failing for longer than the hours below."),
       h("li", {}, "Config changes: a backup found a changed config (what changed, and who, when the device's syslog says)."),
+      h("li", {}, "Compliance: a device's config starts failing a compliance rule."),
       h("li", {}, "Upgrades: a job completes, fails, rolls back or needs attention."),
       h("li", {}, "Licence: 30 and 7 days before it ends, and when it has ended."),
       h("li", {}, "Upgrade worker: stopped for more than 10 minutes."),

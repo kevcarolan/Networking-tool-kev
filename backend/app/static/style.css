@@ -397,3 +397,4 @@ table.recipients input[type=email] { min-width: 220px; }
 .rack-face.drop-ok { outline: 2px solid var(--ok); }
 .tree-node { flex-wrap: wrap; }
 .tree-node.selected .tools button { color: var(--text); }
+pre.config.small { font-size: 11px; max-height: 120px; padding: 4px 6px; margin: 2px 0; white-space: pre-wrap; }
