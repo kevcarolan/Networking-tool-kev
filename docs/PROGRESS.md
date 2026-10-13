@@ -40,7 +40,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 - [x] Switch port view: a faceplate per device from the last scan and the circuit list ([circuits.md](circuits.md#a-switchs-ports))
 - [x] Report: Activity › Report, and emailed on a day and time to the recipients of "Report"
 - [x] Wall display: compliance and config changes tiles, Sites and Network pages, pages chosen per screen
-- [ ] Health checks and before/after comparison for Arista, NX-OS, Juniper and the other platforms (today: Cisco IOS/IOS-XE only; the others check version, flash, image, MD5 and HA pair) (asked the owner, 2026-10-13)
+- [x] Health checks and before/after comparison for NX-OS, ASA, Arista, Junos, ArubaOS-Switch, AOS 8, Dell OS10, EXOS, Huawei, IOS-XR, AlliedWare Plus, MikroTik and EdgeOS: environment, alarms, modules/stack, CPU, memory, unsaved config, last restart; interfaces, neighbours, LAG members and modules compared after ([upgrades.md](upgrades.md#the-checks)). Readers from vendor docs: confirm each with a capture (lab tests section 9)
 - [ ] Main and standby server (later)
 - [ ] Later: one overview of several servers (the display feed is the starting point); several customers on one server kept as an idea
 
@@ -115,6 +115,8 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-13 | Config change emails never hold a line that may be a secret; compliance results show config lines only to `backups:configs`; the wall display never shows syslog text | Emails and screens travel further than the GUI; syslog text can hold addresses |
 | 2026-10-13 | The switch port view is built from stored scans and the circuit list, not by contacting the device | No new device commands to approve; it works the same in the demo and offline |
 | 2026-10-13 | Rack positions are the item's lowest U; full depth fills front and rear, half depth one face; height 0 is zero-U | The usual rack convention; patch panels share a U front and rear |
+| 2026-10-13 | Health checks for the other platforms live in one table per platform (`firmware_upgrade/health.py`: commands and a reader per check); the snapshot uses the IOS keys (`interfaces`, `lldp`, `etherchannel`) so one comparison serves every platform | Adding or fixing a platform is one table, checked against a capture; the post-check rules stay the same everywhere |
+| 2026-10-13 | `show reload cause`, `show reboot history` and `display reboot-info` are allowed by exact name in the capture's read-only check | They are read-only but contain words the check refuses; listing them exactly keeps every other "reload"/"reboot" command refused |
 | 2026-10-12 | Sites are a list of their own (table `sites`); items and devices keep a Site text, matched to a site's name or code; renaming a site rewrites that text | The owner: a site list cross-referenced with the inventory, without changing how devices and backups store their site |
 
 ## Open questions
@@ -122,7 +124,8 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 **Owner's to-do, in this order (remind the owner each session):**
 1. Testing of what is built: the demo (owner, 2026-10-13: "everything looks good so far"),
    now the site layout and rack elevations, compliance, the port view, the report and the
-   wall display pages too ([try-it.md](try-it.md)).
+   wall display pages too ([try-it.md](try-it.md)); and an upgrade job's pre-checks on an
+   Arista, Juniper or NX-OS demo device, which now show the health checks.
 2. Full install test on Ubuntu ([install-online.md](install-online.md)), after the demo.
 3. Product name, then branding. Not decided yet (owner, 2026-10-12). Checked on the web:
    * ruled out: NetKeeper / NetKeeper Pro (live US trademark NETKEEPER, reg. 4944745, network
@@ -190,3 +193,4 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-13 | Networking-tool-kev | Site layout and rack elevations (migration 0009): buildings, floors, rooms from the inventory, site page with the tree and racks front and rear, drag to move with checks, rack names and sites linked from the inventory, print; demo has the layout and racks filled in |
 | 2026-10-13 | Networking-tool-kev | Config change alerts (who changed it from syslog), config compliance (migration 0010), switch port view, report (Activity and scheduled email), wall display Sites and Network pages with per-screen pages (migration 0011); answered which pre/post-checks run on Cisco and Arista |
 | 2026-10-13 | Networking-tool-kev | Owner didn't see the rack elevations after updating: browsers kept the old app.js (no caching instructions were sent). Every response now says Cache-Control: no-cache |
+| 2026-10-13 | Networking-tool-kev | Health checks and before/after comparison for every SSH upgrade platform (NX-OS, ASA extras, Arista, Junos, ArubaOS-Switch, AOS 8, OS10, EXOS, VRP, IOS-XR, AW+, MikroTik, EdgeOS); healthy sample output in the demo network for each command; fault tests (power, alarms, modules, unsaved config, LAG member lost after the reload) |

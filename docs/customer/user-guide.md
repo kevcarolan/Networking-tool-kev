@@ -111,16 +111,19 @@ of who did what and why.
 2. **Run pre-checks** any time before the window. They log in and check, among other things:
    * the version;
    * free space;
-   * alarms;
-   * the HA or stack state;
+   * fans, power, temperature and alarms;
+   * modules and the HA or stack state;
+   * CPU and memory;
+   * unsaved configuration;
+   * why the device last restarted;
    * a recent backup.
 
    A failed blocker stops the job until it is fixed, or overridden with a reason.
 3. **Stage image** (optional): copies the image to the device and checks its checksum
    there. Nothing is reloaded.
 4. **Start** in the window. For a live job, type the device name to confirm. The steps
-   run one by one, and the **post-checks** compare the device with how it was before,
-   including the circuits seen on its ports.
+   run one by one, and the **post-checks** compare the device with how it was before:
+   interfaces, neighbours, port-channel members, modules, and the circuits seen on its ports.
 5. **Stop after this step** pauses safely between steps. A reload is never interrupted.
    If post-checks fail, you can fix and re-check, override with a reason, or **Roll back**.
 

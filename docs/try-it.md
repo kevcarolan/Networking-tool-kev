@@ -81,6 +81,9 @@ you did and what you expected, and send it over.
       install, reload (the switch is down for about 15 seconds), post-checks, commit.
 - [ ] Open the job's **report**.
 - [ ] Try a **dry run** on another device: the same steps, nothing changed.
+- [ ] On `dc1-leaf3` (Arista), `dc1-spine1` (Juniper) or `hq-core1` (NX-OS), the pre-checks
+      list fans/power, alarms, modules, CPU, memory, unsaved config and last restart, and the
+      post-checks compare interfaces, LLDP neighbours, port-channel members and modules.
 
 **Circuits**
 - [ ] 72 circuits; one has **moved** port and one is **not seen**.

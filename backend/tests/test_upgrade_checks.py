@@ -121,7 +121,12 @@ def test_other_platforms_get_common_checks_and_an_info_note():
     out = {"version": s.NXOS_VERSION, "dir": s.NXOS_DIR}
     img = c.ImageFacts("cisco_nxos", "10.3(5)", "*", 2_000 * 2**20, True, "nxos.bin")
     r = _by_id(c.pre_checks("cisco_nxos", out, img, c.Thresholds(), 1.1, 2.2)[0])
-    assert r["flash_space"].status == c.PASS and r["platform_checks"].severity == c.INFO
+    # NX-OS has its health checks (test_health_checks); unanswered ones are skipped
+    assert r["flash_space"].status == c.PASS and "platform_checks" not in r
+    assert r["environment"].status == c.SKIP and not r["environment"].blocking
+    # a platform without them gets a note saying so
+    r = _by_id(c.health_checks("cisco_ftd", {}, c.Thresholds()))
+    assert r["platform_checks"].severity == c.INFO
 
 
 def test_snapshot_and_compare():

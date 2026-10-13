@@ -260,6 +260,7 @@ OSSWITCH_SYSTEM = """
   ROM Version        : WC.17.02.0006        Serial Number      : SG9ZKMX123
 
   Up Time            : 10 days              Memory   - Total   : 339,200,000
+  CPU Util (%)       : 3                               Free    : 211,368,960
 """
 
 OSSWITCH_MODULES = """
@@ -280,6 +281,9 @@ Switch uptime is 10 days 2 hours 3 minutes 4 seconds
 AOS8_INVENTORY = """Supervisor Card slot        : 0
 System Serial#               : CW0001234 (Date:01/02/20)
 SC Assembly#                 : 2010323A (Rev:01.00)
+Power Supply 0               : Present (Ok)
+Power Supply 1               : Present (Ok)
+Fan Tray                     : Present (OK)
 """
 
 OS10_VERSION = """Dell SmartFabric OS10 Enterprise
@@ -332,6 +336,7 @@ ROUTEROS_RESOURCE = """                   uptime: 1w2d3h4m5s
                   version: 7.12.1 (stable)
                build-time: 2023-11-17 11:38:44
          factory-software: 7.1
+                 cpu-load: 3%
               free-memory: 3378.6MiB
              total-memory: 4096.0MiB
                       cpu: ARM64
