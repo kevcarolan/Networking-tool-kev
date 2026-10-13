@@ -19,6 +19,16 @@
       <p id="login-error" class="error" hidden></p>
       <button type="submit" class="primary">Sign in</button>
     </form>
+    <!-- Two-factor: a code after the password, or setting it up when it is required -->
+    <form id="login-code-form" class="card login-card" hidden>
+      <h1>{{product_name}}</h1>
+      <p class="muted">Enter the 6-digit code from your authenticator app, or one of your recovery codes.</p>
+      <label>Code <input name="code" autocomplete="one-time-code" inputmode="numeric" maxlength="20" required></label>
+      <p class="error" hidden></p>
+      <button type="submit" class="primary">Sign in</button>
+      <button type="button" class="ghost login-back">Back</button>
+    </form>
+    <div id="login-setup" class="card login-card tf-card" hidden></div>
   </section>
 
   <!-- First-run setup (a new install has no way to sign in yet) -->
@@ -51,6 +61,7 @@
       <span class="spacer"></span>
       <span id="whoami" class="muted"></span>
       <button id="change-password" class="ghost" hidden>Change password</button>
+      <button id="two-factor" class="ghost" hidden title="Codes from an authenticator app when you sign in">Two-factor</button>
       <button id="logout" class="ghost">Sign out</button>
     </header>
     <div id="demo-banner" class="licence-banner" hidden>Demo: everything here runs on a simulated network. No real devices are contacted.</div>
@@ -452,6 +463,14 @@
         <button type="submit" class="primary">Save</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="tf-dialog">
+    <div class="detail-head">
+      <h2>Two-factor sign-in</h2>
+      <button id="tf-close" class="ghost">Close</button>
+    </div>
+    <div id="tf-body"></div>
   </dialog>
 
   <!-- Device add/edit -->

@@ -203,6 +203,11 @@ preset:
 | Administrator | everything, plus Users, Activity and Settings | | | | |
 
 * AD users who aren't on the Users page get access from the AD groups.
+* **Two-factor sign-in** (a code from an authenticator app after the password): anyone on
+  the Users page can turn it on (**Two-factor**, top right). Require it for local users on
+  **Settings** › *Local users must use two-factor sign-in*. **Reset 2FA** on a user for a
+  lost phone. The break-glass admin gets it with `sudo netops-cli totp-secret`. Details:
+  [users.md](../users.md#two-factor-sign-in).
 * A change applies straight away.
 * A disabled user is signed out at their next click.
 

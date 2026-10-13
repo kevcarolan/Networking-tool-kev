@@ -32,6 +32,38 @@ NetOps checks, in this order:
 A change on the Users page applies **straight away**, even to someone who is signed in.
 A **disabled** (or deleted) account is signed out at its next click.
 
+## Two-factor sign-in
+
+After the password, a 6-digit code from an authenticator app on the user's phone
+(Microsoft Authenticator, Google Authenticator, Authy, 1Password and the like). A stolen
+password alone is then not enough.
+
+**It is optional.** It is off for everyone until a user turns it on for themselves; nobody
+has to use it unless an admin chooses to require it for local users (off by default).
+
+* **Turning it on:** **Two-factor** (top right) › **Turn on**: scan the QR code with the
+  app, type the code it shows, and keep the **10 recovery codes** shown once (each signs in
+  once without the phone). Any user on the Users page can, local or AD.
+* **Making it compulsory** for local users: **Settings** › *Local users must use two-factor
+  sign-in* (or `NETOPS_REQUIRE_TWO_FACTOR=true` in `netops.env`). They set it up at their
+  next sign-in and can't turn it off. AD users can still choose it themselves (most sites
+  already require MFA for AD elsewhere).
+* **Lost phone:** sign in with a recovery code, or an admin clicks **Reset 2FA** on the
+  Users page; the user sets it up again.
+* **The break-glass admin:** `sudo netops-cli totp-secret` shows a QR code and the line to
+  put in `netops.env` (`NETOPS_LOCAL_ADMIN_TOTP_SECRET`); restart the service. Keep a copy
+  of the secret with the break-glass password (the vault): without it, the account can't
+  sign in until the line is removed.
+* AD users who are only in an AD group (not on the Users page) can't use it: add them on
+  the Users page.
+* A code works for its 30 seconds and the 30 seconds either side (phone clocks drift), and
+  never twice. Wrong codes count towards the same lock-out as wrong passwords (5 in 5
+  minutes). After a right password there are 5 minutes to enter the code.
+* The app's secret is stored encrypted, like the device passwords; recovery codes only as
+  hashes. The QR code is drawn on the server: nothing is sent to an outside service.
+* Every set-up, reset, turning off and sign-in (with a code or a recovery code) is in the
+  activity log.
+
 ## Permissions
 
 Each user has a level in each area. Each level includes the ones before it.
