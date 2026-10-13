@@ -10,7 +10,8 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.core import alerts, appsettings, auth, display, inventory, licence, setup, ssh, users
+from app.core import (alerts, appsettings, auth, display, inventory, licence, reports, setup,
+                      ssh, users)
 from app.core.config import Settings, get_settings
 from app.core.crypto import CredentialCipher
 from app.core.db import init_engine, session_scope
@@ -27,6 +28,7 @@ from app.tools.firmware_upgrade.deviceio import DeviceIO
 from app.tools.firmware_upgrade.jobs import JobService
 from app.tools.firmware_upgrade.service import FirmwareService
 from app.tools.inventory import api as inventory_api
+from app.tools.config_backup import compliance as compliance_api
 from app.tools.inventory import layout as layout_api
 from app.tools.inventory import sites as sites_api
 from app.tools.syslog import api as syslog_api
@@ -116,10 +118,12 @@ def create_app(settings: Settings | None = None, fetcher=fetch_config,
     app.include_router(display.admin_router)
     app.include_router(display.router)
     app.include_router(alerts.router)
+    app.include_router(reports.router)
     app.include_router(inventory_api.router)  # part of every licence
     app.include_router(sites_api.router)  # part of every licence
     app.include_router(layout_api.router)  # part of every licence
     app.include_router(backup_api.router)
+    app.include_router(compliance_api.router)  # the backups licence, on the router itself
     # The tools a licence can leave out (licence.MODULES): refused unless unlocked.
     app.include_router(firmware_api.router, dependencies=[Depends(licence.module("firmware"))])
     app.include_router(jobs_api.router, dependencies=[Depends(licence.module("upgrades"))])

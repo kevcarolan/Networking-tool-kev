@@ -22,6 +22,8 @@ one database.
 | Network inventory (every device plus racks, servers, UPSs…; custom columns, import/export) | `backend/app/tools/inventory/` | Done ([docs/inventory.md](docs/inventory.md)) |
 | Sites (site list, what the inventory has at each) | `backend/app/tools/inventory/sites.py` | Done ([docs/sites.md](docs/sites.md)) |
 | Site layout and rack elevations (buildings, floors, rooms; drag to move) | `backend/app/tools/inventory/layout.py` | Done ([docs/racks.md](docs/racks.md)) |
+| Config compliance (rules checked after every backup) | `backend/app/tools/config_backup/compliance.py` | Done ([docs/compliance.md](docs/compliance.md)) |
+| Report (Activity › Report, emailed on a schedule) | `backend/app/core/reports.py` | Done |
 | Users and activity (per-area permissions, activity report) | `backend/app/core/users.py`, `permissions.py` | Done ([docs/users.md](docs/users.md)) |
 
 Design docs: [docs/design.md](docs/design.md) (platform and backup tool),
@@ -78,9 +80,15 @@ remote); never sync the two automatically.
   installs it. The wall display (`core/display.py`, `static/display/`) is a read-only feed
   and page for NOC screens, reached with a per-screen key on its own nginx site and port
   (8443, `deploy/nginx-netops-display.conf`); the main site refuses it. Never put configs,
-  credentials or addresses in its feed. Email alerts (`core/alerts.py`): the web app's
+  credentials or addresses in its feed (nor syslog message text); each screen picks its pages
+  (`display_screens.pages`). Email alerts (`core/alerts.py`): the web app's
   scheduler checks state every minute and sends each new event once (`alerts_sent` table);
-  the mailer is injectable (`create_app(mailer=)`), tests never send mail. Licences (`core/licence.py`, made with `python -m app.licence_tool`, see
+  the mailer is injectable (`create_app(mailer=)`), tests never send mail. Alert kinds include
+  config changes (who changed it from syslog; changed lines optional, secret-like lines never)
+  and compliance; the report (`core/reports.py`, Activity › Report) is emailed by the same
+  scheduler on a day and time. Config compliance (`tools/config_backup/compliance.py`, tables
+  `compliance_rules`, `compliance_results`) runs after every backup; config lines in results
+  only for `backups:configs`. Licences (`core/licence.py`, made with `python -m app.licence_tool`, see
   [docs/licensing.md](docs/licensing.md)): a 60-day trial, then signed licences with an end
   date, a device count and the tools it unlocks (`licence.MODULES`: backups, firmware,
   upgrades, circuits, syslog; one full install, the licence unlocks parts of it). A tool's

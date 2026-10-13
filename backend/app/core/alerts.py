@@ -48,9 +48,20 @@ log = logging.getLogger(__name__)
 PREFIX = "alerts_"
 KEYS = ("enabled", "smtp_host", "smtp_port", "smtp_security", "smtp_user", "mail_from",
         "mail_to", "backup_hours", "upgrades", "licence", "worker", "recipients",
-        "syslog_level", "syslog_minutes")
-KINDS = {"backups": "Backups", "upgrades": "Upgrades", "licence": "Licence",
-         "worker": "Upgrade worker", "syslog": "Syslog"}
+        "syslog_level", "syslog_minutes", "changes_diff", "report_day", "report_time",
+        "report_days")
+KINDS = {"backups": "Backups", "changes": "Config changes", "compliance": "Compliance",
+         "upgrades": "Upgrades",
+         "licence": "Licence", "worker": "Upgrade worker", "syslog": "Syslog",
+         "reports": "Report"}
+LAST_REPORT = PREFIX + "report_last"  # the last report slot sent
+CHANGES_LIMIT = 30  # devices listed in one email
+DIFF_LINES = 40  # changed lines shown per device, when the diff is included
+# A changed line that may hold a secret is never put in an email.
+_SECRET = re.compile(r"secret|passw|key|community|psk|hash|encrypt|private|token|cert", re.I)
+# What devices log when someone changes their config (Cisco, Junos, Arista, AlliedWare...)
+_WHO = re.compile(r"CONFIG_I|configured from|UI_COMMIT|config(uration)? (was )?(changed|saved)"
+                  r"|committed|SYS-5-CONFIG", re.I)
 SYSLOG_AFTER = PREFIX + "syslog_after"  # messages received after this time are still to send
 SYSLOG_LIMIT = 50  # messages listed in one email
 PASSWORD = PREFIX + "smtp_password_enc"
@@ -88,6 +99,10 @@ class Config:
     recipients: tuple[Recipient, ...] = ()
     syslog_level: int = 2  # Critical and worse
     syslog_minutes: int = 5
+    changes_diff: bool = False  # put the changed lines (secrets left out) in config change emails
+    report_day: str = ""  # mon..sun, or "" for no scheduled report
+    report_time: str = "07:00"  # UTC
+    report_days: int = 7  # the period it covers
 
     def to(self, kind: str) -> list[str]:
         """Who gets this kind of alert."""
@@ -130,7 +145,10 @@ def load(db: Session, cipher=None) -> Config:
         worker=any("worker" in r.kinds for r in recipients),
         enabled_at=datetime.fromisoformat(v[ENABLED_AT]) if v.get(ENABLED_AT) else None,
         recipients=recipients, syslog_level=int(get("syslog_level", "2") or 2),
-        syslog_minutes=int(get("syslog_minutes", "5") or 5))
+        syslog_minutes=int(get("syslog_minutes", "5") or 5),
+        changes_diff=get("changes_diff") == "true", report_day=get("report_day"),
+        report_time=get("report_time", "07:00") or "07:00",
+        report_days=int(get("report_days", "7") or 7))
 
 
 # --- sending -----------------------------------------------------------------------------
@@ -179,7 +197,8 @@ def _sent(db: Session) -> set[str]:
     return set(db.scalars(select(AlertSent.key)))
 
 
-def due(db: Session, cfg: Config, now: datetime | None = None, syslog_dir=None) -> list[Alert]:
+def due(db: Session, cfg: Config, now: datetime | None = None, syslog_dir=None,
+        configs_dir=None) -> list[Alert]:
     from app.core import licence
 
     now = now or utcnow()
@@ -189,6 +208,11 @@ def due(db: Session, cfg: Config, now: datetime | None = None, syslog_dir=None) 
     out = []
     if cfg.backup_hours and cfg.wanted("backups") and "backups" in modules:
         out += _backups(db, cfg, now, done)
+    if cfg.wanted("compliance") and "backups" in modules:
+        out += _compliance(db, since, done)
+    if cfg.wanted("changes") and "backups" in modules:
+        out += _changes(db, cfg, since, done, configs_dir,
+                        syslog_dir if "syslog" in modules else None)
     if cfg.wanted("upgrades") and "upgrades" in modules:
         out += _upgrades(db, since, done)
     if cfg.wanted("licence"):
@@ -229,6 +253,135 @@ def _backups(db, cfg, now, done) -> list[Alert]:
                   f"These devices' config backups have been failing for more than "
                   f"{cfg.backup_hours} hours:\n\n" + "\n".join(lines) +
                   "\n\nThe reasons are on the Config backups page."))]
+
+
+def _changes(db, cfg: Config, since, done, configs_dir=None, syslog_dir=None) -> list[Alert]:
+    """Configs that changed (found by a backup) since alerts were switched on. A device's
+    first backup isn't a change. Says who changed it when the device's syslog says so."""
+    from app.tools.config_backup.models import SUCCESS, BackupRun, BackupState
+
+    runs = [r for r in db.scalars(select(BackupRun).where(
+        BackupRun.changed.is_(True), BackupRun.status == SUCCESS,
+        BackupRun.finished_at >= since).order_by(BackupRun.finished_at).limit(500))
+        if f"change:{r.id}" not in done]
+    if not runs:
+        return []
+    keys, entries = [], []
+    for run in runs:
+        keys.append(f"change:{run.id}")
+        before = db.scalar(select(BackupRun).where(
+            BackupRun.device_id == run.device_id, BackupRun.status == SUCCESS,
+            BackupRun.id < run.id).order_by(BackupRun.id.desc()).limit(1))
+        device = db.get(Device, run.device_id)
+        if before is None or device is None:
+            continue  # the first backup of a device: nothing to compare with
+        entries.append((run, before, device))
+    if not entries:
+        return [Alert(keys, "", "", kind="changes")]  # recorded, nothing to send
+    store = None
+    if configs_dir is not None:
+        from app.tools.config_backup.storage import GitConfigStore
+
+        store = GitConfigStore(configs_dir)
+    blocks = []
+    for run, before, device in entries[:CHANGES_LIMIT]:
+        state = db.get(BackupState, device.id)
+        head = (f"  {device.name} ({device.site or '-'}): changed between "
+                f"{before.finished_at:%Y-%m-%d %H:%M} and {run.finished_at:%Y-%m-%d %H:%M} UTC")
+        lines = [head]
+        lines += [f"    {w}" for w in _who_changed(db, device, before.finished_at,
+                                                    run.finished_at, syslog_dir)]
+        diff = _run_diff(store, state, run) if store and state else None
+        if diff is not None:
+            changed = [ln for ln in diff if ln[:1] in "+-" and ln[:3] not in ("+++", "---")
+                       and ln[1:].strip()]  # blank lines don't count
+            added = [ln for ln in changed if ln.startswith("+")]
+            removed = [ln for ln in changed if ln.startswith("-")]
+            lines.append(f"    {len(added)} line(s) added, {len(removed)} removed")
+            if cfg.changes_diff:
+                shown = changed
+                for ln in shown[:DIFF_LINES]:
+                    text = ln[0] + " (a line that may hold a secret: see the backup)" \
+                        if _SECRET.search(ln) else ln.rstrip()
+                    lines.append(f"      {text[:200]}")
+                if len(shown) > DIFF_LINES:
+                    lines.append(f"      ... and {len(shown) - DIFF_LINES} more")
+        blocks.append("\n".join(lines))
+    n = len(entries)
+    names = [d.name for _r, _b, d in entries]
+    more = f"\n\n...and {n - CHANGES_LIMIT} more." if n > CHANGES_LIMIT else ""
+    subject = (f"Config changed on {n} device{'s' if n > 1 else ''}: "
+               f"{', '.join(names[:4])}{' …' if n > 4 else ''}")
+    body = ("A config backup found these changes:\n\n" + "\n\n".join(blocks) + more +
+            "\n\nSee each change on Config backups (History › compare versions).")
+    return [Alert(keys, subject, body, kind="changes")]
+
+
+def _compliance(db, since, done) -> list[Alert]:
+    """Devices that started failing a compliance rule. Config lines are never included."""
+    from app.tools.config_backup.models import ComplianceResult, ComplianceRule
+
+    rows = []
+    for res, rule, device in db.execute(
+            select(ComplianceResult, ComplianceRule, Device)
+            .join(ComplianceRule, ComplianceRule.id == ComplianceResult.rule_id)
+            .join(Device, Device.id == ComplianceResult.device_id)
+            .where(ComplianceResult.passed.is_(False), ComplianceResult.failing_since >= since)):
+        key = f"compliance:{device.id}:{rule.id}:{res.failing_since.isoformat()}"
+        if key not in done:
+            rows.append((key, rule, device))
+    if not rows:
+        return []
+    rows.sort(key=lambda x: (x[1].severity != "critical", x[2].name.lower()))
+    lines = [f"  {d.name} ({d.site or '-'}): {r.name}"
+             f"{' (critical)' if r.severity == 'critical' else ''}" for _k, r, d in rows[:100]]
+    n = len(rows)
+    devices = sorted({d.name for _k, _r, d in rows})
+    critical = sum(1 for _k, r, _d in rows if r.severity == "critical")
+    return [Alert([k for k, _r, _d in rows], kind="compliance", **_text(
+        f"{n} new compliance failure{'s' if n > 1 else ''}"
+        f"{f' ({critical} critical)' if critical else ''}: {', '.join(devices[:4])}"
+        f"{' …' if len(devices) > 4 else ''}",
+        "These devices' configs now fail a compliance rule:\n\n" + "\n".join(lines) +
+        (f"\n\n...and {n - 100} more." if n > 100 else "") +
+        "\n\nThe details are on Config backups › Compliance."))]
+
+
+def _run_diff(store, state, run) -> list[str] | None:
+    """The diff of the version a run saved against the one before it."""
+    if not run.commit or not state.config_path:
+        return None
+    try:
+        versions = store.history(state.config_path)
+        idx = next(i for i, v in enumerate(versions) if v["commit"] == run.commit)
+        if idx + 1 >= len(versions):
+            return None
+        old, new = versions[idx + 1], versions[idx]
+        return store.diff((old["path"], old["commit"]), (new["path"], new["commit"])).splitlines()
+    except Exception:  # noqa: BLE001 - history pruned or the repository moved: no diff
+        return None
+
+
+def _who_changed(db, device, start, end, syslog_dir) -> list[str]:
+    """What the device logged about config changes between two backups (up to 3 lines)."""
+    if syslog_dir is None:
+        return []
+    from app.tools.syslog.parse import body
+    from app.tools.syslog.sources import device_addresses
+    from app.tools.syslog.store import Filter, SyslogStore
+
+    sources = [ip for ip, (dev_id, _n) in device_addresses(db).items() if dev_id == device.id]
+    if not sources:
+        return []
+    try:
+        rows, _ = SyslogStore(syslog_dir).search(Filter(
+            since=start.replace(tzinfo=UTC).timestamp(), until=end.replace(tzinfo=UTC).timestamp(),
+            sources=sources), limit=500)
+    except Exception:  # noqa: BLE001 - no syslog files yet
+        return []
+    said = [r for r in rows if _WHO.search(r["text"] or "") or _WHO.search(r["tag"] or "")]
+    return [f"Device log {datetime.fromtimestamp(r['ts'], UTC):%Y-%m-%d %H:%M} UTC: "
+            f"{body(r['text'], r['tag'])[:200]}" for r in reversed(said[:3])]
 
 
 def _upgrades(db, since, done) -> list[Alert]:
@@ -372,11 +525,17 @@ class AlertService:
             cfg = load(db, self.cipher)
             if not (cfg.enabled and cfg.smtp_host and cfg.mail_to):
                 return []
-            alerts = due(db, cfg, syslog_dir=self.settings.syslog_dir)
+            alerts = due(db, cfg, syslog_dir=self.settings.syslog_dir,
+                         configs_dir=self.settings.configs_dir)
         sent, error = [], ""
         for a in alerts:
             to = cfg.to(a.kind)
             if not to:
+                continue
+            if not a.subject:  # nothing to say (e.g. first backups): just remember them
+                with session_scope() as db:
+                    for key in a.keys:
+                        db.merge(AlertSent(key=key, subject="(nothing to send)"))
                 continue
             msg = message(cfg, self.settings, a.subject, a.body, to)
             try:
@@ -392,10 +551,37 @@ class AlertService:
                     appsettings.save(db, a.save, "system")
             sent.append(msg["Subject"])
             log.info("Email alert sent: %s", msg["Subject"])
+        if not error and cfg.wanted("reports"):
+            error = self._report(cfg, sent)
         with session_scope() as db:
             if error or appsettings.stored(db).get(LAST_ERROR):
                 appsettings.save(db, {LAST_ERROR: error}, "system")
         return sent
+
+    def _report(self, cfg: Config, sent: list[str], force: bool = False) -> str:
+        """Send the scheduled report when its day and time have come (once per slot)."""
+        from app.core import reports
+
+        with session_scope() as db:
+            slot = reports.due(cfg.report_day, cfg.report_time,
+                               appsettings.stored(db).get(LAST_REPORT, ""))
+            if slot is None and not force:
+                return ""
+            data = reports.build(db, self.settings, cfg.report_days)
+        subject = (f"Report: the last {cfg.report_days} days"
+                   + ("" if not any(s.get("bad") for s in data["sections"]) else
+                      " (" + ", ".join(s["title"] for s in data["sections"] if s.get("bad"))
+                      + " need a look)"))
+        msg = message(cfg, self.settings, subject, reports.as_text(data), cfg.to("reports"))
+        try:
+            self.mailer(cfg, msg)
+        except Exception as exc:  # noqa: BLE001 - tried again at the next check
+            return f"{utcnow():%Y-%m-%d %H:%M} UTC: report: {type(exc).__name__}: {exc}"[:500]
+        if slot:
+            with session_scope() as db:
+                appsettings.save(db, {LAST_REPORT: slot}, "system")
+        sent.append(msg["Subject"])
+        return ""
 
 
 # --- API (Settings page) ---------------------------------------------------------------------
@@ -406,7 +592,8 @@ router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 def _view(db: Session) -> dict:
     cfg = load(db)
     v = appsettings.stored(db)
-    recent = db.scalars(select(AlertSent).order_by(AlertSent.sent_at.desc()).limit(10))
+    recent = db.scalars(select(AlertSent).where(AlertSent.subject != "(nothing to send)")
+                        .order_by(AlertSent.sent_at.desc()).limit(10))
     return {"enabled": cfg.enabled, "smtp_host": cfg.smtp_host, "smtp_port": cfg.smtp_port,
             "smtp_security": cfg.smtp_security, "smtp_user": cfg.smtp_user,
             "has_password": bool(v.get(PASSWORD)), "mail_from": cfg.mail_from,
@@ -414,6 +601,8 @@ def _view(db: Session) -> dict:
             "upgrades": cfg.upgrades, "licence": cfg.licence, "worker": cfg.worker,
             "recipients": [{"address": r.address, "kinds": sorted(r.kinds)} for r in cfg.recipients],
             "kinds": KINDS, "syslog_level": cfg.syslog_level, "syslog_minutes": cfg.syslog_minutes,
+            "changes_diff": cfg.changes_diff, "report_day": cfg.report_day,
+            "report_time": cfg.report_time, "report_days": cfg.report_days,
             "last_error": v.get(LAST_ERROR, ""),
             "recent": [{"sent_at": r.sent_at, "subject": r.subject} for r in recent]}
 
@@ -440,6 +629,10 @@ class AlertsIn(BaseModel):
     recipients: list[RecipientIn] | None = Field(default=None, max_length=20)
     syslog_level: int = Field(default=2, ge=0, le=3)  # 0 emergency .. 3 error, and worse
     syslog_minutes: int = Field(default=5, ge=1, le=60)
+    changes_diff: bool = False
+    report_day: str = Field(default="", pattern=r"^(mon|tue|wed|thu|fri|sat|sun)?$")
+    report_time: str = Field(default="07:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    report_days: int = Field(default=7, ge=1, le=90)
 
 
 def _addresses(text: str) -> list[str]:
@@ -480,9 +673,10 @@ def save_alerts(body: AlertsIn, request: Request, db: Session = Depends(get_db),
     before = load(db)
     values = {PREFIX + k: str(getattr(body, k)) for k in
               ("smtp_host", "smtp_port", "smtp_security", "smtp_user", "mail_from",
-               "backup_hours", "syslog_level", "syslog_minutes")}
+               "backup_hours", "syslog_level", "syslog_minutes", "report_day", "report_time",
+               "report_days")}
     values |= {PREFIX + k: "true" if getattr(body, k) else "false"
-               for k in ("enabled", "upgrades", "licence", "worker")}
+               for k in ("enabled", "upgrades", "licence", "worker", "changes_diff")}
     values[PREFIX + "mail_to"] = ",".join(to)
     values[PREFIX + "recipients"] = json.dumps([r.model_dump() for r in recipients])
     if body.smtp_password is not None:
@@ -516,3 +710,19 @@ def test_alerts(request: Request, db: Session = Depends(get_db),
         return {"ok": False, "message": f"{type(exc).__name__}: {exc}"}
     audit(db, user.username, "settings.alerts_test", f"sent to {', '.join(cfg.mail_to)}")
     return {"ok": True, "message": f"Sent to {', '.join(cfg.mail_to)}"}
+
+
+@router.post("/report-now")
+def report_now(request: Request, db: Session = Depends(get_db), user: User = Depends(require_admin)):
+    """Send the report to its recipients now (outside the schedule)."""
+    cfg = load(db, request.app.state.cipher)
+    if not (cfg.smtp_host and cfg.mail_from and cfg.to("reports")):
+        raise HTTPException(422, "Save the mail server, the From address and at least one "
+                                 "recipient who gets Report first")
+    sent: list[str] = []
+    error = request.app.state.alert_service._report(cfg, sent, force=True)
+    audit(db, user.username, "settings.report_sent",
+          f"to {', '.join(cfg.to('reports'))}" + (f": failed: {error}" if error else ""))
+    if error:
+        return {"ok": False, "message": error}
+    return {"ok": True, "message": f"Sent to {', '.join(cfg.to('reports'))}"}

@@ -207,8 +207,13 @@ const STATUS_LABEL = { success: "OK", failed: "Failed", running: "Running", neve
 
 async function loadBackups() {
   try {
-    const [rows, summary] = await Promise.all([api("/api/backup/devices"), api("/api/backup/summary")]);
+    const [rows, summary, cp] = await Promise.all([api("/api/backup/devices"), api("/api/backup/summary"),
+      hasModule("backups") ? api("/api/compliance").catch(() => null) : null]);
     state.rows = rows;
+    state.cpFailing = new Map();
+    for (const x of (cp ? cp.results : [])) {
+      if (!x.passed) state.cpFailing.set(x.device_id, (state.cpFailing.get(x.device_id) || 0) + 1);
+    }
     renderSummary(summary);
     renderSiteFilter();
     renderDevices();
@@ -271,6 +276,9 @@ function deviceRow(r) {
   if (can("backups", "run") && hasModule("backups")) {
     actions.push(h("button", { class: "small", disabled: b.busy, onclick: () => runNow(d) }, "Backup now"));
   }
+  if (can("circuits", "view") && hasModule("circuits")) {
+    actions.push(h("button", { class: "small", title: "What is on each port", onclick: () => openPorts(d) }, "Ports"));
+  }
   if (can("syslog", "view") && hasModule("syslog")) {
     actions.push(h("button", { class: "small", title: "This device's syslog messages",
       onclick: () => { sl.pick = String(d.id); switchView("syslog"); } }, "Logs"));
@@ -289,7 +297,9 @@ function deviceRow(r) {
     h("td", {}, fmtFreq(b.frequency_minutes)),
     h("td", { title: fmtTime(b.last_success) }, fmtAgo(b.last_success)),
     h("td", { title: fmtTime(b.last_change) }, b.last_change ? fmtAgo(b.last_change) : "—"),
-    h("td", { class: "result" }, result),
+    h("td", { class: "result" }, result,
+      state.cpFailing && state.cpFailing.get(d.id) ? h("small", { class: "sub" }, h("span", { class: "link errtext", title: "Compliance rules this config fails",
+        onclick: () => { openDetail(r); selectDetailTab("compliance"); } }, `⚠ ${state.cpFailing.get(d.id)} compliance rule(s)`)) : null),
     h("td", { class: "actions" }, actions));
 }
 
@@ -411,7 +421,7 @@ $("#device-form").addEventListener("submit", async (ev) => {
 
 async function openDetail(row) {
   state.detailDevice = row.device;
-  $("#detail-title").textContent = `${row.device.name} — ${row.device.address}`;
+  $("#detail-title").textContent = row.device.address ? `${row.device.name} — ${row.device.address}` : row.device.name;
   $("#detail-text").hidden = true;
   selectDetailTab("runs");
   $("#detail-dialog").showModal();
@@ -422,9 +432,12 @@ function selectDetailTab(tab) {
   $("#detail-runs").hidden = tab !== "runs";
   $("#detail-versions").hidden = tab !== "versions";
   $("#detail-circuits").hidden = tab !== "circuits";
+  $("#detail-compliance").hidden = tab !== "compliance";
+  $("#detail-ports").hidden = tab !== "ports";
   $("#detail-upgrades").hidden = tab !== "upgrades";
   $("#detail-text").hidden = true;
-  ({ runs: loadRuns, versions: loadVersions, circuits: loadDeviceCircuits, upgrades: loadDeviceUpgrades })[tab]();
+  ({ runs: loadRuns, versions: loadVersions, circuits: loadDeviceCircuits, upgrades: loadDeviceUpgrades,
+    compliance: loadDeviceCompliance, ports: loadDevicePorts })[tab]();
 }
 $$("#detail-tabs button").forEach((b) => b.addEventListener("click", () => selectDetailTab(b.dataset.tab)));
 $("#detail-close").addEventListener("click", () => $("#detail-dialog").close());
@@ -849,6 +862,225 @@ async function deleteImage(img) {
     toast(e.message);
   }
 }
+
+// ---------- the report ----------
+
+async function openReport() {
+  const body = $("#rp-body");
+  body.replaceChildren(h("p", { class: "muted" }, "Loading…"));
+  if (!$("#rp-dialog").open) $("#rp-dialog").showModal();
+  let r;
+  try { r = await api(`/api/reports?days=${$("#rp-days").value}`); } catch (e) { return body.replaceChildren(h("p", { class: "error" }, e.message)); }
+  body.replaceChildren(
+    h("p", { class: "muted" }, `${$("#site-name").textContent || ""} · from ${fmtTime(r.since)} to ${fmtTime(r.generated_at)}`),
+    h("div", { class: "report-grid" }, ...r.sections.map((sec) => h("section", { class: `report-section card${sec.bad ? " bad" : ""}` },
+      h("h3", {}, sec.title, sec.bad ? h("span", { class: "badge failed" }, "needs a look") : ""),
+      h("table", {}, h("tbody", {}, sec.rows.map(([label, value, more]) => h("tr", {},
+        h("td", {}, label, more ? h("small", { class: "sub" }, more) : null), h("td", { class: "num" }, String(value))))))))));
+}
+$("#act-report").addEventListener("click", openReport);
+$("#rp-days").addEventListener("change", openReport);
+$("#rp-close").addEventListener("click", () => $("#rp-dialog").close());
+$("#rp-print").addEventListener("click", () => window.print());
+
+// ---------- switch ports ----------
+
+const PORT_STATUS = {
+  ok: ["success", "Its circuit is here"], problem: ["failed", "Its circuit isn't here (moved or not seen)"],
+  moved_here: ["changed", "A circuit documented elsewhere is here"], unlisted: ["never", "In use, not in the circuit list"],
+  uplink: ["uplink", "Uplink to another switch"], empty: ["empty", "Nothing seen"],
+};
+
+/** Open a device's port view (from the inventory, a rack, Config backups). */
+function openPorts(device) {
+  openDetail({ device: { address: "", ...device } });
+  selectDetailTab("ports");
+}
+
+async function loadDevicePorts() {
+  const pane = $("#detail-ports");
+  pane.replaceChildren(h("p", { class: "muted" }, "Loading…"));
+  let d;
+  try { d = await api(`/api/circuits/ports/${state.detailDevice.id}`); } catch (e) { return pane.replaceChildren(h("p", { class: "error" }, e.message)); }
+  if (!d.ports.length) {
+    return pane.replaceChildren(h("p", { class: "empty" }, d.scanned_at ? "The last scan saw nothing on this device's ports, and the circuit list puts nothing on it."
+      : "This device hasn't been scanned yet: Circuits › Scan network now reads its MAC table."));
+  }
+  const info = h("div", { class: "port-info" }, h("p", { class: "muted" }, "Click a port to see what is on it."));
+  const show = (p) => {
+    $$(".port.sel", pane).forEach((x) => x.classList.remove("sel"));
+    info.replaceChildren(
+      h("h3", {}, p.port, " ", h("span", { class: `badge ${PORT_STATUS[p.status][0]}` }, PORT_STATUS[p.status][1])),
+      p.circuits.length ? h("table", {}, h("thead", {}, h("tr", {}, ["Circuit", "Service", "VLAN", "MAC / IP", "Documented on", "On the network"].map((t) => h("th", {}, t)))),
+        h("tbody", {}, p.circuits.map((c) => h("tr", {},
+          h("td", { class: "name" }, c.device_name || "—"), h("td", {}, c.service || "—"), h("td", {}, c.vlan || "—"),
+          h("td", {}, h("code", {}, c.mac || "—"), c.ip ? h("small", { class: "sub" }, c.ip) : null),
+          h("td", {}, c.documented || "—"),
+          h("td", {}, h("span", { class: `badge ${CT_LIVE_CLS[c.live_status] || "never"}` }, c.live_status_label || "—"), c.found ? h("small", { class: "sub" }, c.found) : null)))))
+        : h("p", { class: "muted" }, "No circuit in the list for this port."),
+      p.macs.length ? h("div", {}, h("h4", {}, `MAC addresses seen (${p.macs.length})`),
+        h("table", {}, h("tbody", {}, p.macs.slice(0, 50).map((m) => h("tr", {}, h("td", {}, h("code", {}, m.mac)), h("td", {}, `VLAN ${m.vlan || "—"}`), h("td", {}, m.ip ? h("code", {}, m.ip) : "")))))) : "");
+  };
+  // Group ports by everything but their last number (gi1/0/, te1/1/...), odd numbers on top like a switch.
+  const groups = new Map();
+  for (const p of d.ports) {
+    const m = p.port_norm.match(/^(.*?)(\d+)$/);
+    const key = m ? m[1] : p.port_norm;
+    groups.set(key, [...(groups.get(key) || []), { ...p, num: m ? Number(m[2]) : 0 }]);
+  }
+  const plates = [...groups.entries()].map(([key, list]) => {
+    const plate = h("div", { class: "faceplate" });
+    list.sort((a, b) => a.num - b.num);
+    const max = Math.max(...list.map((p) => p.num), 1);
+    const byNum = new Map(list.map((p) => [p.num, p]));
+    for (let n = 1; n <= max; n++) {
+      const p = byNum.get(n);
+      const col = Math.ceil(n / 2), row = n % 2 ? 1 : 2;
+      const el = h("button", { type: "button", class: `port ${p ? PORT_STATUS[p.status][0] : "unused"}`, disabled: !p,
+        title: p ? `${p.port}: ${PORT_STATUS[p.status][1]}${p.circuits[0] ? ` · ${p.circuits[0].device_name}` : ""}${p.macs.length ? ` · ${p.macs.length} MAC` : ""}` : `${key}${n}: nothing seen`,
+        onclick: p ? (ev) => { show(p); ev.currentTarget.classList.add("sel"); } : null }, n);
+      el.style.gridColumn = String(col);
+      el.style.gridRow = String(row);
+      plate.append(el);
+    }
+    return h("div", { class: "plate-group" }, h("div", { class: "muted" }, key || "ports"), plate);
+  });
+  const counts = Object.keys(PORT_STATUS).map((k) => [k, d.ports.filter((p) => p.status === k).length]).filter(([, n]) => n);
+  pane.replaceChildren(
+    h("p", { class: "muted" }, d.scanned_at ? `From the scan of ${fmtTime(d.scanned_at)} and the circuit list. ` : "Not scanned yet: from the circuit list only. ",
+      d.scan_error ? h("span", { class: "errtext" }, `Last scan error: ${d.scan_error}`) : ""),
+    h("div", { class: "port-key" }, ...counts.map(([k, n]) => h("span", {}, h("span", { class: `port ${PORT_STATUS[k][0]} key` }), ` ${PORT_STATUS[k][1]} (${n})`))),
+    ...plates, info);
+  const firstBad = d.ports.find((p) => p.status === "problem") || d.ports.find((p) => p.circuits.length);
+  if (firstBad) show(firstBad);
+}
+
+// ---------- config compliance ----------
+
+const CP_KIND = { must: "must have", must_not: "must not have" };
+
+async function loadDeviceCompliance() {
+  const pane = $("#detail-compliance");
+  pane.replaceChildren(h("p", { class: "muted" }, "Loading…"));
+  try {
+    const rows = await api(`/api/compliance/device/${state.detailDevice.id}`);
+    if (!rows.length) return pane.replaceChildren(h("p", { class: "empty" }, "No compliance rule applies to this device (or it hasn't been backed up yet)."));
+    pane.replaceChildren(h("table", {},
+      h("thead", {}, h("tr", {}, ["Rule", "Result", "Since", "Config lines"].map((t) => h("th", {}, t)))),
+      h("tbody", {}, rows.map((x) => h("tr", {},
+        h("td", {}, x.rule, x.severity === "critical" ? h("small", { class: "sub errtext" }, "critical") : null),
+        h("td", {}, h("span", { class: `badge ${x.passed ? "success" : "failed"}` }, x.passed ? "Pass" : "Fail")),
+        h("td", {}, x.failing_since ? fmtTime(x.failing_since) : "—"),
+        h("td", {}, x.detail === null ? h("span", { class: "muted" }, "needs Config backups: read configs") :
+          x.detail ? h("pre", { class: "config small" }, (x.passed ? "" : x.kind === "must" ? "Missing:\n" : "Found:\n") + x.detail) : "—"))))));
+  } catch (e) { pane.replaceChildren(h("p", { class: "error" }, e.message)); }
+}
+
+function cpDialog(...content) {
+  $("#cp-dialog-body").replaceChildren(...content);
+  if (!$("#cp-dialog").open) $("#cp-dialog").showModal();
+}
+$("#cp-dialog-close").addEventListener("click", () => { $("#cp-dialog").close(); loadBackups(); });
+
+/** Every rule, how many devices pass and fail it, and the failures. */
+async function openCompliance() {
+  let d;
+  try { d = await api("/api/compliance"); } catch (e) { return toast(e.message); }
+  const failing = d.results.filter((x) => !x.passed);
+  const devices = new Set(d.results.map((x) => x.device_id));
+  const badDevices = new Set(failing.map((x) => x.device_id));
+  const ruleOf = new Map(d.rules.map((r) => [r.id, r]));
+  const call = async (fn, msg) => { try { const r = await fn(); if (msg) toast(msg(r)); openCompliance(); } catch (e) { toast(e.message); } };
+  const tiles = h("div", { class: "tiles" },
+    ...[["", "Rules", d.rules.length], ["success", "Devices compliant", devices.size - badDevices.size],
+      ["failed", "Devices failing", badDevices.size], ["failed", "Critical failures", failing.filter((x) => (ruleOf.get(x.rule_id) || {}).severity === "critical").length]]
+      .map(([cls, lbl, n]) => h("div", { class: `tile ${cls}` }, h("span", { class: "num" }, n), h("span", { class: "lbl" }, lbl))));
+  const scope = (r) => [r.platforms.length ? r.platforms.map((p) => d.platforms[p] || p).join(", ") : "every platform",
+    r.sites.length ? `sites ${r.sites.join(", ")}` : ""].filter(Boolean).join(" · ");
+  const ruleRows = d.rules.map((r) => {
+    const res = d.results.filter((x) => x.rule_id === r.id);
+    const bad = res.filter((x) => !x.passed).length;
+    return h("tr", { class: r.enabled ? "" : "disabled" },
+      h("td", { class: "name" }, r.name, r.description ? h("small", {}, r.description) : null),
+      h("td", {}, CP_KIND[r.kind], h("pre", { class: "config small" }, r.lines), r.regex ? h("small", { class: "sub" }, "patterns") : null),
+      h("td", {}, scope(r)),
+      h("td", {}, h("span", { class: `badge ${r.severity === "critical" ? "failed" : "changed"}` }, r.severity)),
+      h("td", {}, r.enabled ? `${res.length - bad} pass, ${bad} fail` : "off"),
+      h("td", { class: "actions" }, d.can_manage ? [
+        h("button", { class: "small", onclick: () => cpRuleForm(d, r) }, "Edit"),
+        h("button", { class: "small danger", onclick: () => { if (confirm(`Delete the rule ${r.name}?`)) call(() => api(`/api/compliance/rules/${r.id}`, { method: "DELETE" })); } }, "Delete")] : null));
+  });
+  const failRows = failing.sort((a, b) => a.device.localeCompare(b.device)).map((x) => {
+    const r = ruleOf.get(x.rule_id) || { name: "?" };
+    return h("tr", {},
+      h("td", { class: "name" }, x.device, h("small", {}, x.site || "")),
+      h("td", {}, r.name, r.severity === "critical" ? h("small", { class: "sub errtext" }, "critical") : null),
+      h("td", {}, x.failing_since ? fmtTime(x.failing_since) : "—"),
+      h("td", {}, x.detail === null ? h("span", { class: "muted" }, "—") : h("pre", { class: "config small" }, x.detail)));
+  });
+  cpDialog(tiles,
+    h("p", { class: "muted" }, "Every device's config is checked after each backup. " +
+      (d.can_read_lines ? "" : "The config lines of a result need Config backups: read configs.")),
+    h("div", { class: "toolbar" },
+      can("backups", "run") ? h("button", { type: "button", onclick: () => call(() => api("/api/compliance/check", { method: "POST" }), (r) => `Checked ${r.checked} device(s)`) }, "Check now") : null,
+      h("a", { class: "button", href: "/api/compliance/export.csv", download: "" }, "Export CSV"),
+      h("span", { class: "spacer" }),
+      d.can_manage ? h("button", { type: "button", onclick: () => call(() => api("/api/compliance/examples", { method: "POST" }), (r) => `Added ${r.added.length} example rule(s)`) }, "Add example rules (Cisco IOS)") : null,
+      d.can_manage ? h("button", { type: "button", class: "primary", onclick: () => cpRuleForm(d) }, "+ Add rule") : null),
+    h("h3", {}, `Failing (${failing.length})`),
+    failing.length ? h("div", { class: "table-wrap" }, h("table", {},
+      h("thead", {}, h("tr", {}, ["Device", "Rule", "Failing since", "Config lines"].map((t) => h("th", {}, t)))), h("tbody", {}, failRows)))
+      : h("p", { class: "muted" }, d.rules.length ? "Nothing fails." : "No rules yet."),
+    h("h3", {}, `Rules (${d.rules.length})`),
+    d.rules.length ? h("div", { class: "table-wrap" }, h("table", {},
+      h("thead", {}, h("tr", {}, ["Rule", "Config", "Applies to", "Severity", "Devices", ""].map((t) => h("th", {}, t)))), h("tbody", {}, ruleRows)))
+      : h("p", { class: "muted" }, "Add a rule, or start from the examples."));
+}
+
+function cpRuleForm(d, r = null) {
+  const err = errorLine();
+  const v = r || { name: "", description: "", kind: "must", lines: "", regex: false, platforms: [], sites: [], severity: "warning", enabled: true };
+  const f = {
+    name: h("input", { value: v.name, maxlength: 100, placeholder: "e.g. NTP server set" }),
+    description: h("input", { value: v.description, maxlength: 2000 }),
+    kind: h("select", {}, ...Object.entries(CP_KIND).map(([k, l]) => h("option", { value: k, selected: v.kind === k }, `The config ${l}`))),
+    lines: h("textarea", { rows: 4, placeholder: "One config line per line, e.g.\nip ssh version 2\nservice password-encryption" }, v.lines),
+    regex: h("input", { type: "checkbox", checked: v.regex }),
+    sites: h("input", { value: v.sites.join(", "), placeholder: "Empty: every site" }),
+    severity: h("select", {}, ...["warning", "critical"].map((x) => h("option", { value: x, selected: v.severity === x }, x))),
+    enabled: h("input", { type: "checkbox", checked: v.enabled }),
+  };
+  const plats = h("div", { class: "chips" }, ...Object.entries(d.platforms).map(([k, l]) =>
+    h("label", { class: "check" }, h("input", { type: "checkbox", "data-platform": k, checked: v.platforms.includes(k) }), ` ${l}`)));
+  cpDialog(
+    h("h3", {}, r ? `Rule: ${r.name}` : "New rule"),
+    h("div", { class: "grid2" }, h("label", {}, "Name", f.name), h("label", {}, "Severity", f.severity)),
+    h("label", {}, "What it checks", f.description),
+    h("label", {}, "Kind", f.kind),
+    h("label", {}, "Config lines", f.lines),
+    h("label", { class: "check" }, f.regex, " The lines are patterns (regular expressions), searched in each config line"),
+    h("p", { class: "muted" }, "Must have: every line must be in the config. Must not have: any of them fails it. Without patterns, a line matches when it is the same, ignoring spaces at either end."),
+    h("label", {}, "Platforms (none ticked: every platform)"), plats,
+    h("label", {}, "Sites (names, separated by commas)", f.sites),
+    h("label", { class: "check" }, f.enabled, " On"),
+    err,
+    h("div", { class: "dialog-actions" },
+      h("button", { type: "button", onclick: () => openCompliance() }, "Cancel"),
+      h("button", { type: "button", class: "primary", onclick: async () => {
+        err.hidden = true;
+        const body = { name: f.name.value, description: f.description.value, kind: f.kind.value, lines: f.lines.value,
+          regex: f.regex.checked, severity: f.severity.value, enabled: f.enabled.checked,
+          platforms: $$("input[data-platform]", plats).filter((c) => c.checked).map((c) => c.dataset.platform),
+          sites: f.sites.value.split(",").map((x) => x.trim()).filter(Boolean) };
+        try {
+          await api(r ? `/api/compliance/rules/${r.id}` : "/api/compliance/rules", { method: r ? "PUT" : "POST", body });
+          toast("Saved; every device checked again");
+          openCompliance();
+        } catch (e) { showError(err, e); }
+      } }, "Save")));
+}
+
+$("#bk-compliance").addEventListener("click", openCompliance);
 
 // ---------- shared: links to sites ----------
 
@@ -2341,29 +2573,38 @@ async function optionsPanel() {
 
 /** Wall displays: read-only status screens on their own port, each with its own link. */
 async function displaysPanel() {
-  const { port, screens } = await api("/api/displays");
+  const { port, screens, page_names: pageNames } = await api("/api/displays");
   const err = errorLine();
   const name = h("input", { name: "display_name", placeholder: "e.g. NOC wall 1", maxlength: 100 });
+  // Which pages a screen rotates through (none ticked: all of them)
+  const pagePicker = (chosen) => h("span", { class: "chips" }, ...Object.entries(pageNames).map(([k, l]) =>
+    h("label", { class: "check" }, h("input", { type: "checkbox", "data-page": k, checked: chosen.includes(k) }), ` ${l}`)));
+  const picked = (el) => $$("input[data-page]", el).filter((c) => c.checked).map((c) => c.dataset.page);
+  const newPages = pagePicker(Object.keys(pageNames));
   const linkFor = (key) => `https://${location.hostname}:${port}/display/#key=${key}`;
   const shown = h("div", { hidden: true });
   const box = h("div", { class: "panel" });
-  const rows = screens.length ? h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "Screen"), h("th", {}, "Last connected"), h("th", {}, "From"), h("th", {}, ""))),
-    h("tbody", {}, screens.map((s) => h("tr", {}, h("td", {}, s.name), h("td", {}, fmtTime(s.last_seen_at)),
+  const rows = screens.length ? h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "Screen"), h("th", {}, "Pages"), h("th", {}, "Last connected"), h("th", {}, "From"), h("th", {}, ""))),
+    h("tbody", {}, screens.map((s) => { const pick = pagePicker(s.pages); return h("tr", {}, h("td", {}, s.name),
+      h("td", {}, pick, h("button", { type: "button", class: "small", onclick: async () => {
+        try { await api(`/api/displays/${s.id}`, { method: "PUT", body: { name: s.name, pages: picked(pick) } }); toast("Pages saved: the screen changes at its next refresh"); } catch (e) { showError(err, e); }
+      } }, "Save pages")),
+      h("td", {}, fmtTime(s.last_seen_at)),
       h("td", {}, s.last_seen_from || "—"),
       h("td", {}, h("button", { type: "button", class: "small", onclick: async () => {
         if (!confirm(`Remove "${s.name}"? Its link stops working straight away.`)) return;
         try { await api(`/api/displays/${s.id}`, { method: "DELETE" }); toast("Display removed"); loadSettings(); } catch (e) { showError(err, e); }
-      } }, "Remove"))))))
+      } }, "Remove"))); })))
     : h("p", { class: "muted" }, "No wall displays yet.");
   box.replaceChildren(
     h("h2", {}, "Wall displays"),
-    h("p", { class: "muted" }, `A read-only status screen for a NOC or office wall: failing backups, firmware compliance and the upgrades under way. It is served on port ${port} only; open that port in the server's firewall just for the screens' network.`),
+    h("p", { class: "muted" }, `A read-only status screen for a NOC or office wall. Its pages take turns: the overview (backups, compliance, config changes, firmware, upgrades, server), the upgrades under way, a sites grid, and the network (syslog errors, config changes, circuits that moved or went missing). It shows names and counts only, never addresses or configs. It is served on port ${port} only; open that port in the server's firewall just for the screens' network.`),
     rows,
-    h("label", {}, "Add a display", name), err,
+    h("label", {}, "Add a display", name), h("div", {}, h("span", { class: "muted" }, "Pages: "), newPages), err,
     h("div", { class: "actions" }, h("button", { type: "button", onclick: async () => {
       err.hidden = true;
       try {
-        const s = await api("/api/displays", { method: "POST", body: { name: name.value } });
+        const s = await api("/api/displays", { method: "POST", body: { name: name.value, pages: picked(newPages) } });
         const link = h("input", { readonly: true, value: linkFor(s.key) });
         shown.replaceChildren(h("p", {}, h("strong", {}, "Open this link on the screen's browser (full screen). It is shown only now: copy it before leaving the page."),
         ), link, h("div", { class: "actions" }, h("button", { type: "button", onclick: () => { link.select(); navigator.clipboard?.writeText(link.value); toast("Link copied"); } }, "Copy link")));
@@ -2394,6 +2635,8 @@ async function alertsPanel() {
     .map(([v, l]) => h("option", { value: v, selected: a.smtp_security === v }, l)));
   f.smtp_password = h("input", { type: "password", autocomplete: "new-password", placeholder: a.has_password ? "saved (leave empty to keep it)" : "" });
   f.clear_password = h("input", { type: "checkbox" });
+  f.report_day = h("select", {}, ...[["", "Never (no scheduled report)"], ["mon", "Monday"], ["tue", "Tuesday"], ["wed", "Wednesday"],
+    ["thu", "Thursday"], ["fri", "Friday"], ["sat", "Saturday"], ["sun", "Sunday"]].map(([v, l]) => h("option", { value: v, selected: a.report_day === v }, l)));
   f.syslog_level = h("select", {}, ...[[0, "Emergency only"], [1, "Alert and worse"], [2, "Critical and worse"], [3, "Error and worse"]]
     .map(([v, l]) => h("option", { value: v, selected: a.syslog_level === v }, l)));
   // One row per recipient: the address and a tick for each kind of alert they get.
@@ -2425,6 +2668,8 @@ async function alertsPanel() {
     h("h3", {}, "What is sent"),
     h("ul", { class: "muted" },
       h("li", {}, "Backups: a device's backup has been failing for longer than the hours below."),
+      h("li", {}, "Config changes: a backup found a changed config (what changed, and who, when the device's syslog says)."),
+      h("li", {}, "Compliance: a device's config starts failing a compliance rule."),
       h("li", {}, "Upgrades: a job completes, fails, rolls back or needs attention."),
       h("li", {}, "Licence: 30 and 7 days before it ends, and when it has ended."),
       h("li", {}, "Upgrade worker: stopped for more than 10 minutes."),
@@ -2432,6 +2677,11 @@ async function alertsPanel() {
     text("backup_hours", "Backups: alert when failing for more than (hours)", { type: "number", min: 1, max: 720 }),
     h("label", {}, "Syslog: messages at", f.syslog_level),
     text("syslog_minutes", "Syslog: at most one email every (minutes)", { type: "number", min: 1, max: 60 }),
+    check("changes_diff", "Config changes: include the changed lines (lines that may hold a secret are left out)"),
+    h("h3", {}, "Report"),
+    h("p", { class: "muted" }, "A summary of backups, compliance, firmware, upgrades, circuits and syslog, emailed to everyone ticked for Report. The same report is on Activity › Report."),
+    h("div", { class: "grid2" }, h("label", {}, "Send it every", f.report_day), text("report_time", "At (UTC, HH:MM)", { placeholder: "07:00" })),
+    text("report_days", "Covering the last (days)", { type: "number", min: 1, max: 90 }),
     h("h3", {}, "Who gets what"),
     recipientsTable,
     h("div", { class: "actions" }, h("button", { type: "button", class: "small", onclick: () => addRecipient() }, "+ Add recipient")),
@@ -2443,7 +2693,8 @@ async function alertsPanel() {
         const body = { enabled: f.enabled.checked, smtp_host: f.smtp_host.value.trim(), smtp_port: Number(f.smtp_port.value),
           smtp_security: f.smtp_security.value, smtp_user: f.smtp_user.value.trim(), mail_from: f.mail_from.value.trim(),
           backup_hours: Number(f.backup_hours.value), syslog_level: Number(f.syslog_level.value),
-          syslog_minutes: Number(f.syslog_minutes.value),
+          syslog_minutes: Number(f.syslog_minutes.value), changes_diff: f.changes_diff.checked,
+          report_day: f.report_day.value, report_time: f.report_time.value.trim() || "07:00", report_days: Number(f.report_days.value) || 7,
           recipients: $$("tr", rows).map((tr) => ({ address: $("input[type=email]", tr).value.trim(),
             kinds: $$("input[data-kind]", tr).filter((c) => c.checked).map((c) => c.dataset.kind) })).filter((r) => r.address) };
         if (f.smtp_password.value) body.smtp_password = f.smtp_password.value;
@@ -2458,7 +2709,16 @@ async function alertsPanel() {
           result.className = r.ok ? "ok-text" : "error";
           result.hidden = false;
         } catch (e) { showError(err, e); }
-      } }, "Send test email")),
+      } }, "Send test email"),
+      h("button", { type: "button", title: "Email the report to its recipients now (save first)", onclick: async () => {
+        err.hidden = true;
+        try {
+          const r = await api("/api/alerts/report-now", { method: "POST" });
+          result.textContent = r.ok ? `Report: ${r.message}` : `Report not sent: ${r.message}`;
+          result.className = r.ok ? "ok-text" : "error";
+          result.hidden = false;
+        } catch (e) { showError(err, e); }
+      } }, "Send the report now")),
     a.recent.length ? h("div", {}, h("h2", {}, "Last alerts sent"), h("ul", {}, a.recent.map((r) => h("li", {}, `${fmtTime(r.sent_at)}: ${r.subject}`)))) : "");
   return box;
 }
@@ -2802,6 +3062,9 @@ function invTools(r) {
     try { openDetail(await api(`/api/backup/devices/${r.device.id}`)); } catch (e) { toast(e.message); }
   } }, "Backups"));
   if (hasModule("syslog") && can("syslog", "view")) out.push(h("button", { class: "small", onclick: () => { sl.pick = String(r.device.id); switchView("syslog"); } }, "Logs"));
+  if (hasModule("circuits") && can("circuits", "view") && ["switch", "router", "firewall"].includes(r.values ? r.values.type : r.type)) {
+    out.push(h("button", { class: "small", title: "What is on each port", onclick: () => openPorts(r.device) }, "Ports"));
+  }
   return h("span", { class: "actions" }, ...out);
 }
 
@@ -2856,6 +3119,9 @@ function invEdit(r = null, after = loadInventory) {
     } catch (e) { showError(err, e); }
   };
   const buttons = h("div", { class: "dialog-actions" });
+  if (r && r.managed && hasModule("circuits") && can("circuits", "view")) {
+    buttons.append(h("button", { type: "button", onclick: () => { $("#inv-dialog").close(); openPorts(r.device); } }, "Ports"));
+  }
   if (r && (r.values.type === "rack" || r.values.rack)) {
     buttons.append(h("button", { type: "button", onclick: () => { $("#inv-dialog").close(); showInRack(r.id); } },
       r.values.type === "rack" ? "Show the rack" : "Show in its rack"));

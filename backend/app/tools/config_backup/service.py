@@ -216,6 +216,13 @@ class BackupService:
                 state.config_path, state.last_commit = rel_path, commit
                 if changed:
                     state.last_change = now
+                device = db.get(Device, device_id)
+                try:
+                    from app.tools.config_backup.compliance import check_device
+
+                    check_device(db, device, config)  # the compliance rules, on the new config
+                except Exception:  # noqa: BLE001 - a broken rule must not fail the backup
+                    log.exception("Compliance check of %s failed", name)
         return run_id
 
     def recover_interrupted(self) -> None:

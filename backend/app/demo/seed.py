@@ -229,6 +229,7 @@ def seed(client, settings, net) -> dict:
     _ok(client.post(f"/api/circuits/imports/{imp['id']}/commit"))
     inventory(client)
     sites(client)
+    _ok(client.post("/api/compliance/examples"))  # checked at each device's first backup
     screen = _ok(client.post("/api/displays", json={"name": "Demo wall"})).json()
     return {"display_key": screen["key"], "ids": ids}
 
