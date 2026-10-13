@@ -197,7 +197,18 @@ Arista, Junos, ArubaOS-Switch, Aruba AOS 8, Dell OS10, Extreme EXOS, Huawei VRP,
 MikroTik and EdgeRouter. Do section 7b for the platform first, then section 1 (the common
 tests), then these. Procedures and roll back: [upgrades.md](upgrades.md#paths-per-platform).
 
-For every one of these platforms:
+For every one of these platforms (and NX-OS and ASA):
+- [ ] **Health checks:** take a capture first. Its top lists each health check's result
+      (environment, alarms, modules, CPU, memory, unsaved config, last restart). Each one is
+      right for the device; none says "COULD NOT READ" or skips on a command the device has.
+- [ ] **Faults are caught:** pull one power supply (or unplug one fan): the environment check
+      **blocks**. Make a config change without saving it: the unsaved config check blocks
+      (where the platform has one).
+- [ ] **Snapshot:** the pre-check's snapshot lists the interfaces that are up, the LLDP
+      neighbours and each port-channel's members as the device shows them.
+- [ ] **Post-check catches a loss:** after a dry run, unplug one port-channel member (or a
+      neighbour's cable) and **Re-run post-checks**: the missing member or neighbour is listed
+      and the check fails.
 - [ ] **Copy:** Stage image works and lands where the procedure expects it (note the path). The
       check after the copy (MD5 or size) passes; a copy that is cut off fails it.
 - [ ] **Prompts:** every question the device asks during the upgrade is answered (the job

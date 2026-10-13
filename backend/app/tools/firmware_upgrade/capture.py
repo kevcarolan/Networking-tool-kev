@@ -35,10 +35,15 @@ _CHANGES = re.compile(r"\b(conf(ig(ure)?)?\s+t|copy|delete|erase|format|reload|r
 
 _WRITES = re.compile(r"\|\s*(redirect|tee|append|save|copy)\b|>", re.I)  # output to a file
 
+# Read-only commands whose names contain a word _CHANGES refuses: allowed exactly as written.
+_KNOWN_READ_ONLY = {"show reload cause", "show reboot history", "display reboot-info"}
+
 
 def is_read_only(command: str) -> bool:
     """Only commands that can't change a device are ever captured."""
     command = command.strip()
+    if command.lower() in _KNOWN_READ_ONLY:
+        return True
     return (bool(_READ_ONLY.search(command)) and not _CHANGES.search(command.split("|")[0])
             and not _WRITES.search(command))
 

@@ -12,6 +12,7 @@ import re
 from dataclasses import asdict, dataclass
 
 from app.tools.circuits import live
+from app.tools.firmware_upgrade import health
 from app.tools.firmware_upgrade.facts import (FACT_COMMANDS, compare_versions, parse_facts,
                                               pattern_matches)
 
@@ -19,7 +20,8 @@ BLOCKER, WARNING, INFO = "blocker", "warning", "info"
 PASS, FAIL, SKIP, ERROR = "pass", "fail", "skip", "error"
 
 _CLI_ERRORS = ("% Invalid input", "% Incomplete command", "% Unknown command",
-               "ERROR: % Invalid", "% Ambiguous command", "Invalid command", "% Error")
+               "ERROR: % Invalid", "% Ambiguous command", "Invalid command", "% Error",
+               "Unrecognized command", "syntax error")  # the last two: Huawei, Junos
 
 
 @dataclass
@@ -75,12 +77,13 @@ ASA_HEALTH = {
     "cpu": "show cpu usage",
     "mem": "show memory",
 }
-ASA_SNAPSHOT = {"interfaces": "show interface ip brief"}
+ASA_SNAPSHOT = {"interfaces": "show interface ip brief",
+                "etherchannel": "show port-channel summary"}
 GENERIC_HEALTH = {"version": "show version"}
 
 COMMANDS: dict[str, tuple[dict, dict]] = {
     "cisco_ios": (IOS_HEALTH, IOS_SNAPSHOT),
-    "cisco_asa": (ASA_HEALTH, ASA_SNAPSHOT),
+    "cisco_asa": ({**ASA_HEALTH, "env": "show environment"}, ASA_SNAPSHOT),
     "cisco_ftd": ({"version": "show version", "failover": "show failover"}, {}),
     "cisco_nxos": ({"version": "show version", "dir": "dir bootflash:"}, {}),
     "allied_awplus": ({"version": "show version", "system": "show system"}, {}),
@@ -91,14 +94,18 @@ for _platform, _cmds in FACT_COMMANDS.items():
     if _platform not in COMMANDS:
         COMMANDS[_platform] = ({"version": _cmds[0],
                                 **{f"facts{i}": c for i, c in enumerate(_cmds[1:], 1)}}, {})
-FULL_CHECKS = {"cisco_ios"}  # platforms with the full health-check set
+# Platforms with the full health-check set: Cisco IOS and ASA here, the others through
+# their profile in health.py (commands keyed 'h:...').
+FULL_CHECKS = {"cisco_ios", "cisco_asa", *health.PROFILES}
 
 
 def commands_for(platform: str) -> dict[str, str]:
     """Commands for the checks and the snapshot, plus the MAC/ARP table commands
     (prefix 'live:') used to locate circuits. All are read-only."""
-    health, snap = COMMANDS.get(platform, (GENERIC_HEALTH, {}))
-    return {**health, **{f"snap:{k}": v for k, v in snap.items()},
+    base, snap = COMMANDS.get(platform, (GENERIC_HEALTH, {}))
+    prof = health.profile(platform)
+    return {**base, **{f"snap:{k}": v for k, v in snap.items()},
+            **(prof.commands() if prof else {}),
             **{f"live:{k}": v for k, v in live.commands_for(platform).items()}}
 
 
@@ -273,6 +280,15 @@ def snapshot(platform: str, outputs: dict[str, str]) -> dict:
         snap["stack"] = parse_stack(get("stack"))
     if not _unsupported(get("failover")):
         snap["failover"] = parse_failover(get("failover"))
+    # the other platforms: their profile's readings, under the same keys as IOS so the
+    # comparison after the upgrade is the same (neighbours as 'lldp', LAGs as 'etherchannel')
+    h = health.read(platform, outputs, _unsupported)
+    for key, name in (("interfaces", "interfaces"), ("lldp", "neighbors"),
+                      ("etherchannel", "lag"), ("modules", "modules")):
+        if name in h:
+            snap[key] = h[name]
+    if "mac_count" not in snap and read.macs is not None and platform != "cisco_ios":
+        snap["mac_count"] = len(read.macs)
     return snap
 
 
@@ -375,10 +391,75 @@ def health_checks(platform: str, outputs: dict[str, str], th: Thresholds) -> lis
                     "failover", "Failover pair healthy", BLOCKER, PASS if healthy else FAIL,
                     f"this: {fo['this_unit']} {fo['this']}; other: {fo['other_unit']} {fo['other']}"))
 
-    if platform not in FULL_CHECKS and platform != "cisco_asa":
+    if health.profile(platform):
+        results += profile_checks(platform, outputs, th)
+    elif platform not in FULL_CHECKS:
         results.append(CheckResult(
             "platform_checks", "Platform-specific health checks", INFO, SKIP, "",
-            "Alarm/environment/stack checks for this platform arrive with its upgrade driver"))
+            "Alarm/environment/module checks for this platform are not written yet"))
+    return results
+
+
+def profile_checks(platform: str, outputs: dict[str, str], th: Thresholds) -> list[CheckResult]:
+    """The health checks for a platform with a profile in health.py. A check the device
+    didn't answer is skipped; one the platform has no command for isn't listed."""
+    prof = health.profile(platform)
+    h = health.read(platform, outputs, _unsupported)
+    results: list[CheckResult] = []
+
+    def skipped(check_id, label, severity, name):
+        cmds = " / ".join(prof.checks[name].commands)
+        return CheckResult(check_id, label, severity, SKIP, "",
+                           f"'{cmds}' is not supported on this device or couldn't be read")
+
+    if "env" in prof.checks:
+        label = "Fans, power and temperature OK"
+        if "env" not in h:
+            results.append(skipped("environment", label, BLOCKER, "env"))
+        else:
+            faults = h["env"]
+            results.append(CheckResult("environment", label, BLOCKER, FAIL if faults else PASS,
+                                       f"{len(faults)} fault(s)" if faults else "all OK",
+                                       "\n".join(faults)))
+    if "alarms" in prof.checks:
+        if "alarms" not in h:
+            results.append(skipped("alarms", "No critical or major alarms", BLOCKER, "alarms"))
+        else:
+            a = h["alarms"]
+            results.append(CheckResult(
+                "alarms", "No critical or major alarms", BLOCKER, FAIL if a["serious"] else PASS,
+                f"{len(a['serious'])} active" if a["serious"] else "none",
+                "\n".join(a["serious"])))
+            results.append(CheckResult(
+                "alarms_minor", "No minor alarms", WARNING, FAIL if a["minor"] else PASS,
+                f"{len(a['minor'])} active" if a["minor"] else "none", "\n".join(a["minor"])))
+    if "modules" in prof.checks:
+        label = "All modules and stack members up"
+        if "modules" not in h:
+            results.append(skipped("modules", label, BLOCKER, "modules"))
+        else:
+            mods = h["modules"]
+            bad = {n: s for n, s in mods.items() if s != "ok"}
+            results.append(CheckResult("modules", label, BLOCKER, FAIL if bad else PASS,
+                                       f"{len(mods)} found" if mods else "standalone",
+                                       "\n".join(f"{n}: {s}" for n, s in bad.items())))
+    if "cpu" in prof.checks:
+        cpu = h.get("cpu")
+        results.append(CheckResult("cpu", f"CPU below {th.cpu_warn}%", WARNING,
+                                   SKIP if cpu is None else (FAIL if cpu > th.cpu_warn else PASS),
+                                   "" if cpu is None else f"{cpu}%"))
+    if "mem" in prof.checks:
+        mem = h.get("mem")
+        results.append(CheckResult("memory", f"Memory use below {th.mem_warn}%", WARNING,
+                                   SKIP if mem is None else (FAIL if mem > th.mem_warn else PASS),
+                                   "" if mem is None else f"{mem}%"))
+    if "reload" in h:
+        cause = h["reload"]
+        crash = bool(health.CRASH.search(cause))
+        results.append(CheckResult(
+            "reload_cause", "Last restart was not a crash or power loss", WARNING,
+            FAIL if crash else PASS, cause,
+            "Check the device's crash files and logs before going on" if crash else ""))
     return results
 
 
@@ -436,6 +517,13 @@ def pre_checks(platform: str, outputs: dict[str, str], image: ImageFacts, th: Th
                 SKIP if n is None else (FAIL if n else PASS),
                 "" if n is None else ("saved" if n == 0 else f"{n} changed line(s)"),
                 "Save with 'write memory' (or check why the running config differs)" if n else ""))
+        elif health.profile(platform) and "unsaved" in health.profile(platform).checks:
+            n = health.read(platform, outputs, _unsupported).get("unsaved")
+            results.append(CheckResult(
+                "unsaved_config", "No unsaved configuration changes", BLOCKER,
+                SKIP if n is None else (FAIL if n else PASS),
+                "" if n is None else ("saved" if n == 0 else f"{n} changed line(s)"),
+                "Save the running configuration (or check why it differs)" if n else ""))
 
     return image_checks(platform, image) + results + health_checks(platform, outputs, th), facts
 
@@ -493,6 +581,14 @@ def compare_snapshots(pre: dict, post: dict, target_version: str) -> list[CheckR
         drop = (before - after) / before if before else 0
         results.append(CheckResult("post_mac", "MAC address count similar to before", WARNING,
                                    FAIL if drop > 0.2 else PASS, f"{before} → {after}"))
+    if pre.get("modules") and "modules" in post:
+        lost = sorted(n for n, st in pre["modules"].items()
+                      if st == "ok" and post["modules"].get(n) != "ok")
+        results.append(CheckResult(
+            "post_modules", "All modules and stack members back", BLOCKER,
+            FAIL if lost else PASS,
+            f"{len(lost)} not back" if lost else f"{len(post['modules'])} up",
+            "\n".join(f"{n}: {post['modules'].get(n, 'missing')}" for n in lost)))
     results += compare_circuits(pre, post)
     if pre.get("stack") and "stack" in post:
         missing = sorted(set(pre["stack"]) - set(post["stack"]))

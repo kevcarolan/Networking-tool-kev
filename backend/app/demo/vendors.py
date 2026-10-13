@@ -9,6 +9,7 @@ Each SimDevice keeps the vendor's own idea of where software lives:
 Show output comes from tests/vendor_samples.py with the version swapped in.
 """
 
+from app.demo import health_samples
 from app.demo import vendor_samples as v
 
 MIB = 1024 ** 2
@@ -24,6 +25,8 @@ VERSION_COMMANDS = {
 
 def setup(d) -> None:
     """Starting state for a new simulated device (called by SimDevice)."""
+    for cmd, out in health_samples.HEALTHY.get(d.platform, {}).items():
+        d.outputs.setdefault(cmd, out)  # healthy answers to the upgrade health checks
     d.slots, d.selected = {}, ""
     if d.platform == "aruba_osswitch":
         d.slots = {"primary": (26170212, d.version), "secondary": (25000000, "WC.16.08.0001")}

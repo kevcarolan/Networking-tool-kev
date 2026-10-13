@@ -214,15 +214,41 @@ device", then compare with the fingerprint the device shows).
 * the current image is still on flash, for a roll back;
 * a config backup in the last 24 hours (taken there and then if not).
 
-**IOS / IOS-XE, in addition:**
-* install mode (install path) or bundle mode (bundle path);
-* no critical or major alarms (a minor alarm is a warning);
-* fans, power and temperature OK;
-* CPU and memory (warnings);
-* no install operation pending;
-* old inactive images (info);
-* no unsaved configuration;
-* every stack member Ready.
+**Health checks, before and after the upgrade:**
+
+| Check | Result if it fails |
+|---|---|
+| Fans, power supplies and temperature OK | blocks |
+| No critical or major alarms (a minor alarm is a warning) | blocks |
+| Every module, stack, Virtual Chassis or line-card member up | blocks |
+| CPU and memory below the limits (Settings) | warning |
+| No unsaved configuration (before only) | blocks |
+| Why the device last restarted (a crash or power loss is a warning) | warning |
+
+A command the device doesn't support is skipped, not failed. The commands each platform uses:
+
+| Platform | Environment / alarms | Modules / stack | CPU, memory | Unsaved config | Last restart |
+|---|---|---|---|---|---|
+| IOS / IOS-XE | `show environment all`, `show facility-alarm status` | `show switch` | `show processes cpu`, `show processes memory` | `show archive config differences` | |
+| ASA | `show environment` | failover (see below) | `show cpu usage`, `show memory` | | |
+| NX-OS | `show environment` | `show module` | `show system resources` | `show running-config diff` | `show system reset-reason` |
+| Arista EOS | `show system environment all` | `show module` | `show processes top once` | `show running-config diffs` | `show reload cause` |
+| Junos | `show chassis environment`, `show chassis alarms`, `show system alarms` | `show virtual-chassis` | `show chassis routing-engine` | | `show chassis routing-engine` |
+| ArubaOS-Switch | `show system power-supply`, `show system fans` | `show stacking` | `show system` | `show config status` | `show boot-history` |
+| ArubaOS 8 | `show inventory`, `show alarms all` | | `show cpuload`, `show memory` | | `show switchinfo` |
+| Dell OS10 | `show environment`, `show alarms` | | `show processes node-id 1` | `show diff running-configuration startup-configuration` | |
+| Extreme EXOS | `show power`, `show fans` | `show stacking` | `show cpu-monitoring`, `show memory` | | |
+| Huawei VRP | `display power`, `display fan`, `display alarm active` | `display device` | `display cpu-usage`, `display memory-usage` | | `display reboot-info` |
+| IOS-XR | `show environment power`, `show environment fan`, `show alarms brief system active` | `show platform` | `show processes cpu`, `show memory summary` | | |
+| AlliedWare Plus | `show system environment` | `show stack` | `show cpu`, `show memory` | | `show reboot history` |
+| MikroTik | `/system health print` | | `/system resource print` | | |
+| EdgeOS | | | `show system memory` | | |
+
+IOS-XE also checks install mode or bundle mode (by path), that no install operation is
+pending, and lists old inactive images (info).
+
+FTD, FortiGate and PAN-OS are upgraded through their API and have their own checks below.
+Cisco small business, Check Point and Aruba AOS-CX have no upgrade driver yet.
 
 **Platform-specific:**
 
@@ -238,22 +264,40 @@ device", then compare with the fingerprint the device shows).
 | PAN-OS | The API answers with a trusted certificate; the base release is on the firewall; the running version is kept for roll back; HA path: one active and one passive unit, link up. |
 | Every other vendor | The running software is known, so it can be rolled back to. |
 
-For the other vendors the before/after snapshot is the version and the MAC addresses on
-edge ports (for the circuit check). Their alarm, environment and interface checks come later.
+**Before and after snapshot:** the version, interfaces, neighbours, port-channel members,
+modules or stack members, MAC address count and the MAC addresses on edge ports. The MAC and
+ARP tables read here also update the circuit list's live locations.
 
-**Before and after snapshot (IOS / IOS-XE):** interfaces, CDP and LLDP neighbours,
-port-channels, MAC address count, the MAC addresses on edge ports, stack members and version.
-The MAC and ARP tables read here also update the circuit list's live locations.
+| Platform | Interfaces | Neighbours | Port-channels / LAGs |
+|---|---|---|---|
+| IOS / IOS-XE | `show ip interface brief` | `show cdp neighbors detail`, `show lldp neighbors detail` | `show etherchannel summary` |
+| ASA | `show interface ip brief` | | `show port-channel summary` |
+| NX-OS | `show interface brief` | `show lldp neighbors` | `show port-channel summary` |
+| Arista EOS | `show interfaces status` | `show lldp neighbors` | `show port-channel summary` |
+| Junos | `show interfaces terse` | `show lldp neighbors` | `show lacp interfaces` (members collecting and distributing) |
+| ArubaOS-Switch | `show interfaces brief` | `show lldp info remote-device` | `show lacp` |
+| ArubaOS 8 | `show port status` | `show lldp neighbor` | |
+| Dell OS10 | `show interface status` | `show lldp neighbors` | `show port-channel summary` |
+| Extreme EXOS | `show ports no-refresh` | `show lldp neighbors` | `show sharing` |
+| Huawei VRP | `display interface brief` | `display lldp neighbor brief` | `display eth-trunk` |
+| IOS-XR | `show ipv4 interface brief` | `show lldp neighbors` | `show bundle brief` (active link count) |
+| AlliedWare Plus | `show interface brief` | `show lldp neighbors` | `show etherchannel` |
+| MikroTik | `/interface print terse` | `/ip neighbor print terse` | |
+| EdgeOS | `show interfaces` | `show lldp neighbors` | |
+
+The readers for the platforms other than IOS were written from vendor documentation. Each
+one is confirmed on real kit with a capture ([upgrade-lab-tests.md](upgrade-lab-tests.md)).
 
 **Post-checks** compare the two:
 * the device runs the target version;
 * interfaces that were up are still up;
 * neighbours and port-channel members are back;
+* every module or stack member that was up is up again;
 * the MAC count hasn't dropped by more than 20 % (a warning);
 * the circuits whose MAC was on the device before are back (a warning that lists each missing
   circuit with its MAC address; see [circuits.md](circuits.md#where-each-circuit-really-is-live-location));
 * the stack is complete;
-* the alarm and environment checks are run again.
+* the health checks above are run again.
 
 ## The record
 
