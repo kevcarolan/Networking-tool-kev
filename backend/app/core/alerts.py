@@ -48,10 +48,13 @@ log = logging.getLogger(__name__)
 PREFIX = "alerts_"
 KEYS = ("enabled", "smtp_host", "smtp_port", "smtp_security", "smtp_user", "mail_from",
         "mail_to", "backup_hours", "upgrades", "licence", "worker", "recipients",
-        "syslog_level", "syslog_minutes", "changes_diff")
+        "syslog_level", "syslog_minutes", "changes_diff", "report_day", "report_time",
+        "report_days")
 KINDS = {"backups": "Backups", "changes": "Config changes", "compliance": "Compliance",
          "upgrades": "Upgrades",
-         "licence": "Licence", "worker": "Upgrade worker", "syslog": "Syslog"}
+         "licence": "Licence", "worker": "Upgrade worker", "syslog": "Syslog",
+         "reports": "Report"}
+LAST_REPORT = PREFIX + "report_last"  # the last report slot sent
 CHANGES_LIMIT = 30  # devices listed in one email
 DIFF_LINES = 40  # changed lines shown per device, when the diff is included
 # A changed line that may hold a secret is never put in an email.
@@ -97,6 +100,9 @@ class Config:
     syslog_level: int = 2  # Critical and worse
     syslog_minutes: int = 5
     changes_diff: bool = False  # put the changed lines (secrets left out) in config change emails
+    report_day: str = ""  # mon..sun, or "" for no scheduled report
+    report_time: str = "07:00"  # UTC
+    report_days: int = 7  # the period it covers
 
     def to(self, kind: str) -> list[str]:
         """Who gets this kind of alert."""
@@ -140,7 +146,9 @@ def load(db: Session, cipher=None) -> Config:
         enabled_at=datetime.fromisoformat(v[ENABLED_AT]) if v.get(ENABLED_AT) else None,
         recipients=recipients, syslog_level=int(get("syslog_level", "2") or 2),
         syslog_minutes=int(get("syslog_minutes", "5") or 5),
-        changes_diff=get("changes_diff") == "true")
+        changes_diff=get("changes_diff") == "true", report_day=get("report_day"),
+        report_time=get("report_time", "07:00") or "07:00",
+        report_days=int(get("report_days", "7") or 7))
 
 
 # --- sending -----------------------------------------------------------------------------
@@ -543,10 +551,37 @@ class AlertService:
                     appsettings.save(db, a.save, "system")
             sent.append(msg["Subject"])
             log.info("Email alert sent: %s", msg["Subject"])
+        if not error and cfg.wanted("reports"):
+            error = self._report(cfg, sent)
         with session_scope() as db:
             if error or appsettings.stored(db).get(LAST_ERROR):
                 appsettings.save(db, {LAST_ERROR: error}, "system")
         return sent
+
+    def _report(self, cfg: Config, sent: list[str], force: bool = False) -> str:
+        """Send the scheduled report when its day and time have come (once per slot)."""
+        from app.core import reports
+
+        with session_scope() as db:
+            slot = reports.due(cfg.report_day, cfg.report_time,
+                               appsettings.stored(db).get(LAST_REPORT, ""))
+            if slot is None and not force:
+                return ""
+            data = reports.build(db, self.settings, cfg.report_days)
+        subject = (f"Report: the last {cfg.report_days} days"
+                   + ("" if not any(s.get("bad") for s in data["sections"]) else
+                      " (" + ", ".join(s["title"] for s in data["sections"] if s.get("bad"))
+                      + " need a look)"))
+        msg = message(cfg, self.settings, subject, reports.as_text(data), cfg.to("reports"))
+        try:
+            self.mailer(cfg, msg)
+        except Exception as exc:  # noqa: BLE001 - tried again at the next check
+            return f"{utcnow():%Y-%m-%d %H:%M} UTC: report: {type(exc).__name__}: {exc}"[:500]
+        if slot:
+            with session_scope() as db:
+                appsettings.save(db, {LAST_REPORT: slot}, "system")
+        sent.append(msg["Subject"])
+        return ""
 
 
 # --- API (Settings page) ---------------------------------------------------------------------
@@ -566,7 +601,8 @@ def _view(db: Session) -> dict:
             "upgrades": cfg.upgrades, "licence": cfg.licence, "worker": cfg.worker,
             "recipients": [{"address": r.address, "kinds": sorted(r.kinds)} for r in cfg.recipients],
             "kinds": KINDS, "syslog_level": cfg.syslog_level, "syslog_minutes": cfg.syslog_minutes,
-            "changes_diff": cfg.changes_diff,
+            "changes_diff": cfg.changes_diff, "report_day": cfg.report_day,
+            "report_time": cfg.report_time, "report_days": cfg.report_days,
             "last_error": v.get(LAST_ERROR, ""),
             "recent": [{"sent_at": r.sent_at, "subject": r.subject} for r in recent]}
 
@@ -594,6 +630,9 @@ class AlertsIn(BaseModel):
     syslog_level: int = Field(default=2, ge=0, le=3)  # 0 emergency .. 3 error, and worse
     syslog_minutes: int = Field(default=5, ge=1, le=60)
     changes_diff: bool = False
+    report_day: str = Field(default="", pattern=r"^(mon|tue|wed|thu|fri|sat|sun)?$")
+    report_time: str = Field(default="07:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    report_days: int = Field(default=7, ge=1, le=90)
 
 
 def _addresses(text: str) -> list[str]:
@@ -634,7 +673,8 @@ def save_alerts(body: AlertsIn, request: Request, db: Session = Depends(get_db),
     before = load(db)
     values = {PREFIX + k: str(getattr(body, k)) for k in
               ("smtp_host", "smtp_port", "smtp_security", "smtp_user", "mail_from",
-               "backup_hours", "syslog_level", "syslog_minutes")}
+               "backup_hours", "syslog_level", "syslog_minutes", "report_day", "report_time",
+               "report_days")}
     values |= {PREFIX + k: "true" if getattr(body, k) else "false"
                for k in ("enabled", "upgrades", "licence", "worker", "changes_diff")}
     values[PREFIX + "mail_to"] = ",".join(to)
@@ -670,3 +710,19 @@ def test_alerts(request: Request, db: Session = Depends(get_db),
         return {"ok": False, "message": f"{type(exc).__name__}: {exc}"}
     audit(db, user.username, "settings.alerts_test", f"sent to {', '.join(cfg.mail_to)}")
     return {"ok": True, "message": f"Sent to {', '.join(cfg.mail_to)}"}
+
+
+@router.post("/report-now")
+def report_now(request: Request, db: Session = Depends(get_db), user: User = Depends(require_admin)):
+    """Send the report to its recipients now (outside the schedule)."""
+    cfg = load(db, request.app.state.cipher)
+    if not (cfg.smtp_host and cfg.mail_from and cfg.to("reports")):
+        raise HTTPException(422, "Save the mail server, the From address and at least one "
+                                 "recipient who gets Report first")
+    sent: list[str] = []
+    error = request.app.state.alert_service._report(cfg, sent, force=True)
+    audit(db, user.username, "settings.report_sent",
+          f"to {', '.join(cfg.to('reports'))}" + (f": failed: {error}" if error else ""))
+    if error:
+        return {"ok": False, "message": error}
+    return {"ok": True, "message": f"Sent to {', '.join(cfg.to('reports'))}"}

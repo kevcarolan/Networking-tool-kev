@@ -416,3 +416,15 @@ pre.config.small { font-size: 11px; max-height: 120px; padding: 4px 6px; margin:
 .port.key { display: inline-block; width: 14px; height: 12px; vertical-align: middle; cursor: default; }
 .port-key { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; margin: 6px 0; }
 .port-info { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
+
+/* The report */
+.report-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.report-section { padding: 10px 12px; }
+.report-section.bad { border-left: 4px solid var(--fail); }
+.report-section h3 { margin: 0 0 6px; display: flex; gap: 8px; align-items: center; }
+.report-section td.num { text-align: right; font-weight: 600; white-space: nowrap; }
+.report-dialog .detail-head { gap: 10px; }
+@media print {
+  body:has(#rp-dialog[open]) > *:not(#rp-dialog) { display: none !important; }
+  #rp-dialog[open] { position: static; max-width: none; width: auto; box-shadow: none; border: 0; }
+}

@@ -863,6 +863,26 @@ async function deleteImage(img) {
   }
 }
 
+// ---------- the report ----------
+
+async function openReport() {
+  const body = $("#rp-body");
+  body.replaceChildren(h("p", { class: "muted" }, "Loading…"));
+  if (!$("#rp-dialog").open) $("#rp-dialog").showModal();
+  let r;
+  try { r = await api(`/api/reports?days=${$("#rp-days").value}`); } catch (e) { return body.replaceChildren(h("p", { class: "error" }, e.message)); }
+  body.replaceChildren(
+    h("p", { class: "muted" }, `${$("#site-name").textContent || ""} · from ${fmtTime(r.since)} to ${fmtTime(r.generated_at)}`),
+    h("div", { class: "report-grid" }, ...r.sections.map((sec) => h("section", { class: `report-section card${sec.bad ? " bad" : ""}` },
+      h("h3", {}, sec.title, sec.bad ? h("span", { class: "badge failed" }, "needs a look") : ""),
+      h("table", {}, h("tbody", {}, sec.rows.map(([label, value, more]) => h("tr", {},
+        h("td", {}, label, more ? h("small", { class: "sub" }, more) : null), h("td", { class: "num" }, String(value))))))))));
+}
+$("#act-report").addEventListener("click", openReport);
+$("#rp-days").addEventListener("change", openReport);
+$("#rp-close").addEventListener("click", () => $("#rp-dialog").close());
+$("#rp-print").addEventListener("click", () => window.print());
+
 // ---------- switch ports ----------
 
 const PORT_STATUS = {
@@ -2606,6 +2626,8 @@ async function alertsPanel() {
     .map(([v, l]) => h("option", { value: v, selected: a.smtp_security === v }, l)));
   f.smtp_password = h("input", { type: "password", autocomplete: "new-password", placeholder: a.has_password ? "saved (leave empty to keep it)" : "" });
   f.clear_password = h("input", { type: "checkbox" });
+  f.report_day = h("select", {}, ...[["", "Never (no scheduled report)"], ["mon", "Monday"], ["tue", "Tuesday"], ["wed", "Wednesday"],
+    ["thu", "Thursday"], ["fri", "Friday"], ["sat", "Saturday"], ["sun", "Sunday"]].map(([v, l]) => h("option", { value: v, selected: a.report_day === v }, l)));
   f.syslog_level = h("select", {}, ...[[0, "Emergency only"], [1, "Alert and worse"], [2, "Critical and worse"], [3, "Error and worse"]]
     .map(([v, l]) => h("option", { value: v, selected: a.syslog_level === v }, l)));
   // One row per recipient: the address and a tick for each kind of alert they get.
@@ -2647,6 +2669,10 @@ async function alertsPanel() {
     h("label", {}, "Syslog: messages at", f.syslog_level),
     text("syslog_minutes", "Syslog: at most one email every (minutes)", { type: "number", min: 1, max: 60 }),
     check("changes_diff", "Config changes: include the changed lines (lines that may hold a secret are left out)"),
+    h("h3", {}, "Report"),
+    h("p", { class: "muted" }, "A summary of backups, compliance, firmware, upgrades, circuits and syslog, emailed to everyone ticked for Report. The same report is on Activity › Report."),
+    h("div", { class: "grid2" }, h("label", {}, "Send it every", f.report_day), text("report_time", "At (UTC, HH:MM)", { placeholder: "07:00" })),
+    text("report_days", "Covering the last (days)", { type: "number", min: 1, max: 90 }),
     h("h3", {}, "Who gets what"),
     recipientsTable,
     h("div", { class: "actions" }, h("button", { type: "button", class: "small", onclick: () => addRecipient() }, "+ Add recipient")),
@@ -2659,6 +2685,7 @@ async function alertsPanel() {
           smtp_security: f.smtp_security.value, smtp_user: f.smtp_user.value.trim(), mail_from: f.mail_from.value.trim(),
           backup_hours: Number(f.backup_hours.value), syslog_level: Number(f.syslog_level.value),
           syslog_minutes: Number(f.syslog_minutes.value), changes_diff: f.changes_diff.checked,
+          report_day: f.report_day.value, report_time: f.report_time.value.trim() || "07:00", report_days: Number(f.report_days.value) || 7,
           recipients: $$("tr", rows).map((tr) => ({ address: $("input[type=email]", tr).value.trim(),
             kinds: $$("input[data-kind]", tr).filter((c) => c.checked).map((c) => c.dataset.kind) })).filter((r) => r.address) };
         if (f.smtp_password.value) body.smtp_password = f.smtp_password.value;
@@ -2673,7 +2700,16 @@ async function alertsPanel() {
           result.className = r.ok ? "ok-text" : "error";
           result.hidden = false;
         } catch (e) { showError(err, e); }
-      } }, "Send test email")),
+      } }, "Send test email"),
+      h("button", { type: "button", title: "Email the report to its recipients now (save first)", onclick: async () => {
+        err.hidden = true;
+        try {
+          const r = await api("/api/alerts/report-now", { method: "POST" });
+          result.textContent = r.ok ? `Report: ${r.message}` : `Report not sent: ${r.message}`;
+          result.className = r.ok ? "ok-text" : "error";
+          result.hidden = false;
+        } catch (e) { showError(err, e); }
+      } }, "Send the report now")),
     a.recent.length ? h("div", {}, h("h2", {}, "Last alerts sent"), h("ul", {}, a.recent.map((r) => h("li", {}, `${fmtTime(r.sent_at)}: ${r.subject}`)))) : "");
   return box;
 }
