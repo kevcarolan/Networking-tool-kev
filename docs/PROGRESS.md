@@ -35,6 +35,13 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 - [ ] Full install test on Ubuntu (owner, after the demo)
 - [x] Site layout (buildings, floors, rooms) and rack elevations: front and rear, zero-U, half depth, drag to move with overlap checks, print ([racks.md](racks.md))
 - [ ] Site plans: a floor plan picture per floor, rooms marked on it to click into (owner: after the layout)
+- [x] Config change alerts: what changed and who changed it (from the device's syslog); changed lines optional, secret-like lines never
+- [x] Config compliance: must / must not rules per platform and site, checked after every backup, Compliance view, device tab, alerts, CSV ([compliance.md](compliance.md))
+- [x] Switch port view: a faceplate per device from the last scan and the circuit list ([circuits.md](circuits.md#a-switchs-ports))
+- [x] Report: Activity › Report, and emailed on a day and time to the recipients of "Report"
+- [x] Wall display: compliance and config changes tiles, Sites and Network pages, pages chosen per screen
+- [ ] Health checks and before/after comparison for Arista, NX-OS, Juniper and the other platforms (today: Cisco IOS/IOS-XE only; the others check version, flash, image, MD5 and HA pair) (asked the owner, 2026-10-13)
+- [ ] Main and standby server (later)
 - [ ] Later: one overview of several servers (the display feed is the starting point); several customers on one server kept as an idea
 
 ### Platform (inherited)
@@ -105,6 +112,8 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-12 | Circuit list custom columns are text, read from uploads by their name; a header row with only known names is accepted (a blank template with few columns) | Circuit lists come from spreadsheets; checks belong in the sheet, and a template must import whatever columns were chosen |
 | 2026-10-12 | A circuit's site is the list's Site column, else its switch's site, else the site of the switch it was found on (migration 0008) | The owner: circuits linked to sites, "everything linked through"; most lists have no site column, and the switch's site is right for them |
 | 2026-10-13 | Sites are divided into buildings, floors and rooms (a room may sit straight in a building); items are placed by their Building/Floor/Room text, an item in a rack where its rack is | The owner: any site, not one design; text keeps imports and exports working, like Site |
+| 2026-10-13 | Config change emails never hold a line that may be a secret; compliance results show config lines only to `backups:configs`; the wall display never shows syslog text | Emails and screens travel further than the GUI; syslog text can hold addresses |
+| 2026-10-13 | The switch port view is built from stored scans and the circuit list, not by contacting the device | No new device commands to approve; it works the same in the demo and offline |
 | 2026-10-13 | Rack positions are the item's lowest U; full depth fills front and rear, half depth one face; height 0 is zero-U | The usual rack convention; patch panels share a U front and rear |
 | 2026-10-12 | Sites are a list of their own (table `sites`); items and devices keep a Site text, matched to a site's name or code; renaming a site rewrites that text | The owner: a site list cross-referenced with the inventory, without changing how devices and backups store their site |
 
@@ -112,7 +121,8 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 
 **Owner's to-do, in this order (remind the owner each session):**
 1. Testing of what is built: the demo (owner, 2026-10-13: "everything looks good so far"),
-   now the site layout and rack elevations too ([try-it.md](try-it.md)).
+   now the site layout and rack elevations, compliance, the port view, the report and the
+   wall display pages too ([try-it.md](try-it.md)).
 2. Full install test on Ubuntu ([install-online.md](install-online.md)), after the demo.
 3. Product name, then branding. Not decided yet (owner, 2026-10-12). Checked on the web:
    * ruled out: NetKeeper / NetKeeper Pro (live US trademark NETKEEPER, reg. 4944745, network
@@ -178,3 +188,4 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-12 | Networking-tool-kev | Sites tab (migration 0007): site list with counts from the inventory, site detail, sites the inventory uses but aren't listed, renames carried to items and devices, custom columns, import/export, blank template; demo has four sites |
 | 2026-10-12 | Networking-tool-kev | Circuits linked to sites (Site column, else the switch's site; migration 0008), circuit counts on Sites, site names linked on every page, site items open in the inventory |
 | 2026-10-13 | Networking-tool-kev | Site layout and rack elevations (migration 0009): buildings, floors, rooms from the inventory, site page with the tree and racks front and rear, drag to move with checks, rack names and sites linked from the inventory, print; demo has the layout and racks filled in |
+| 2026-10-13 | Networking-tool-kev | Config change alerts (who changed it from syslog), config compliance (migration 0010), switch port view, report (Activity and scheduled email), wall display Sites and Network pages with per-screen pages (migration 0011); answered which pre/post-checks run on Cisco and Arista |

@@ -34,6 +34,14 @@ The tiles at the top count each status.
   **Backups: configs**, because configs contain password hashes and keys). You can view
   or download any version.
 * A failed device is tried again automatically, sooner than its normal schedule.
+* **Compliance:** the rules every config is checked against, what fails and since when
+  ([compliance.md](../compliance.md)). A device that fails a rule shows **⚠ N compliance
+  rule(s)**; its **History › Compliance** tab lists them.
+* **Ports** (needs **Circuits: view**): the device drawn as a faceplate, each port coloured
+  by what is on it: its circuit is there, its circuit isn't there any more, a circuit from
+  another port is there, in use but not in the circuit list, or an uplink. Click a port for
+  its circuits and the MAC addresses (and IPs) seen on it. It comes from the last network
+  scan: no device is contacted. Also from the Inventory and an item's form.
 
 ## Inventory
 

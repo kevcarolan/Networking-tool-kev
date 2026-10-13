@@ -98,9 +98,18 @@ you did and what you expected, and send it over.
 - [ ] **Help: set up devices**: the configs per platform, plain and encrypted.
 - [ ] **Download .log**.
 
+**Compliance, alerts, report**
+- [ ] **Config backups › Compliance**: the example rules; six HQ switches fail. Open one with
+      **⚠ 3 compliance rule(s)**; add a rule of your own.
+- [ ] **Ports** on `hq-acc-sw1` (Config backups or Inventory): click a port.
+- [ ] **Activity › Report** for 7 days; **Print**.
+- [ ] **Settings › Email alerts**: Config changes, Compliance and Report (the emails need a
+      real mail server).
+
 **Everything else**
 - [ ] The **wall display** link (from the start-up messages) in a second window: the
-      overview, and the upgrades page while an upgrade runs.
+      overview, the sites and network pages, and the upgrades page while an upgrade runs.
+      On **Settings › Wall displays**, untick a page and **Save pages**.
 - [ ] **Users**: add a user with *Viewer*, sign in as them in a private window, and see
       what they can't do.
 - [ ] **Activity**: everything you did above is listed.

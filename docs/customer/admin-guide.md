@@ -93,10 +93,13 @@ server checks every minute.
 | Alert | When |
 |---|---|
 | Backups | A device's backup has been failing for longer than the hours you set (24 by default; 0 switches this off). The failing devices go in one email |
+| Config changes | A backup found a device's config changed (not its first backup): how many lines were added and removed, and **who changed it** when the device's syslog says (e.g. `%SYS-5-CONFIG_I: Configured from console by alice`). Tick *include the changed lines* to see them too: any line that may hold a secret (passwords, keys, communities…) is left out |
+| Compliance | A device's config starts failing a compliance rule ([compliance.md](../compliance.md)). Config lines are never sent |
 | Upgrades | An upgrade job (live or dry run) has completed, failed, rolled back, or needs attention |
 | Licence | 30 and 7 days before the licence ends, and when it (or the trial) has ended |
 | Upgrade worker | The upgrade worker has been stopped for more than 10 minutes |
 | Syslog | Devices sent messages at the level you choose (Critical and worse by default) or worse. They are gathered into at most one email every few minutes (5 by default), listing up to 50, so a storm of messages is one email |
+| Report | The report (below), on the day and at the time you choose |
 
 1. Fill in:
    * the mail server, port and security (STARTTLS on 587, TLS on 465, or none on port 25
@@ -112,17 +115,28 @@ server checks every minute.
 * If the mail server can't be reached, the last error shows here, and the alerts are tried
   again at the next check.
 * The hardened firewall needs the mail relay allowed: `SMTP_HOSTS` in `/etc/nftables.conf`.
+
+**The report.** A summary of how everything stands and what happened over a period:
+backups (failing, never backed up, configs changed), compliance, firmware (behind the
+standard), live upgrades, circuits (moved, not seen) and syslog (errors and worse, the
+noisiest devices). Only the tools your licence unlocks; names and counts, never configs.
+* **Activity › Report** shows it for the last day, 7, 30 or 90 days, with **Print**.
+* To email it, choose **Send it every** (a day), **At** (UTC) and **Covering the last**
+  (days), tick **Report** for the recipients, and **Save**. **Send the report now**
+  sends it straight away.
 * The relay's certificate is checked. For an internal CA, add it to the server's trusted
   CAs (`sudo cp corp-ca.crt /usr/local/share/ca-certificates/ && sudo update-ca-certificates`).
 
 ### Wall displays
 
 A read-only status screen for a NOC or an engineers' office, readable from across the
-room. Two pages take turns every 20 seconds:
+room. Its pages take turns every 20 seconds; each screen can show all of them or only some
+(the ticks next to each screen on the Settings page, then **Save pages**):
 
 * **Overview:**
-  * tiles for failing backups, firmware on standard (a percentage, with how many are
-    behind), upgrades running, and server health (the upgrade worker and the licence);
+  * tiles for failing backups, compliance (devices failing a rule), config changes in the
+    last 24 hours, firmware on standard (a percentage, with how many are behind),
+    upgrades running, and server health (the upgrade worker and the licence);
   * the devices whose backups are failing, with the reason and for how long;
   * one box per site, coloured by its worst problem.
 * **Upgrades:**
@@ -132,8 +146,17 @@ room. Two pages take turns every 20 seconds:
   * the upgrades coming up in the next 12 hours.
 
   This page is skipped when there are none.
+* **Sites:** a large box per site (from the site list), with its devices and what needs a
+  look: failing backups, firmware behind, compliance failures, circuits moved or missing.
+* **Network:**
+  * syslog errors and worse in the last 24 hours: counts per severity, and the latest by
+    device, severity and type (e.g. `%LINK-3-UPDOWN`). The message text isn't shown, as it
+    can contain addresses;
+  * the configs that changed in the last 24 hours;
+  * circuits: where the list says, moved, not seen, and the ones that moved or are missing.
 
-The screen shows only names, counts and statuses: no configs, passwords or addresses.
+The screen shows only names, counts and statuses: no configs, passwords, addresses or
+syslog message text.
 
 **To add a screen:**
 1. **Settings › Wall displays:** type a name (for example "NOC wall 1"), then **Add display**.
@@ -245,6 +268,12 @@ Each site has a **layout** (buildings, floors, rooms) and **rack elevations**. F
 Building, Floor, Room, Rack, Position (U) and Height (U) in the inventory (an import is
 quickest), then on the site's page click **Add them** to build the layout from it. After
 that, people move items by dragging them in the racks. Details: [racks.md](../racks.md).
+
+### Config compliance
+
+**Config backups › Compliance**: rules every backed-up config is checked against. Start
+with **Add example rules (Cisco IOS)** and adjust them; failures can be emailed
+(Email alerts › Compliance). Details: [compliance.md](../compliance.md).
 
 ### The circuit list's own columns
 

@@ -64,6 +64,24 @@ page doesn't have. Filter by site with **All sites**; *Not at a listed site* sho
 The exports have the list's *Site* and the **Linked site**. Renaming a site, or its code,
 also changes it in the live circuit list (and a pending upload).
 
+## A switch's ports
+
+**Ports** (on Config backups, the Inventory, an item's form, or a device's History) draws a
+device as a faceplate per module (e.g. `gi1/0/`), odd ports on top. Each port is coloured:
+
+| Colour | Means |
+|---|---|
+| Green | The circuit the list puts here is here |
+| Red | The circuit the list puts here isn't (it moved, or wasn't seen) |
+| Amber | A circuit the list puts on another port is here |
+| White | In use (MACs seen), but not in the circuit list |
+| Blue | An uplink to another switch (CDP/LLDP or a port-channel) |
+| Dashed | Nothing seen |
+
+Click a port for its circuits (documented where, found where) and the MAC addresses seen,
+with their IP from any device's ARP table. It is built from the last scan and the circuit
+list only: no device is contacted. Ports are shown up to the highest one seen or listed.
+
 ## Choosing the columns you see
 
 **Columns** (everyone): tick the columns you want and put them in order. It is remembered
