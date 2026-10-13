@@ -97,6 +97,7 @@ class DeviceRead:
     macs: list[MacEntry] | None = None
     arps: list[tuple[str, str]] | None = None  # (ip, mac)
     uplinks: set[str] = field(default_factory=set)
+    neighbors: list["Neighbor"] | None = None  # None: no neighbour table could be read
 
     @property
     def edge(self) -> list[MacEntry]:
@@ -233,7 +234,7 @@ def parse_arp(out: str) -> list[tuple[str, str]]:
 
 # Lines that start one neighbour in 'detail' output, besides a line of dashes
 _BLOCK_STARTS = (
-    r"\s*Local port",  # AlliedWare Plus "Local port1.0.1:", ArubaOS-Switch "Local Port   : 25"
+    r"\s*Local port(?:\S|\s+:)",  # AlliedWare Plus "Local port1.0.1:", ArubaOS-Switch "Local Port   : 25"
     r"Interface \S+ detected",  # Arista
     r"\S+ has \d+ neighbou?r",  # Huawei
     r"Port\s+:",  # AOS-CX
@@ -360,9 +361,116 @@ def _is_aggregate(port_norm: str) -> bool:
     return bool(_AGGREGATE.match(port_norm))
 
 
+# --- neighbours (the topology map) -------------------------------------------------
+
+@dataclass
+class Neighbor:
+    """A device seen on one of this device's ports, from CDP, LLDP or MikroTik discovery."""
+    local_port: str
+    name: str  # as it calls itself (domain removed)
+    remote_port: str = ""
+    address: str = ""  # its management address, when it says
+    platform: str = ""  # its model or software, when it says
+    infra: bool = True  # a switch or router (not a phone or wireless access point)
+
+
+_REMOTE_NAME = (re.compile(r"System Name\s*[.:]*\s*\"?([^\"\s]+)", re.I),
+                re.compile(r"Chassis-Name\s*[.:]*\s*\"?([^\"\s]+)", re.I),  # AOS-CX
+                re.compile(r"SysName\s*[.:]*\s*\"?([^\"\s]+)", re.I))
+_REMOTE_PORT = (re.compile(r"(?<![Ll]ocal )\bPort[ -]?id\b(?!\s*(?:sub)?type)[ \t.:]*\"?([^\"\n]*?)\"?[ \t]*$",
+                           re.I | re.M),)
+_REMOTE_ADDRESS = (re.compile(r"(?:Management Address(?:es)?|IPv4 Address|IP address|Mgmt IP)"
+                              r"[^\n\d]*(\d{1,3}(?:\.\d{1,3}){3})", re.I),)
+_REMOTE_DESCR = (re.compile(r"System Description\s*[.:]*\s*\"?([^\"\n]+)", re.I),)
+
+
+def _short(name: str) -> str:
+    name = (name or "").strip().strip('"')
+    return name if re.fullmatch(r"[\d.]+", name) else name.split(".")[0]
+
+
+def parse_neighbors_cdp(out: str) -> list[Neighbor]:
+    """IOS and NX-OS 'show cdp neighbors detail'."""
+    found = []
+    for block in _blocks(out):
+        dev = re.search(r"Device ID:\s*(\S+)", block)
+        intf = re.search(r"Interface:\s*([^,\s]+),\s*Port ID \(outgoing port\):\s*(\S+)", block)
+        if not dev or not intf:
+            continue
+        dev_name = re.sub(r"\(.*\)$", "", dev.group(1))  # NX-OS 'name(serial)'
+        caps = re.search(r"Capabilit(?:y|ies):\s*(.+)$", block, re.M)
+        plat = re.search(r"Platform:\s*([^,\n]+)", block)
+        found.append(Neighbor(intf.group(1), _short(dev_name), intf.group(2),
+                              _search(_REMOTE_ADDRESS, block) or "",
+                              plat.group(1).strip() if plat else "",
+                              _is_infra(caps.group(1)) if caps else True))
+    return found
+
+
+def parse_neighbors_lldp(out: str) -> list[Neighbor]:
+    """LLDP neighbour detail, any vendor (the same block markers as the uplinks)."""
+    found = []
+    for block in _blocks(out):
+        local, name = _search(_LOCAL_PORT, block), _search(_REMOTE_NAME, block)
+        if not local or not name:
+            continue
+        port = _search(_REMOTE_PORT, block) or ""
+        caps = _search(_CAPS, block)
+        found.append(Neighbor(local.rstrip(":"), _short(name), port,
+                              _search(_REMOTE_ADDRESS, block) or "",
+                              (_search(_REMOTE_DESCR, block) or "").strip()[:80],
+                              _is_infra(caps) if caps else bool(_SWITCH_PORT.match(port))))
+    return found
+
+
+def parse_neighbors_lldp_table(out: str) -> list[Neighbor]:
+    """One line per neighbour (Junos, Cisco small business): see parse_uplinks_lldp_table."""
+    found = []
+    for line in (out or "").splitlines():
+        m = re.match(rf"^\s*(\S+)\s+(?:(\S+)\s+)?({_MAC_TEXT})\s+(\S+)\s+(\S+)(.*)$", line)
+        if not m or not re.search(r"\d", m.group(1)):
+            continue
+        caps = re.search(r"((?:\b[A-Z]\b,?\s*)+)\s+\d+\s*$", m.group(6))
+        infra = _is_infra(caps.group(1)) if caps else bool(_SWITCH_PORT.match(m.group(4)))
+        found.append(Neighbor(m.group(1), _short(m.group(5)), m.group(4), infra=infra))
+    return found
+
+
+def parse_neighbors_mikrotik(out: str) -> list[Neighbor]:
+    found = []
+    for line in (out or "").splitlines():
+        kv = dict(re.findall(r"([\w-]+)=(\"[^\"]*\"|\S*)", line))
+        kv = {k: v.strip('"') for k, v in kv.items()}
+        intf, name = kv.get("interface", "").split(",")[0], kv.get("identity", "")
+        if not intf or not name:
+            continue
+        caps = kv.get("system-caps-enabled", "")
+        found.append(Neighbor(intf, _short(name), kv.get("interface-name", ""),
+                              kv.get("address", ""), kv.get("platform", ""),
+                              _is_infra(caps.replace(",", " ")) if caps else True))
+    return found
+
+
+def _merge_neighbors(lists: list[list[Neighbor]]) -> list[Neighbor]:
+    """CDP and LLDP often report the same neighbour: keep it once (CDP first)."""
+    seen, out = set(), []
+    for n in (n for lst in lists for n in lst):
+        key = (normalize_port(n.local_port), n.name.lower())
+        if key not in seen:
+            seen.add(key)
+            out.append(n)
+    return out
+
+
 def read_device(outputs: dict[str, str], platform: str = "") -> DeviceRead:
     """outputs: key (see COMMANDS) -> command output."""
     r = DeviceRead()
+    lists = [parse(outputs[key]) for key, parse in (
+        ("cdp", parse_neighbors_cdp), ("lldp", parse_neighbors_lldp),
+        ("lldp_table", parse_neighbors_lldp_table), ("mt_neighbor", parse_neighbors_mikrotik))
+        if key in outputs and not failed(outputs.get(key))]
+    if lists:
+        r.neighbors = _merge_neighbors(lists)
     for key, parse in (("cdp", parse_uplinks_cdp), ("lldp", parse_uplinks_lldp),
                        ("lldp_table", parse_uplinks_lldp_table),
                        ("mt_neighbor", parse_uplinks_mikrotik), ("pc", parse_port_channels)):

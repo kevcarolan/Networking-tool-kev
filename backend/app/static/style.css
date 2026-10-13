@@ -216,6 +216,30 @@ dialog {
 }
 dialog.wide { width: min(1100px, calc(100vw - 32px)); }
 dialog::backdrop { background: rgb(0 0 0 / .45); }
+
+/* Topology map */
+dialog.topo-dialog { width: calc(100vw - 32px); max-width: none; height: calc(100vh - 32px); max-height: none;
+  display: none; flex-direction: column; gap: 8px; }
+dialog.topo-dialog[open] { display: flex; }
+.topo-wrap { flex: 1; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); }
+.topo-wrap svg { display: block; user-select: none; }
+.topo-info { min-height: 1.4em; font-size: 13px; }
+.topo-node rect { fill: var(--surface); stroke: var(--accent); stroke-width: 1.5; }
+.topo-node.other_site rect { stroke: var(--muted); stroke-dasharray: 5 3; }
+.topo-node.unmanaged rect { fill: var(--idle-bg); stroke: var(--idle); stroke-dasharray: 3 3; }
+.topo-node.endpoint rect { fill: var(--idle-bg); stroke: var(--idle); }
+.topo-node.not-read rect { stroke: var(--warn); stroke-width: 2.5; }
+.topo-node { cursor: grab; }
+.topo-node.dragging { cursor: grabbing; }
+.topo-node text { fill: var(--text); font-size: 13px; }
+.topo-node text.sub { fill: var(--muted); font-size: 11px; }
+.topo-edge line { stroke: var(--muted); stroke-width: 2; }
+.topo-edge line.hit { stroke: transparent; stroke-width: 14; cursor: pointer; }
+.topo-edge.multi line.vis { stroke-width: 4; }
+.topo-edge.sel line.vis { stroke: var(--accent); }
+.topo-edge text { fill: var(--muted); font-size: 10px; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
+.no-ports .topo-edge text.port { display: none; }
+.topo-site { fill: var(--text); font-size: 14px; font-weight: 700; }
 .form { display: grid; gap: 12px; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .checks { display: flex; gap: 20px; flex-wrap: wrap; }

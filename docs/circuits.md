@@ -82,6 +82,35 @@ Click a port for its circuits (documented where, found where) and the MAC addres
 with their IP from any device's ARP table. It is built from the last scan and the circuit
 list only: no device is contacted. Ports are shown up to the highest one seen or listed.
 
+## Network map (topology)
+
+**Network map** (on the Sites page, and on each site's page) draws how the devices are
+connected, from the CDP and LLDP neighbours each switch and router reported at the last
+network scan (the same scan as the circuits' live locations; MikroTik's own discovery too).
+No device is contacted to draw it: run **Scan network now** for fresh links.
+
+* **One site:** its devices, plus what they connect to outside it: a device at another site
+  (dashed, with its site; click it to open that site's map) and neighbours not in the
+  inventory, such as a provider's router (grey). Those go on the top row, then each hop
+  further down.
+* **Every site:** each site's devices in their own block, with the links between sites.
+* A line is one link, or **×2**, **×3**… for several between the same two devices (a
+  port-channel). Port names are at each end (untick **Port names** on a busy map); click a
+  line for the full list. When both ends report a link it is shown once.
+* Phones and wireless access points are counted on their switch (*+2 phones/APs*) and drawn
+  only with **Phones and APs** ticked. A neighbour counts as a phone or access point when its
+  capabilities say so (phone, WLAN), or, without capabilities, when its port isn't a switch
+  port.
+* An orange box is a device the scan couldn't read (hover for why). Its links still show
+  from the other end.
+* A neighbour is matched to the inventory by its name (without the domain) or management
+  address.
+* **Drag** the boxes to tidy the map; **Save layout** keeps it for everyone (needs *Circuits:
+  manage*); **Arrange** places every box again. **Download** saves the map as a picture (SVG)
+  for a document or Visio.
+
+It needs the Circuits tool in the licence and *Circuits: view*.
+
 ## Choosing the columns you see
 
 **Columns** (everyone): tick the columns you want and put them in order. It is remembered

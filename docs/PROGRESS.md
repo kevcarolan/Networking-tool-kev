@@ -42,12 +42,12 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 - [x] Wall display: compliance and config changes tiles, Sites and Network pages, pages chosen per screen
 - [x] Health checks and before/after comparison for NX-OS, ASA, Arista, Junos, ArubaOS-Switch, AOS 8, Dell OS10, EXOS, Huawei, IOS-XR, AlliedWare Plus, MikroTik and EdgeOS: environment, alarms, modules/stack, CPU, memory, unsaved config, last restart; interfaces, neighbours, LAG members and modules compared after ([upgrades.md](upgrades.md#the-checks)). Readers from vendor docs: confirm each with a capture (lab tests section 9)
 - [x] Search box in the top bar: devices, inventory items, sites, circuits, and MAC/IP addresses from the last scan, by permission and licence ([customer/user-guide.md](customer/user-guide.md#search))
-- [ ] Topology map per site, from the LLDP/CDP neighbours (owner chose, 2026-10-13)
 - [ ] Maintenance calendar: upgrade windows and planned changes (owner chose, 2026-10-13)
 - [ ] Two-factor sign-in for local users (owner chose, 2026-10-13)
 - [ ] Later: config search across all backups and side-by-side diff of any two backups
 - [ ] Later: Teams and Slack messages alongside email
 - [ ] Later: a layout for phones
+- [x] Network map (topology) per site and for every site, from the CDP/LLDP neighbours kept at each network scan; drag and save layout, download as SVG ([circuits.md](circuits.md#network-map-topology))
 - [ ] Main and standby server (later)
 - [ ] Later: one overview of several servers (the display feed is the starting point); several customers on one server kept as an idea
 
@@ -126,6 +126,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-13 | `show reload cause`, `show reboot history` and `display reboot-info` are allowed by exact name in the capture's read-only check | They are read-only but contain words the check refuses; listing them exactly keeps every other "reload"/"reboot" command refused |
 | 2026-10-13 | No upgrade campaigns (many devices in waves), no end-of-life or warranty tracking, no scheduled daily health check for now | The owner: campaigns have no place in production; the daily health check to be looked at another way later |
 | 2026-10-13 | The search box only reads what is stored (inventory, sites, circuit list, the last scan); it never contacts a device, and each group is shown by the page's permission and the licence | Fast, safe, and nobody sees through search what their pages hide |
+| 2026-10-13 | The network map is drawn from the neighbours kept at the circuit scan (table `ct_live_neighbors`, migration 0012), so it is part of the Circuits module and permission; no new device commands | The scan already reads CDP/LLDP on every switch for uplinks; keeping the names costs nothing and the map never contacts a device |
 | 2026-10-12 | Sites are a list of their own (table `sites`); items and devices keep a Site text, matched to a site's name or code; renaming a site rewrites that text | The owner: a site list cross-referenced with the inventory, without changing how devices and backups store their site |
 
 ## Open questions
@@ -204,3 +205,4 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-13 | Networking-tool-kev | Owner didn't see the rack elevations after updating: browsers kept the old app.js (no caching instructions were sent). Every response now says Cache-Control: no-cache |
 | 2026-10-13 | Networking-tool-kev | Health checks and before/after comparison for every SSH upgrade platform (NX-OS, ASA extras, Arista, Junos, ArubaOS-Switch, AOS 8, OS10, EXOS, VRP, IOS-XR, AW+, MikroTik, EdgeOS); healthy sample output in the demo network for each command; fault tests (power, alarms, modules, unsaved config, LAG member lost after the reload) |
 | 2026-10-13 | Networking-tool-kev | Suggestions agreed with the owner (topology map, search, maintenance calendar, two-factor sign-in; Teams/Slack, phone layout and config search later). Search box built; a daily health check was started and dropped at the owner's request |
+| 2026-10-13 | Networking-tool-kev | Network map: neighbours (CDP, LLDP detail and table, MikroTik) kept at each scan, map per site and for every site with links between sites, phones/APs optional, drag and save layout, SVG download; the demo network is cabled (HQ cores, DC leaf/spine, branches, warehouse) |

@@ -7,8 +7,10 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.core.db import utcnow
+from app.tools.circuits.importer import normalize_port
 from app.tools.circuits.live import DeviceRead, Seen
-from app.tools.circuits.models import DeviceScanState, LiveArp, LiveMac, MacLastSeen
+from app.tools.circuits.models import (DeviceScanState, LiveArp, LiveMac, LiveNeighbor,
+                                       MacLastSeen)
 
 
 def _state(db: Session, device_id: int) -> DeviceScanState:
@@ -39,6 +41,13 @@ def save_read(db: Session, device_id: int, read: DeviceRead, now: datetime | Non
                                    vlan=e.vlan, seen_at=now))
             else:
                 last.device_id, last.port, last.vlan, last.seen_at = device_id, e.port, e.vlan, now
+    if read.neighbors is not None:
+        db.execute(delete(LiveNeighbor).where(LiveNeighbor.device_id == device_id))
+        db.add_all(LiveNeighbor(device_id=device_id, local_port=n.local_port[:100],
+                                local_norm=normalize_port(n.local_port)[:100], name=n.name[:255],
+                                remote_port=n.remote_port[:100], address=n.address[:100],
+                                platform=n.platform[:200], infra=n.infra, seen_at=now)
+                   for n in read.neighbors)
     if read.arps is not None:
         db.execute(delete(LiveArp).where(LiveArp.device_id == device_id))
         db.add_all(LiveArp(device_id=device_id, ip=ip, mac_norm=mac, seen_at=now)
