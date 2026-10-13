@@ -428,3 +428,9 @@ pre.config.small { font-size: 11px; max-height: 120px; padding: 4px 6px; margin:
   body:has(#rp-dialog[open]) > *:not(#rp-dialog) { display: none !important; }
   #rp-dialog[open] { position: static; max-width: none; width: auto; box-shadow: none; border: 0; }
 }
+
+/* Anything clickable that isn't a button: a site, rack, item or device name */
+.link { cursor: pointer; color: var(--accent); }
+.link:hover { text-decoration: underline; }
+/* A row's buttons stay on one line (td.actions is a table cell, not the wrapping .actions box) */
+td.actions { display: table-cell; }
