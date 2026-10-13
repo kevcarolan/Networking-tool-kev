@@ -84,6 +84,11 @@ each one. An item is at a site when its *Site* is the site's name or code.
 * Click a site's name for its page: its **buildings, floors and rooms** on the left, and
   the **racks** of the place you pick, front and rear, with every item where it is. Drag an
   item to move it (needs *Devices and credentials: manage*); **Print** for a site visit.
+* **Network map** (on the Sites page, or a site's page) draws how the devices are connected,
+  from the CDP/LLDP neighbours found at the last network scan: devices at other sites and
+  routers not in the inventory on top, then each hop further down. Click a line for its ports
+  and a box for the device; drag boxes and **Save layout**; **Download** a picture. More:
+  [circuits.md](../circuits.md#network-map-topology).
 
 More: [sites.md](../sites.md), [racks.md](../racks.md).
 

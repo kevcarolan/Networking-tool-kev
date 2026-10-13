@@ -1,15 +1,15 @@
 """Two-factor sign-in: each user's (encrypted) authenticator secret and recovery codes.
 
-Revision ID: 0012_two_factor
-Revises: 0011_display_pages
+Revision ID: 0013_two_factor
+Revises: 0012_topology
 Created: 2026-10-13
 """
 
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0012_two_factor"
-down_revision = "0011_display_pages"
+revision = "0013_two_factor"
+down_revision = "0012_topology"
 branch_labels = None
 depends_on = None
 
