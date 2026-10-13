@@ -241,6 +241,11 @@ Give each site a short **code** (e.g. `DC1`): items and devices are at a site wh
 *Site* is its name or code. Renaming a site, or its code, updates the items and devices that
 use it. Admins can add **Custom columns** (e.g. *Power supply*). Details: [sites.md](../sites.md).
 
+Each site has a **layout** (buildings, floors, rooms) and **rack elevations**. Fill in
+Building, Floor, Room, Rack, Position (U) and Height (U) in the inventory (an import is
+quickest), then on the site's page click **Add them** to build the layout from it. After
+that, people move items by dragging them in the racks. Details: [racks.md](../racks.md).
+
 ### The circuit list's own columns
 
 On **Circuits**, admins can add **Custom columns** (e.g. *Patch panel*). An upload reads a

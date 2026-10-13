@@ -29,7 +29,7 @@ Find it under **Inventory** in the top bar.
 | Identity | Name, Type, Role, Manufacturer, Model, Serial number, Asset tag |
 | Software | OS / platform, Version |
 | Network | Management IP, Management VLAN, MAC address |
-| Location | Site, Building, Floor, Room, Rack, Position (U), Height (U) |
+| Location | Site, Building, Floor, Room, Rack, Position (U), Height (U), Rack face (front, rear), Depth (full, half) |
 | Lifecycle | Status (in service, spare, planned, faulty, retired), Purchase date, Warranty end, Support contract, End of support, Supplier |
 | Other | Owner / team, Notes |
 
@@ -58,6 +58,12 @@ Find it under **Inventory** in the top bar.
   pick-lists for *Type*, *Status* and pick-list custom columns, and a second sheet on how
   to fill it in. Fill it in and **Import** it.
 
+## Racks
+
+Rack, Position (U), Height (U), Rack face and Depth draw the rack elevations on each site's
+page ([racks.md](racks.md)). A Rack value is a link to its rack, and the form has **Show in
+its rack**. A height of 0 is a zero-U item, such as a vertical PDU.
+
 ## Sites
 
 The **Sites** page lists the sites themselves (data centres, offices, branches...). An item
@@ -78,4 +84,4 @@ Adding custom columns needs an **admin**. Every change is in the activity report
 
 ## Later
 
-A rack view: a picture of each rack built from Rack, Position (U) and Height (U).
+Site plans: a floor plan picture per floor, with rooms to click into.

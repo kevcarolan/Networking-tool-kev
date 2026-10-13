@@ -39,6 +39,8 @@ class Asset(Base):
     rack: Mapped[str] = mapped_column(String(100), default="")
     rack_position: Mapped[int | None] = mapped_column(Integer, nullable=True)
     rack_units: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rack_face: Mapped[str] = mapped_column(String(10), default="", server_default="")  # front/rear
+    rack_depth: Mapped[str] = mapped_column(String(10), default="", server_default="")  # full/half
     status: Mapped[str] = mapped_column(String(30), default="in service")
     purchase_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     warranty_end: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -102,5 +104,21 @@ class SiteField(Base):
     label: Mapped[str] = mapped_column(String(100))
     kind: Mapped[str] = mapped_column(String(10), default="text")  # text, number, date, choice
     choices: Mapped[str] = mapped_column(Text, default="[]")  # JSON list, for "choice"
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class Location(Base):
+    """A building, floor or room at a site. Inventory rows are placed by their Building,
+    Floor and Room text, matched to these by name (``layout.py``)."""
+    __tablename__ = "site_locations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    site_id: Mapped[int] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), index=True)
+    parent_id: Mapped[int | None] = mapped_column(
+        ForeignKey("site_locations.id", ondelete="CASCADE"), nullable=True)
+    kind: Mapped[str] = mapped_column(String(10))  # building, floor, room
+    name: Mapped[str] = mapped_column(String(100))
+    notes: Mapped[str] = mapped_column(Text, default="")
     position: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

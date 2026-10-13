@@ -56,6 +56,8 @@ STANDARD: tuple[Field, ...] = (
     Field("rack", "Rack", "Location", default_shown=True),
     Field("rack_position", "Position (U)", "Location", "number"),
     Field("rack_units", "Height (U)", "Location", "number"),
+    Field("rack_face", "Rack face", "Location", "choice", ("front", "rear")),
+    Field("rack_depth", "Depth", "Location", "choice", ("full", "half")),
     Field("status", "Status", "Lifecycle", "choice", STATUSES, default_shown=True),
     Field("purchase_date", "Purchase date", "Lifecycle", "date"),
     Field("warranty_end", "Warranty end", "Lifecycle", "date"),

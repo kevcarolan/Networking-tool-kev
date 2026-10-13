@@ -21,6 +21,9 @@ When the inventory uses a site that isn't on the list, the page says so above th
 
 ## The page
 
+Click a site's name to open its own page: its buildings, floors and rooms, and the racks in
+them as rack elevations ([racks.md](racks.md)). **Site details** opens its details form.
+
 * Tiles: sites, live sites, items at a site, managed devices, backups failing.
 * Search any column, filter by type, region and status.
 * Counts per site: **Items**, **Managed devices**, **Backups failing**, **Firmware behind**

@@ -68,7 +68,11 @@ each one. An item is at a site when its *Site* is the site's name or code.
 * **Columns**, **CSV** / **Excel**, **Blank template** and **Import** work as on the
   Inventory page. Changes need *Devices and credentials: manage*.
 
-More: [sites.md](../sites.md).
+* Click a site's name for its page: its **buildings, floors and rooms** on the left, and
+  the **racks** of the place you pick, front and rear, with every item where it is. Drag an
+  item to move it (needs *Devices and credentials: manage*); **Print** for a site visit.
+
+More: [sites.md](../sites.md), [racks.md](../racks.md).
 
 ## Firmware
 
