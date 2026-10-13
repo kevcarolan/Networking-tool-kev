@@ -2425,6 +2425,7 @@ async function alertsPanel() {
     h("h3", {}, "What is sent"),
     h("ul", { class: "muted" },
       h("li", {}, "Backups: a device's backup has been failing for longer than the hours below."),
+      h("li", {}, "Config changes: a backup found a changed config (what changed, and who, when the device's syslog says)."),
       h("li", {}, "Upgrades: a job completes, fails, rolls back or needs attention."),
       h("li", {}, "Licence: 30 and 7 days before it ends, and when it has ended."),
       h("li", {}, "Upgrade worker: stopped for more than 10 minutes."),
@@ -2432,6 +2433,7 @@ async function alertsPanel() {
     text("backup_hours", "Backups: alert when failing for more than (hours)", { type: "number", min: 1, max: 720 }),
     h("label", {}, "Syslog: messages at", f.syslog_level),
     text("syslog_minutes", "Syslog: at most one email every (minutes)", { type: "number", min: 1, max: 60 }),
+    check("changes_diff", "Config changes: include the changed lines (lines that may hold a secret are left out)"),
     h("h3", {}, "Who gets what"),
     recipientsTable,
     h("div", { class: "actions" }, h("button", { type: "button", class: "small", onclick: () => addRecipient() }, "+ Add recipient")),
@@ -2443,7 +2445,7 @@ async function alertsPanel() {
         const body = { enabled: f.enabled.checked, smtp_host: f.smtp_host.value.trim(), smtp_port: Number(f.smtp_port.value),
           smtp_security: f.smtp_security.value, smtp_user: f.smtp_user.value.trim(), mail_from: f.mail_from.value.trim(),
           backup_hours: Number(f.backup_hours.value), syslog_level: Number(f.syslog_level.value),
-          syslog_minutes: Number(f.syslog_minutes.value),
+          syslog_minutes: Number(f.syslog_minutes.value), changes_diff: f.changes_diff.checked,
           recipients: $$("tr", rows).map((tr) => ({ address: $("input[type=email]", tr).value.trim(),
             kinds: $$("input[data-kind]", tr).filter((c) => c.checked).map((c) => c.dataset.kind) })).filter((r) => r.address) };
         if (f.smtp_password.value) body.smtp_password = f.smtp_password.value;

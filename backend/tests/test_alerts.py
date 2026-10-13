@@ -305,3 +305,32 @@ def test_syslog_level_and_nobody_wanting_it(app, admin, outbox, device, settings
     _syslog(settings, ("10.0.0.1", 3, "%LINK-3-UPDOWN", "Gi1/0/2 down"))
     [subject] = _tick(app)
     assert "at Error or worse" in subject and "Gi1/0/2" in outbox[-1].get_content()
+
+
+def test_config_changes_say_what_and_who(app, admin, outbox, device, fetcher, settings):
+    from tests.conftest import SAMPLE_CONFIG
+
+    base = SAMPLE_CONFIG.format(name="core-sw1", address="10.0.0.1")
+    fetcher.configs["core-sw1"] = base
+    app.state.backup_service.run(device["id"])  # the first backup is not a change
+    _people(admin, ("noc@corp.example", ["changes"]))
+    assert _tick(app) == []
+    fetcher.configs["core-sw1"] = base + "\nntp server 192.0.2.123\nsnmp-server community s3cret RO\n"
+    _syslog(settings, ("10.0.0.1", 5, "%SYS-5-CONFIG_I", "Configured from console by alice on vty0 (192.0.2.9)"),
+            ("10.0.0.1", 5, "%LINK-5-CHANGED", "Interface Gi1/0/2, changed state to up"))
+    app.state.backup_service.run(device["id"])
+    [subject] = _tick(app)
+    assert subject.endswith("Config changed on 1 device: core-sw1")
+    body = outbox[-1].get_content()
+    assert "Configured from console by alice" in body and "Gi1/0/2" not in body
+    assert "2 line(s) added, 0 removed" in body and "ntp server" not in body  # no lines by default
+    assert _tick(app) == []  # once only
+    _people(admin, ("noc@corp.example", ["changes"]), changes_diff=True)
+    fetcher.configs["core-sw1"] = base + "\nntp server 192.0.2.124\nsnmp-server community s3cret RO\n"
+    app.state.backup_service.run(device["id"])
+    [_] = _tick(app)
+    body = outbox[-1].get_content()
+    assert "+ntp server 192.0.2.124" in body and "-ntp server 192.0.2.123" in body
+    assert "s3cret" not in body
+    app.state.backup_service.run(device["id"])  # unchanged: nothing
+    assert _tick(app) == []
