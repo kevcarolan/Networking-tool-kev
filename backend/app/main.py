@@ -108,6 +108,9 @@ def create_app(settings: Settings | None = None, fetcher=fetch_config,
         response = await call_next(request)
         for key, value in _SECURITY_HEADERS.items():
             response.headers.setdefault(key, value)
+        # Browsers check with the server before using a page or script they kept (a quick
+        # "not modified" when it is the same), so an update is seen without clearing caches.
+        response.headers.setdefault("Cache-Control", "no-cache")
         return response
 
     app.include_router(auth.router)
