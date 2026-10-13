@@ -21,7 +21,8 @@ from app.tools.circuits.importer import (_HEADERS, FIELDS, LABELS, CircuitImport
                                          row_key)
 from app.tools.circuits import live
 from app.tools.circuits.models import (ACTIVE, PENDING, SUPERSEDED, Circuit, CircuitField,
-                                       CircuitImport, CircuitScan)
+                                       CircuitImport, CircuitScan, DeviceScanState, LiveArp,
+                                       LiveMac)
 from app.tools.circuits.store import LiveIndex
 
 router = APIRouter(prefix="/api/circuits", tags=["circuits"])
@@ -355,6 +356,68 @@ def for_device(device_id: int, db: Session = Depends(get_db), _: User = Depends(
     if device is None:
         raise HTTPException(404, "Device not found")
     return circuits_for_device(db, device)
+
+
+@router.get("/ports/{device_id}")
+def ports(device_id: int, db: Session = Depends(get_db), _: User = Depends(CIRCUITS_VIEW)):
+    """One switch's ports: the MAC addresses its last scan saw on each (with the IP from any
+    device's ARP table), the circuits the list puts there or that were found there, and a
+    status per port. From the stored scan: no device is contacted."""
+    import re
+
+    from app.tools.circuits.importer import normalize_port
+
+    device = db.get(Device, device_id)
+    if device is None:
+        raise HTTPException(404, "Device not found")
+    arp = {}
+    for a in db.scalars(select(LiveArp).order_by(LiveArp.seen_at)):
+        arp[a.mac_norm] = a.ip  # the newest wins
+    out: dict[str, dict] = {}
+
+    def port(norm: str, label: str) -> dict:
+        return out.setdefault(norm, {"port": label, "port_norm": norm, "macs": [], "uplink": False,
+                                     "circuits": []})
+
+    for m in db.scalars(select(LiveMac).where(LiveMac.device_id == device.id)):
+        p = port(m.port_norm, m.port)
+        p["uplink"] |= bool(m.uplink)
+        p["macs"].append({"mac": m.mac_norm, "vlan": m.vlan, "ip": arp.get(m.mac_norm, "")})
+    data = circuits_for_device(db, device)
+    for group in data["groups"]:
+        for c in group["circuits"]:
+            item = {"id": c["id"], "device_name": c["device_name"], "service": c["service"],
+                    "vlan": c["vlan"], "mac": c["mac"], "ip": c["ip"],
+                    "live_status": c["live_status"], "live_status_label": c["live_status_label"],
+                    "documented": f"{c['switch']} {c['port']}".strip(),
+                    "found": f"{c['live_switch']} {c['live_port']}".strip()}
+            if c["switch_device_id"] == device.id and c["port_norm"]:
+                port(c["port_norm"], c["port"])["circuits"].append({**item, "here": "documented"})
+            if c["live_device_id"] == device.id and c["live_port"]:
+                norm = normalize_port(c["live_port"])
+                if c["switch_device_id"] != device.id or norm != c["port_norm"]:
+                    port(norm, c["live_port"])["circuits"].append({**item, "here": "found"})
+    for p in out.values():
+        documented = [c for c in p["circuits"] if c["here"] == "documented"]
+        if p["uplink"]:
+            p["status"] = "uplink"
+        elif any(c["live_status"] in (live.MOVED, live.NOT_SEEN) for c in documented):
+            p["status"] = "problem"  # its circuit isn't here any more
+        elif any(c["here"] == "found" for c in p["circuits"]):
+            p["status"] = "moved_here"
+        elif documented:
+            p["status"] = "ok"
+        else:
+            p["status"] = "unlisted" if p["macs"] else "empty"
+
+    def order(p):  # natural order: gi1/0/2 before gi1/0/10
+        return [int(x) if x.isdigit() else x for x in re.split(r"(\d+)", p["port_norm"])]
+
+    state = db.get(DeviceScanState, device.id)
+    return {"device": {"id": device.id, "name": device.name, "platform": device.platform},
+            "scanned_at": state.last_success if state else None,
+            "scan_error": state.last_error if state else "",
+            "ports": sorted(out.values(), key=order)}
 
 
 def circuits_for_device(db: Session, device: Device) -> dict:

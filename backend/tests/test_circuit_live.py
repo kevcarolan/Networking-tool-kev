@@ -208,3 +208,23 @@ def test_the_circuit_list_is_compared_every_night_by_default():
     from app.core.config import Settings
 
     assert parse_schedule(Settings(_env_file=None).circuit_scan_schedule) == (None, 3, 0)
+
+
+def test_switch_port_view(app, admin, switch, fw_collector):
+    rows = [list(r) for r in ROWS]
+    imp = _upload(admin, make_xlsx(rows=rows)).json()
+    admin.post(f"/api/circuits/imports/{imp['id']}/commit")
+    _scan(app, fw_collector)
+    data = admin.get(f"/api/circuits/ports/{switch['id']}").json()
+    assert data["device"]["name"] == "SITEA-ACC-SW01" and data["scanned_at"]
+    by = {p["port_norm"]: p for p in data["ports"]}
+    names = [p["port_norm"] for p in data["ports"]]
+    assert names == sorted(names, key=lambda n: [int(x) if x.isdigit() else x
+                                                 for x in __import__("re").split(r"(\d+)", n)])
+    assert by["gi2/0/13"]["status"] == "ok"                         # DC-SITEA-GF-03 is there
+    assert by["gi2/0/12"]["status"] == "problem"                    # GF-02 moved away from here
+    assert by["gi2/0/14"]["status"] == "moved_here"                 # ...to here
+    assert by["gi2/0/14"]["circuits"][0]["documented"].endswith("Gi2/0/12")
+    assert any(p["status"] == "uplink" for p in data["ports"])
+    assert by["gi2/0/13"]["macs"][0]["mac"] == "02:00:5e:10:c0:2f"
+    assert admin.get("/api/circuits/ports/999").status_code == 404

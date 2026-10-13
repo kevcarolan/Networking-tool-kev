@@ -276,6 +276,9 @@ function deviceRow(r) {
   if (can("backups", "run") && hasModule("backups")) {
     actions.push(h("button", { class: "small", disabled: b.busy, onclick: () => runNow(d) }, "Backup now"));
   }
+  if (can("circuits", "view") && hasModule("circuits")) {
+    actions.push(h("button", { class: "small", title: "What is on each port", onclick: () => openPorts(d) }, "Ports"));
+  }
   if (can("syslog", "view") && hasModule("syslog")) {
     actions.push(h("button", { class: "small", title: "This device's syslog messages",
       onclick: () => { sl.pick = String(d.id); switchView("syslog"); } }, "Logs"));
@@ -418,7 +421,7 @@ $("#device-form").addEventListener("submit", async (ev) => {
 
 async function openDetail(row) {
   state.detailDevice = row.device;
-  $("#detail-title").textContent = `${row.device.name} — ${row.device.address}`;
+  $("#detail-title").textContent = row.device.address ? `${row.device.name} — ${row.device.address}` : row.device.name;
   $("#detail-text").hidden = true;
   selectDetailTab("runs");
   $("#detail-dialog").showModal();
@@ -430,10 +433,11 @@ function selectDetailTab(tab) {
   $("#detail-versions").hidden = tab !== "versions";
   $("#detail-circuits").hidden = tab !== "circuits";
   $("#detail-compliance").hidden = tab !== "compliance";
+  $("#detail-ports").hidden = tab !== "ports";
   $("#detail-upgrades").hidden = tab !== "upgrades";
   $("#detail-text").hidden = true;
   ({ runs: loadRuns, versions: loadVersions, circuits: loadDeviceCircuits, upgrades: loadDeviceUpgrades,
-    compliance: loadDeviceCompliance })[tab]();
+    compliance: loadDeviceCompliance, ports: loadDevicePorts })[tab]();
 }
 $$("#detail-tabs button").forEach((b) => b.addEventListener("click", () => selectDetailTab(b.dataset.tab)));
 $("#detail-close").addEventListener("click", () => $("#detail-dialog").close());
@@ -857,6 +861,78 @@ async function deleteImage(img) {
   } catch (e) {
     toast(e.message);
   }
+}
+
+// ---------- switch ports ----------
+
+const PORT_STATUS = {
+  ok: ["success", "Its circuit is here"], problem: ["failed", "Its circuit isn't here (moved or not seen)"],
+  moved_here: ["changed", "A circuit documented elsewhere is here"], unlisted: ["never", "In use, not in the circuit list"],
+  uplink: ["uplink", "Uplink to another switch"], empty: ["empty", "Nothing seen"],
+};
+
+/** Open a device's port view (from the inventory, a rack, Config backups). */
+function openPorts(device) {
+  openDetail({ device: { address: "", ...device } });
+  selectDetailTab("ports");
+}
+
+async function loadDevicePorts() {
+  const pane = $("#detail-ports");
+  pane.replaceChildren(h("p", { class: "muted" }, "Loading…"));
+  let d;
+  try { d = await api(`/api/circuits/ports/${state.detailDevice.id}`); } catch (e) { return pane.replaceChildren(h("p", { class: "error" }, e.message)); }
+  if (!d.ports.length) {
+    return pane.replaceChildren(h("p", { class: "empty" }, d.scanned_at ? "The last scan saw nothing on this device's ports, and the circuit list puts nothing on it."
+      : "This device hasn't been scanned yet: Circuits › Scan network now reads its MAC table."));
+  }
+  const info = h("div", { class: "port-info" }, h("p", { class: "muted" }, "Click a port to see what is on it."));
+  const show = (p) => {
+    $$(".port.sel", pane).forEach((x) => x.classList.remove("sel"));
+    info.replaceChildren(
+      h("h3", {}, p.port, " ", h("span", { class: `badge ${PORT_STATUS[p.status][0]}` }, PORT_STATUS[p.status][1])),
+      p.circuits.length ? h("table", {}, h("thead", {}, h("tr", {}, ["Circuit", "Service", "VLAN", "MAC / IP", "Documented on", "On the network"].map((t) => h("th", {}, t)))),
+        h("tbody", {}, p.circuits.map((c) => h("tr", {},
+          h("td", { class: "name" }, c.device_name || "—"), h("td", {}, c.service || "—"), h("td", {}, c.vlan || "—"),
+          h("td", {}, h("code", {}, c.mac || "—"), c.ip ? h("small", { class: "sub" }, c.ip) : null),
+          h("td", {}, c.documented || "—"),
+          h("td", {}, h("span", { class: `badge ${CT_LIVE_CLS[c.live_status] || "never"}` }, c.live_status_label || "—"), c.found ? h("small", { class: "sub" }, c.found) : null)))))
+        : h("p", { class: "muted" }, "No circuit in the list for this port."),
+      p.macs.length ? h("div", {}, h("h4", {}, `MAC addresses seen (${p.macs.length})`),
+        h("table", {}, h("tbody", {}, p.macs.slice(0, 50).map((m) => h("tr", {}, h("td", {}, h("code", {}, m.mac)), h("td", {}, `VLAN ${m.vlan || "—"}`), h("td", {}, m.ip ? h("code", {}, m.ip) : "")))))) : "");
+  };
+  // Group ports by everything but their last number (gi1/0/, te1/1/...), odd numbers on top like a switch.
+  const groups = new Map();
+  for (const p of d.ports) {
+    const m = p.port_norm.match(/^(.*?)(\d+)$/);
+    const key = m ? m[1] : p.port_norm;
+    groups.set(key, [...(groups.get(key) || []), { ...p, num: m ? Number(m[2]) : 0 }]);
+  }
+  const plates = [...groups.entries()].map(([key, list]) => {
+    const plate = h("div", { class: "faceplate" });
+    list.sort((a, b) => a.num - b.num);
+    const max = Math.max(...list.map((p) => p.num), 1);
+    const byNum = new Map(list.map((p) => [p.num, p]));
+    for (let n = 1; n <= max; n++) {
+      const p = byNum.get(n);
+      const col = Math.ceil(n / 2), row = n % 2 ? 1 : 2;
+      const el = h("button", { type: "button", class: `port ${p ? PORT_STATUS[p.status][0] : "unused"}`, disabled: !p,
+        title: p ? `${p.port}: ${PORT_STATUS[p.status][1]}${p.circuits[0] ? ` · ${p.circuits[0].device_name}` : ""}${p.macs.length ? ` · ${p.macs.length} MAC` : ""}` : `${key}${n}: nothing seen`,
+        onclick: p ? (ev) => { show(p); ev.currentTarget.classList.add("sel"); } : null }, n);
+      el.style.gridColumn = String(col);
+      el.style.gridRow = String(row);
+      plate.append(el);
+    }
+    return h("div", { class: "plate-group" }, h("div", { class: "muted" }, key || "ports"), plate);
+  });
+  const counts = Object.keys(PORT_STATUS).map((k) => [k, d.ports.filter((p) => p.status === k).length]).filter(([, n]) => n);
+  pane.replaceChildren(
+    h("p", { class: "muted" }, d.scanned_at ? `From the scan of ${fmtTime(d.scanned_at)} and the circuit list. ` : "Not scanned yet: from the circuit list only. ",
+      d.scan_error ? h("span", { class: "errtext" }, `Last scan error: ${d.scan_error}`) : ""),
+    h("div", { class: "port-key" }, ...counts.map(([k, n]) => h("span", {}, h("span", { class: `port ${PORT_STATUS[k][0]} key` }), ` ${PORT_STATUS[k][1]} (${n})`))),
+    ...plates, info);
+  const firstBad = d.ports.find((p) => p.status === "problem") || d.ports.find((p) => p.circuits.length);
+  if (firstBad) show(firstBad);
 }
 
 // ---------- config compliance ----------
@@ -2941,6 +3017,9 @@ function invTools(r) {
     try { openDetail(await api(`/api/backup/devices/${r.device.id}`)); } catch (e) { toast(e.message); }
   } }, "Backups"));
   if (hasModule("syslog") && can("syslog", "view")) out.push(h("button", { class: "small", onclick: () => { sl.pick = String(r.device.id); switchView("syslog"); } }, "Logs"));
+  if (hasModule("circuits") && can("circuits", "view") && ["switch", "router", "firewall"].includes(r.values ? r.values.type : r.type)) {
+    out.push(h("button", { class: "small", title: "What is on each port", onclick: () => openPorts(r.device) }, "Ports"));
+  }
   return h("span", { class: "actions" }, ...out);
 }
 
@@ -2995,6 +3074,9 @@ function invEdit(r = null, after = loadInventory) {
     } catch (e) { showError(err, e); }
   };
   const buttons = h("div", { class: "dialog-actions" });
+  if (r && r.managed && hasModule("circuits") && can("circuits", "view")) {
+    buttons.append(h("button", { type: "button", onclick: () => { $("#inv-dialog").close(); openPorts(r.device); } }, "Ports"));
+  }
   if (r && (r.values.type === "rack" || r.values.rack)) {
     buttons.append(h("button", { type: "button", onclick: () => { $("#inv-dialog").close(); showInRack(r.id); } },
       r.values.type === "rack" ? "Show the rack" : "Show in its rack"));
