@@ -191,3 +191,11 @@ def test_the_client_sees_no_server_errors_for_odd_sign_ins(app):
     with TestClient(app, raise_server_exceptions=False) as c:
         for name in ("\\", "@", "\\\\", "a@", "\x00"):
             assert _login(c, name, "x").status_code == 401
+
+
+def test_pages_and_scripts_are_checked_again_after_an_update(client):
+    r = client.get("/app.js")
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-cache"
+    again = client.get("/app.js", headers={"If-None-Match": r.headers["etag"]})
+    assert again.status_code == 304  # unchanged: nothing sent again
+    assert client.get("/").headers["cache-control"] == "no-cache"
