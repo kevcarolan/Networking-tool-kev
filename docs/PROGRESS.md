@@ -41,6 +41,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 - [x] Report: Activity › Report, and emailed on a day and time to the recipients of "Report"
 - [x] Wall display: compliance and config changes tiles, Sites and Network pages, pages chosen per screen
 - [x] Health checks and before/after comparison for NX-OS, ASA, Arista, Junos, ArubaOS-Switch, AOS 8, Dell OS10, EXOS, Huawei, IOS-XR, AlliedWare Plus, MikroTik and EdgeOS: environment, alarms, modules/stack, CPU, memory, unsaved config, last restart; interfaces, neighbours, LAG members and modules compared after ([upgrades.md](upgrades.md#the-checks)). Readers from vendor docs: confirm each with a capture (lab tests section 9)
+- [x] Maintenance calendar: upgrade job windows plus changes, maintenance, outages and change freezes; clashes (same device or site at once, work in a freeze) flagged; month and list views; .ics download ([customer/user-guide.md](customer/user-guide.md#calendar))
 - [ ] Main and standby server (later)
 - [ ] Later: one overview of several servers (the display feed is the starting point); several customers on one server kept as an idea
 
@@ -117,6 +118,8 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-13 | Rack positions are the item's lowest U; full depth fills front and rear, half depth one face; height 0 is zero-U | The usual rack convention; patch panels share a U front and rear |
 | 2026-10-13 | Health checks for the other platforms live in one table per platform (`firmware_upgrade/health.py`: commands and a reader per check); the snapshot uses the IOS keys (`interfaces`, `lldp`, `etherchannel`) so one comparison serves every platform | Adding or fixing a platform is one table, checked against a capture; the post-check rules stay the same everywhere |
 | 2026-10-13 | `show reload cause`, `show reboot history` and `display reboot-info` are allowed by exact name in the capture's read-only check | They are read-only but contain words the check refuses; listing them exactly keeps every other "reload"/"reboot" command refused |
+| 2026-10-13 | The calendar is part of every licence; anyone signed in sees it, *Devices and credentials: manage* adds and changes items; upgrade jobs show only to people who may see jobs and are changed on the jobs page | Planned work is for everyone to see; who may plan matches who may edit devices; no new permission area |
+| 2026-10-13 | Clashes: overlapping times and the same device, or the same site (an item for every site clashes with any site's item); anything at a site during a freeze there; two freezes never clash | The checks engineers do by hand before a CAB |
 | 2026-10-12 | Sites are a list of their own (table `sites`); items and devices keep a Site text, matched to a site's name or code; renaming a site rewrites that text | The owner: a site list cross-referenced with the inventory, without changing how devices and backups store their site |
 
 ## Open questions
@@ -194,3 +197,4 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-13 | Networking-tool-kev | Config change alerts (who changed it from syslog), config compliance (migration 0010), switch port view, report (Activity and scheduled email), wall display Sites and Network pages with per-screen pages (migration 0011); answered which pre/post-checks run on Cisco and Arista |
 | 2026-10-13 | Networking-tool-kev | Owner didn't see the rack elevations after updating: browsers kept the old app.js (no caching instructions were sent). Every response now says Cache-Control: no-cache |
 | 2026-10-13 | Networking-tool-kev | Health checks and before/after comparison for every SSH upgrade platform (NX-OS, ASA extras, Arista, Junos, ArubaOS-Switch, AOS 8, OS10, EXOS, VRP, IOS-XR, AW+, MikroTik, EdgeOS); healthy sample output in the demo network for each command; fault tests (power, alarms, modules, unsaved config, LAG member lost after the reload) |
+| 2026-10-13 | Networking-tool-kev | Maintenance calendar (migration 0012_calendar): month and list views, clashes and change freezes, add/edit/copy/delete, .ics download; demo has two weeks of planned work with two clashes |

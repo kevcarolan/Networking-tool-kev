@@ -109,6 +109,13 @@ you did and what you expected, and send it over.
 - [ ] **Settings › Email alerts**: Config changes, Compliance and Report (the emails need a
       real mail server).
 
+**Calendar**
+- [ ] **Calendar**: this month, with the hq-acc-sw6 upgrade two nights from now clashing with the
+      VLAN change on the same switch, and the Warehouse change inside the month-end freeze
+      (red outlines). Click each one to see why.
+- [ ] **List**, **Every site** › *Branch North*, **Download .ics** (open it in Outlook).
+- [ ] **+ Add** a maintenance at *Head office* on a device; **Edit**, **Copy**, **Delete** it.
+
 **Everything else**
 - [ ] The **wall display** link (from the start-up messages) in a second window: the
       overview, the sites and network pages, and the upgrades page while an upgrade runs.
