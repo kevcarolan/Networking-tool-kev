@@ -18,6 +18,23 @@ but everything else works. Tell your admin.
 
 A tab with a padlock is a tool your licence doesn't include. Clicking it tells you so.
 
+## Search
+
+The box at the top right finds anything by part of its name or number. Press **/** to
+jump to it from anywhere.
+
+| Type | It finds | Click a result to |
+|---|---|---|
+| a device name, address, site, platform or serial number | devices | open the device's window (backups, ports, circuits…) |
+| a name, serial number, asset tag, model, address, MAC or rack | other inventory items (racks, servers, UPSs…) | open the item |
+| a site name, code, town or address | sites | open the site's page |
+| a circuit's device name, IP, MAC, service, switch, port or drawing | circuits | show it on the Circuits page |
+| a MAC address (any format, or part of one) or an IP address | where the last network scan saw it: switch, port and VLAN | open that switch's ports |
+
+Use the arrow keys and Enter to pick a result, Esc to close the list. You only see results
+from pages you are allowed to open. A short number like `1234` isn't taken as part of a MAC
+(it could be a port or VLAN); type at least 6 digits, or use a separator (`5e:00`).
+
 ## Config backups
 
 The device list shows each device's backup status:

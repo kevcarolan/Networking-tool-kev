@@ -49,6 +49,12 @@
         <button data-view="settings" data-admin>Settings</button>
       </nav>
       <span class="spacer"></span>
+      <div class="gsearch" role="search">
+        <input id="gs" type="search" placeholder="Search everything  ( / )" autocomplete="off"
+               aria-label="Search devices, items, sites, circuits, MAC and IP addresses"
+               aria-controls="gs-results" aria-expanded="false">
+        <div id="gs-results" class="gs-results" role="listbox" hidden></div>
+      </div>
       <span id="whoami" class="muted"></span>
       <button id="change-password" class="ghost" hidden>Change password</button>
       <button id="logout" class="ghost">Sign out</button>

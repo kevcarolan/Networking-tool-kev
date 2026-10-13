@@ -110,6 +110,9 @@ you did and what you expected, and send it over.
       real mail server).
 
 **Everything else**
+- [ ] **Search** (top right, or press **/**): `branch` (sites and devices), `ups` (inventory
+      items), a circuit's MAC in any format (the circuit, and the switch port it is on: Enter
+      opens the port), a circuit's IP.
 - [ ] The **wall display** link (from the start-up messages) in a second window: the
       overview, the sites and network pages, and the upgrades page while an upgrade runs.
       On **Settings › Wall displays**, untick a page and **Save pages**.
