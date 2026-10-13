@@ -139,6 +139,7 @@ async function showApp(user) {
   $("#app-view").hidden = false;
   $("#whoami").textContent = `${user.display_name || user.username}${isAdmin() ? " (admin)" : ""}`;
   $("#change-password").hidden = user.source !== "local";
+  $("#two-factor").hidden = !user.user_id;
   $("#site-name").textContent = user.site_name || "";
   $("#site-name").hidden = !user.site_name;
   $("#demo-banner").hidden = !user.demo;
@@ -171,12 +172,117 @@ $("#login-form").addEventListener("submit", async (ev) => {
       body: { username: form.username.value, password: form.password.value },
     });
     form.password.value = "";
+    if (user.two_factor === "code") return loginStep("code");
+    if (user.two_factor === "setup") return loginStep("setup");
     await showApp(user);
   } catch (e) {
     err.textContent = e.message;
     err.hidden = false;
   }
 });
+
+// ---------- two-factor sign-in ----------
+
+/** The sign-in page's second step: a code, or setting two-factor up when it's required. */
+function loginStep(step) {
+  $("#login-form").hidden = step !== "password";
+  $("#login-code-form").hidden = step !== "code";
+  $("#login-setup").hidden = step !== "setup";
+  if (step === "code") { $("#login-code-form").reset(); $("#login-code-form .error").hidden = true; $("#login-code-form").code.focus(); }
+  if (step === "setup") tfSetup($("#login-setup"), (user) => { loginStep("password"); showApp(user); }, true);
+}
+$$(".login-back").forEach((b) => b.addEventListener("click", () => loginStep("password")));
+$("#login-code-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const form = ev.target, err = $(".error", form);
+  err.hidden = true;
+  try {
+    const user = await api("/api/auth/login/code", { method: "POST", body: { code: form.code.value } });
+    loginStep("password");
+    await showApp(user);
+  } catch (e) {
+    err.textContent = e.message;
+    err.hidden = false;
+    if (/sign in again/i.test(e.message)) setTimeout(() => loginStep("password"), 1500);
+  }
+});
+
+function svgFrom(text) {
+  const doc = new DOMParser().parseFromString(text, "image/svg+xml");
+  return document.importNode(doc.documentElement, true);
+}
+
+function showRecoveryCodes(box, codes, done) {
+  box.replaceChildren(
+    h("h2", {}, "Your recovery codes"),
+    h("p", {}, "Each one signs you in once if you lose your phone. Keep them somewhere safe (a password manager, or printed). They won't be shown again."),
+    h("div", { class: "tf-codes" }, codes.map((c) => h("span", {}, c))),
+    h("div", { class: "dialog-actions" },
+      h("button", { onclick: () => navigator.clipboard?.writeText(codes.join("\n")).then(() => toast("Copied")) }, "Copy"),
+      h("button", { class: "primary", onclick: done }, "I've saved them")));
+}
+
+/** Set two-factor up in `box`: QR code, a code from the app, then the recovery codes. */
+async function tfSetup(box, finished, signingIn = false) {
+  let s;
+  try { s = await api("/api/auth/two-factor/start", { method: "POST" }); } catch (e) { return toast(e.message); }
+  const code = h("input", { name: "code", autocomplete: "one-time-code", inputmode: "numeric", maxlength: 6, required: true });
+  const err = h("p", { class: "error", hidden: true });
+  box.replaceChildren(...[
+    h("h2", {}, signingIn ? "Set up two-factor sign-in" : "Turn on two-factor sign-in"),
+    signingIn ? h("p", { class: "muted" }, "Your admin requires a code from an authenticator app when you sign in. It takes a minute:") : null,
+    h("ol", { class: "tf-steps" },
+      h("li", {}, "Install an authenticator app on your phone if you don't have one (Microsoft Authenticator, Google Authenticator, Authy…)."),
+      h("li", {}, "In the app, add an account and scan this code:")),
+    h("div", { class: "tf-qr" }, svgFrom(s.qr_svg)),
+    h("p", { class: "muted" }, "Can't scan it? Type this key in instead: ", h("span", { class: "tf-secret" }, s.secret)),
+    h("form", { class: "form", onsubmit: async (ev) => {
+      ev.preventDefault();
+      err.hidden = true;
+      try {
+        const r = await api("/api/auth/two-factor/enable", { method: "POST", body: { code: code.value } });
+        showRecoveryCodes(box, r.recovery_codes, () => finished(r.user));
+      } catch (e) { err.textContent = e.message; err.hidden = false; }
+    } }, h("label", {}, "3. Enter the 6-digit code the app shows", code), err,
+      h("div", { class: "dialog-actions" },
+        signingIn ? h("button", { type: "button", class: "ghost", onclick: () => loginStep("password") }, "Back") : null,
+        h("button", { type: "submit", class: "primary" }, "Turn on")))].filter(Boolean));
+  code.focus();
+}
+
+async function openTwoFactor() {
+  const box = $("#tf-body");
+  let st;
+  try { st = await api("/api/auth/two-factor"); } catch (e) { return toast(e.message); }
+  const close = () => $("#tf-dialog").close();
+  if (!$("#tf-dialog").open) $("#tf-dialog").showModal();
+  if (!st.available) return box.replaceChildren(h("p", {}, st.enabled ? "On." : "Off.", " ", st.note));
+  if (!st.enabled) {
+    box.replaceChildren(
+      h("p", {}, "Off. With it on, signing in also needs a 6-digit code from an app on your phone, so a stolen password isn't enough."),
+      h("div", { class: "dialog-actions" }, h("button", { class: "primary", onclick: () => tfSetup(box, () => { close(); toast("Two-factor sign-in is on"); }) }, "Turn on")));
+    return;
+  }
+  const code = h("input", { autocomplete: "one-time-code", inputmode: "numeric", maxlength: 20, placeholder: "code from the app" });
+  const pw = h("input", { type: "password", autocomplete: "current-password", placeholder: "your password" });
+  const err = h("p", { class: "error", hidden: true });
+  const fail = (e) => { err.textContent = e.message; err.hidden = false; };
+  box.replaceChildren(...[
+    h("p", {}, `On since ${fmtTime(st.since)}. ${st.recovery_left} recovery code(s) left.`),
+    st.required ? h("p", { class: "muted" }, "Your admin requires it for local users, so it can't be turned off.") : null,
+    h("div", { class: "form" },
+      h("label", {}, "Code from the app", code),
+      state.user.source === "local" && !st.required ? h("label", {}, "Password (to turn it off)", pw) : null, err,
+      h("div", { class: "dialog-actions" },
+        st.required ? null : h("button", { class: "danger", onclick: async () => {
+          try { await api("/api/auth/two-factor/disable", { method: "POST", body: { code: code.value, password: pw.value } }); close(); toast("Two-factor sign-in is off"); } catch (e) { fail(e); }
+        } }, "Turn off"),
+        h("button", { onclick: async () => {
+          try { const r = await api("/api/auth/two-factor/recovery-codes", { method: "POST", body: { code: code.value } }); showRecoveryCodes(box, r.recovery_codes, close); } catch (e) { fail(e); }
+        } }, "New recovery codes")))].filter(Boolean));
+}
+$("#two-factor").addEventListener("click", openTwoFactor);
+$("#tf-close").addEventListener("click", () => $("#tf-dialog").close());
 
 $("#logout").addEventListener("click", async () => {
   await api("/api/auth/logout", { method: "POST" }).catch(() => {});
@@ -2513,13 +2619,17 @@ function renderUsers() {
   $("#users-table tbody").replaceChildren(...rows.map((u) => h("tr", { class: u.enabled ? "" : "disabled" },
     h("td", {}, h("span", { class: `dot ${u.enabled ? "success" : "disabled"}`, title: u.enabled ? "Enabled" : "Disabled" })),
     h("td", { class: "name" }, u.username, h("small", {}, [u.display_name, u.email].filter(Boolean).join(" · "))),
-    h("td", {}, SOURCE_LABEL[u.source] || u.source),
+    h("td", {}, SOURCE_LABEL[u.source] || u.source, u.two_factor ? h("span", { class: "badge success", title: "Signs in with a code from an authenticator app too" }, "2FA") : null),
     h("td", {}, u.is_admin ? h("span", { class: "badge success" }, "Administrator") : permChips(u.permissions)),
     h("td", {}, u.last_login ? fmtTime(u.last_login) : "never"),
     h("td", {}, fmtTime(u.updated_at), h("small", { class: "sub" }, u.updated_by)),
     h("td", { class: "actions" },
       h("button", { class: "small", onclick: () => openUserDialog(u) }, "Edit"),
       u.source === "local" ? h("button", { class: "small", onclick: () => openPasswordDialog(u) }, "Reset password") : null,
+      u.two_factor ? h("button", { class: "small", title: "For a lost phone: they set two-factor up again", onclick: async () => {
+        if (!confirm(`Turn off two-factor sign-in for ${u.username}? They set it up again (at their next sign-in if it is required).`)) return;
+        try { await api(`/api/users/${u.id}/two-factor/reset`, { method: "POST" }); toast("Two-factor reset"); loadUsers(); } catch (e) { toast(e.message); }
+      } }, "Reset 2FA") : null,
       h("button", { class: "small danger", onclick: () => deleteUser(u) }, "Delete")))));
   $("#users-empty").hidden = users.rows.length > 0;
 }

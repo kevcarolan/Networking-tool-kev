@@ -38,7 +38,8 @@ def _out(a: UserAccount) -> dict:
             "summary": pm.describe(perms, a.is_admin), "notes": a.notes,
             "has_password": bool(a.password_hash), "created_at": a.created_at,
             "created_by": a.created_by, "updated_at": a.updated_at, "updated_by": a.updated_by,
-            "last_login": a.last_login, "password_changed_at": a.password_changed_at}
+            "last_login": a.last_login, "password_changed_at": a.password_changed_at,
+            "two_factor": a.totp_enabled}
 
 
 class UserIn(BaseModel):

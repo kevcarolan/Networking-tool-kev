@@ -330,6 +330,12 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
         db.commit()  # keep the record: raising below rolls the session back
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid username or password")
     throttle.reset(key)
+    from app.core import twofactor
+
+    step = twofactor.needed(authenticator.settings, db, user)
+    if step:  # the password was right: now a code (or setting it up) before anything else
+        audit(db, user.username, "login.password_ok", f"from {client}: two-factor {step} next")
+        return twofactor.start_pending(request, user, step)
     request.session.clear()
     request.session["user"] = user.__dict__
     request.session["issued"] = int(time.time())

@@ -4,6 +4,7 @@ audit log. Every tool in the platform builds on these."""
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import false as sa_false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base, utcnow
@@ -79,6 +80,13 @@ class UserAccount(Base):
     updated_by: Mapped[str] = mapped_column(String(200), default="")
     last_login: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     password_changed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Two-factor sign-in (totp.py): the secret is encrypted like the device credentials;
+    # recovery codes are kept as hashes only.
+    totp_secret: Mapped[str] = mapped_column(Text, default="", server_default="")
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false())
+    totp_last_step: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    totp_enabled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    recovery_codes: Mapped[str] = mapped_column(Text, default="[]", server_default="[]")
 
 
 class AppSetting(Base):

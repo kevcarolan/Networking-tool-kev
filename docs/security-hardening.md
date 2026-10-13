@@ -299,6 +299,8 @@ What the installer set up, for your security review:
   | `NETOPS_LDAP_VIEWER_GROUP` | A specific group | If it's empty, every domain user can sign in |
   | `NETOPS_LDAP_ADMIN_GROUP` | A small group | Admins can see device configs and change everything |
   | `NETOPS_LOCAL_ADMIN_PASSWORD_HASH` | Empty, or a long vault-held password | Break-glass only; alert on every use (§9) |
+  | `NETOPS_LOCAL_ADMIN_TOTP_SECRET` | Set (`netops-cli totp-secret`), copy in the vault | The break-glass password alone can't sign in |
+  | `NETOPS_REQUIRE_TWO_FACTOR` | `true` | Local users need a code from an authenticator app too ([users.md](users.md#two-factor-sign-in)) |
   | `NETOPS_SESSION_HTTPS_ONLY` | `true` | Login cookie never sent over plain HTTP |
   | `NETOPS_SESSION_MAX_AGE_HOURS` | `8`–`12` | Sessions expire |
   | `NETOPS_VIEWERS_CAN_READ_CONFIGS` | `false` | Configs contain secrets |
@@ -322,7 +324,8 @@ Alert on:
 |---|---|---|
 | `nft-out-drop` | kernel log | Something on the server tried to reach a place it shouldn't. Possible compromise |
 | `action=login` by the local admin account | `netops.audit` | Break-glass was used |
-| Many `action=login.failed` | `netops.audit` | Password guessing |
+| Many `action=login.failed` | `netops.audit` | Password guessing (or code guessing, "wrong two-factor code") |
+| `action=user.two_factor_reset` or `user.two_factor_off` | `netops.audit` | Someone's second factor was removed: check it was asked for |
 | `action=device.ssh_key_forget`, or backups failing with "SSH key has changed" | `netops.audit`, Config backups | A device was replaced, or something else is answering on its address |
 | `action=device.update` with an address or credential change | `netops.audit` | Where a device account's password is sent changed |
 | `netops-secrets`, `netops-code`, `sshd`, `sudoers`, `identity` keys | auditd | Someone read the key or changed code, SSH, sudo or accounts |
