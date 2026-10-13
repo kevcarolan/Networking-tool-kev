@@ -44,6 +44,7 @@ def init_engine(database_url: str):
 def import_models() -> None:
     """Import every model module so its tables are registered on Base.metadata."""
     from app.core import models  # noqa: F401
+    from app.tools.calendar import models as calendar_models  # noqa: F401
     from app.tools.circuits import models as circuit_models  # noqa: F401
     from app.tools.config_backup import models as backup_models  # noqa: F401
     from app.tools.firmware_upgrade import models as firmware_models  # noqa: F401

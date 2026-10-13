@@ -186,6 +186,27 @@ The master circuit list: every end device or service and the switch port it uses
 Upgrade jobs save the circuits on the device before and after, and warn about any that
 haven't come back. Details: [circuits.md](../circuits.md).
 
+## Calendar
+
+Planned work in one place: every upgrade job's window (shown to people who can see upgrade
+jobs) and the changes, maintenance, outages and change freezes people add.
+
+* **Month** shows the weeks (Monday first, in your browser's time); **List** shows the next
+  60 days with sites, devices, change references and clashes. **Every site** narrows it to
+  one site (items for every site stay).
+* **⚠ Clashes** are outlined in red:
+  * two items at the same time on the same device, or at the same site;
+  * anything at a site during a change freeze there (a freeze with no site ticked covers
+    every site).
+
+  Click an item to see what it clashes with.
+* **+ Add** (needs *Devices and credentials: manage*): what, kind, change reference, start
+  and end, the sites (none ticked: every site) and, optionally, the devices. Click an item
+  to **Edit**, **Copy** (a new one like it) or **Delete** it. Upgrade jobs open their job
+  window; change them on the Upgrade jobs page.
+* **Download .ics** saves the period shown for Outlook, Google or Apple Calendar.
+* Everything added, changed or deleted is in the activity log.
+
 ## Syslog
 
 The devices' log messages, in one place: the first place to look when something goes wrong.

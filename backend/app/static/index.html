@@ -53,6 +53,7 @@
         <button data-view="firmware" data-perm="firmware:view|upgrades:view" data-module="firmware">Firmware</button>
         <button data-view="circuits" data-perm="circuits:view" data-module="circuits">Circuits</button>
         <button data-view="syslog" data-perm="syslog:view" data-module="syslog">Syslog</button>
+        <button data-view="calendar">Calendar</button>
         <button data-view="credentials" data-perm="inventory:credentials">Credentials</button>
         <button data-view="users" data-admin>Users</button>
         <button data-view="audit" data-admin>Activity</button>
@@ -314,6 +315,27 @@
         </div>
       </section>
 
+      <!-- Maintenance calendar -->
+      <section id="view-calendar" class="view" hidden>
+        <div class="toolbar">
+          <button id="cal-prev" aria-label="Earlier">◀</button>
+          <button id="cal-today">Today</button>
+          <button id="cal-next" aria-label="Later">▶</button>
+          <h3 id="cal-title" class="cal-title"></h3>
+          <select id="cal-mode" aria-label="View">
+            <option value="month">Month</option>
+            <option value="list">List</option>
+          </select>
+          <select id="cal-site" aria-label="Site"><option value="">Every site</option></select>
+          <span class="spacer"></span>
+          <a id="cal-ics" class="button" download title="For Outlook, Google or Apple Calendar">Download .ics</a>
+          <button id="cal-add" class="primary" data-perm="inventory:manage">+ Add</button>
+        </div>
+        <div id="cal-legend" class="cal-legend"></div>
+        <p id="cal-clash-note" class="notice" hidden></p>
+        <div id="cal-body"></div>
+      </section>
+
       <!-- Syslog -->
       <section id="view-syslog" class="view" hidden>
         <p id="sl-status" class="muted"></p>
@@ -570,6 +592,12 @@
     </div>
   </dialog>
 
+  <dialog id="cal-dialog">
+    <div class="detail-head">
+      <h2 id="cal-dialog-title"></h2>
+      <button id="cal-dialog-close" class="ghost">Close</button>
+    </div>
+    <div id="cal-dialog-body"></div>
   <dialog id="topo-dialog" class="topo-dialog">
     <div class="detail-head">
       <h2>Network map</h2>

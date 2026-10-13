@@ -296,7 +296,7 @@ function switchView(view) {
   $$("#nav button").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
   if (VIEW_MODULE[view] && !hasModule(VIEW_MODULE[view])) return showLocked(view);
   $$(".view").forEach((s) => (s.hidden = s.id !== `view-${view}`));
-  state.viewLoading = ({ backups: loadBackups, inventory: loadInventory, sites: loadSites, firmware: loadFirmware, circuits: loadCircuits, syslog: loadSyslog, credentials: loadCredentials,
+  state.viewLoading = ({ backups: loadBackups, inventory: loadInventory, sites: loadSites, firmware: loadFirmware, circuits: loadCircuits, syslog: loadSyslog, calendar: loadCalendar, credentials: loadCredentials,
     audit: loadAudit, users: loadUsers, settings: loadSettings })[view]();
 }
 $$("#nav button").forEach((b) => b.addEventListener("click", () => switchView(b.dataset.view)));
@@ -1334,6 +1334,183 @@ function openSiteCircuits(id) {
   switchView("circuits");
 }
 
+// ---------- maintenance calendar ----------
+
+const cal = { month: null, mode: "month", site: "", items: [], kinds: {}, devices: null, siteNames: [] };
+const CAL_LEGEND = [["upgrade", "Upgrade (live)"], ["dry_run", "Upgrade (dry run)"], ["change", "Change"],
+  ["maintenance", "Maintenance"], ["outage", "Outage"], ["freeze", "Change freeze"]];
+const utcDate = (v) => new Date(v.endsWith("Z") || v.includes("+") ? v : v + "Z");
+const dayStart = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+const isoUtc = (d) => d.toISOString().slice(0, 19);
+const hhmm = (d) => d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+
+/** The period shown: six weeks around the month (Mondays first), or the next 60 days. */
+function calPeriod() {
+  if (cal.mode === "list") {
+    const from = dayStart(cal.month.getMonth() === new Date().getMonth() && cal.month.getFullYear() === new Date().getFullYear() ? new Date() : cal.month);
+    return [from, addDays(from, 60)];
+  }
+  const first = new Date(cal.month.getFullYear(), cal.month.getMonth(), 1);
+  const start = addDays(first, -((first.getDay() + 6) % 7));
+  return [start, addDays(start, 42)];
+}
+
+async function loadCalendar() {
+  if (!cal.month) cal.month = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  cal.siteNames = [...new Map([...(state.siteIndex || new Map()).values()].map((x) => [x.id, x.name])).values()].sort();
+  const sel = $("#cal-site");
+  if (sel.options.length !== cal.siteNames.length + 1) {
+    sel.replaceChildren(h("option", { value: "" }, "Every site"), ...cal.siteNames.map((n) => h("option", { value: n }, n)));
+    sel.value = cal.site;
+  }
+  $("#cal-legend").replaceChildren(...CAL_LEGEND.map(([k, label]) => h("span", { class: `cal-item k-${k}` }, label)),
+    h("span", { class: "cal-item clash" }, "⚠ clashes with something"));
+  const [from, to] = calPeriod();
+  const q = new URLSearchParams({ start: isoUtc(from), end: isoUtc(to), site: cal.site });
+  $("#cal-ics").href = `/api/calendar/export.ics?${q}`;
+  $("#cal-title").textContent = cal.mode === "month"
+    ? cal.month.toLocaleDateString(undefined, { month: "long", year: "numeric" })
+    : `${from.toLocaleDateString()} – ${addDays(to, -1).toLocaleDateString()}`;
+  try {
+    const r = await api(`/api/calendar?${q}`);
+    cal.items = r.items.map((x) => ({ ...x, s: utcDate(x.start), e: utcDate(x.end) }));
+    cal.kinds = r.kinds;
+  } catch (e) { return toast(e.message); }
+  const clashes = cal.items.filter((x) => x.clashes.length);
+  $("#cal-clash-note").hidden = !clashes.length;
+  $("#cal-clash-note").textContent = clashes.length
+    ? `⚠ ${clashes.length} item(s) clash: the same device or site at the same time, or work during a change freeze. Click one to see what with.` : "";
+  (cal.mode === "month" ? calMonth : calList)();
+}
+
+function calChip(x, day = null) {
+  const cont = day && x.s < day ? "… " : "";
+  const time = day && x.s >= day ? `${hhmm(x.s)} ` : "";
+  return h("button", { class: `cal-item k-${x.kind}${x.clashes.length ? " clash" : ""}`,
+    title: `${x.kind_label}: ${x.title}\n${fmtTime(x.start)} – ${fmtTime(x.end)}${x.sites.length ? `\n${x.sites.join(", ")}` : ""}${x.clashes.length ? "\n⚠ clashes with something" : ""}`,
+    onclick: () => calOpen(x) }, `${x.clashes.length ? "⚠ " : ""}${cont}${time}${x.title}`);
+}
+
+function calMonth() {
+  const [from] = calPeriod();
+  const today = dayStart(new Date()).getTime();
+  const cells = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => h("div", { class: "dow" }, d));
+  for (let i = 0; i < 42; i++) {
+    const day = addDays(from, i), next = addDays(day, 1);
+    const here = cal.items.filter((x) => x.s < next && x.e > day);
+    const shown = here.slice(0, 4);
+    cells.push(h("div", { class: `cal-day${day.getMonth() !== cal.month.getMonth() ? " other" : ""}${day.getTime() === today ? " today" : ""}` },
+      h("span", { class: "num" }, day.getDate()),
+      ...shown.map((x) => calChip(x, day)),
+      here.length > shown.length ? h("span", { class: "cal-more", onclick: () => { cal.mode = "list"; $("#cal-mode").value = "list"; cal.month = day; loadCalendar(); } },
+        `+${here.length - shown.length} more`) : null));
+  }
+  $("#cal-body").replaceChildren(h("div", { class: "cal-grid" }, cells));
+}
+
+function calList() {
+  if (!cal.items.length) return $("#cal-body").replaceChildren(h("p", { class: "empty" }, "Nothing planned in this period."));
+  const byKey = new Map(cal.items.map((x) => [x.key, x]));
+  $("#cal-body").replaceChildren(h("div", { class: "table-wrap" }, h("table", {},
+    h("thead", {}, h("tr", {}, ...["When", "What", "", "Sites", "Devices", "Change", "Clashes with"].map((t) => h("th", {}, t)))),
+    h("tbody", {}, cal.items.map((x) => h("tr", {},
+      h("td", {}, `${fmtTime(x.start)} – ${x.s.toDateString() === x.e.toDateString() ? hhmm(x.e) : fmtTime(x.end)}`),
+      h("td", {}, h("span", { class: `cal-item k-${x.kind}` }, x.kind_label)),
+      h("td", {}, h("span", { class: "link", onclick: () => calOpen(x) }, x.title)),
+      h("td", {}, ...(x.sites.length ? x.sites.flatMap((n, i) => [i ? ", " : "", siteLink(n)]) : ["Every site"])),
+      h("td", {}, x.devices.map((d) => d.name).join(", ") || "—"),
+      h("td", {}, x.change_ref || "—"),
+      h("td", {}, x.clashes.length ? h("span", { class: "badge failed" }, x.clashes.map((k) => byKey.get(k)?.title || "another item").join("; ")) : "—")))))));
+}
+
+function calOpen(x) {
+  if (x.source === "upgrade") return openJob(x.id);
+  const byKey = new Map(cal.items.map((i) => [i.key, i]));
+  const row = (label, value) => value ? h("p", {}, h("strong", {}, `${label}: `), value) : null;
+  $("#cal-dialog-title").textContent = `${x.kind_label}: ${x.title}`;
+  $("#cal-dialog-body").replaceChildren(
+    row("When", `${fmtTime(x.start)} – ${fmtTime(x.end)}`),
+    row("Sites", x.sites.join(", ") || "Every site"),
+    row("Devices", x.devices.map((d) => d.name).join(", ")),
+    row("Change", x.change_ref),
+    x.notes ? h("p", { class: "pre-wrap" }, x.notes) : null,
+    x.clashes.length ? h("p", { class: "notice" }, "⚠ Clashes with: ", ...x.clashes.map((k) => byKey.get(k)).filter(Boolean)
+      .flatMap((o, i) => [i ? "; " : "", h("span", { class: "link", onclick: () => calOpen(o) }, `${o.kind_label}: ${o.title} (${fmtTime(o.start)})`)])) : null,
+    h("p", { class: "muted" }, `Added by ${x.created_by}${x.updated_by && x.updated_by !== x.created_by ? `, last changed by ${x.updated_by}` : ""}`),
+    can("inventory", "manage") ? h("div", { class: "dialog-actions" },
+      h("button", { class: "danger", onclick: async () => {
+        if (!confirm(`Delete "${x.title}" from the calendar?`)) return;
+        try { await api(`/api/calendar/events/${x.id}`, { method: "DELETE" }); $("#cal-dialog").close(); loadCalendar(); } catch (e) { toast(e.message); }
+      } }, "Delete"),
+      h("button", { title: "A new item like this one", onclick: () => calEdit(x) }, "Copy"),
+      h("button", { class: "primary", onclick: () => calEdit(x, true) }, "Edit")) : null);
+  if (!$("#cal-dialog").open) $("#cal-dialog").showModal();
+}
+
+async function calEdit(x = null, editing = false) {
+  if (!cal.devices) cal.devices = await api("/api/devices").catch(() => []);
+  const now = new Date(); now.setMinutes(0, 0, 0);
+  const start = x ? x.s : addDays(dayStart(now), 1), end = x ? x.e : new Date(start.getTime() + 3600000);
+  if (!x) start.setHours(20), end.setTime(start.getTime() + 2 * 3600000);
+  const f = {
+    title: h("input", { value: x ? x.title : "", maxlength: 200, required: true }),
+    kind: h("select", {}, ...Object.entries(cal.kinds).map(([k, label]) => h("option", { value: k, selected: x ? x.kind === k : k === "change" }, label))),
+    start: h("input", { type: "datetime-local", value: toLocalInput(start), required: true }),
+    end: h("input", { type: "datetime-local", value: toLocalInput(end), required: true }),
+    change_ref: h("input", { value: x ? x.change_ref : "", maxlength: 100, placeholder: "e.g. CHG0012345" }),
+    notes: h("textarea", { rows: 3, maxlength: 5000 }, x ? x.notes : ""),
+  };
+  const siteBoxes = cal.siteNames.map((n) => h("label", { class: "check" },
+    h("input", { type: "checkbox", value: n, checked: x ? x.sites.includes(n) : n === cal.site }), n));
+  const chosen = new Set(x ? x.devices.map((d) => d.id) : []);
+  const devBoxes = [...cal.devices].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
+    .map((d) => h("label", { class: "check", title: d.site || "" }, h("input", { type: "checkbox", value: d.id, checked: chosen.has(d.id) }), d.name));
+  const save = async (ev) => {
+    ev.preventDefault();
+    const body = { title: f.title.value, kind: f.kind.value, start: isoUtc(new Date(f.start.value)), end: isoUtc(new Date(f.end.value)),
+      sites: siteBoxes.map((l) => l.firstChild).filter((c) => c.checked).map((c) => c.value),
+      devices: devBoxes.map((l) => l.firstChild).filter((c) => c.checked).map((c) => Number(c.value)),
+      change_ref: f.change_ref.value, notes: f.notes.value };
+    try {
+      await api(editing ? `/api/calendar/events/${x.id}` : "/api/calendar/events", { method: editing ? "PUT" : "POST", body });
+      $("#cal-dialog").close();
+      cal.month = new Date(new Date(f.start.value).getFullYear(), new Date(f.start.value).getMonth(), 1);
+      if (cal.mode === "list") cal.month = new Date(f.start.value);
+      loadCalendar();
+    } catch (e) { toast(e.message); }
+  };
+  $("#cal-dialog-title").textContent = editing ? "Change calendar item" : "Add to the calendar";
+  $("#cal-dialog-body").replaceChildren(h("form", { class: "form", onsubmit: save },
+    h("label", {}, "What", f.title),
+    h("div", { class: "grid2" }, h("label", {}, "Kind", f.kind), h("label", {}, "Change reference", f.change_ref)),
+    h("div", { class: "grid2" }, h("label", {}, "Starts", f.start), h("label", {}, "Ends", f.end)),
+    h("div", {}, h("span", {}, "Sites "), h("span", { class: "muted" }, "(none ticked: every site; a change freeze then covers everything)"),
+      h("div", { class: "cal-check-list" }, siteBoxes.length ? siteBoxes : h("span", { class: "muted" }, "No sites on the site list"))),
+    h("div", {}, h("span", {}, "Devices "), h("span", { class: "muted" }, "(optional)"), h("div", { class: "cal-check-list" }, devBoxes)),
+    h("label", {}, "Notes", f.notes),
+    h("div", { class: "dialog-actions" }, h("button", { type: "submit", class: "primary" }, editing ? "Save" : "Add"))));
+  if (!$("#cal-dialog").open) $("#cal-dialog").showModal();
+  f.title.focus();
+}
+
+$("#cal-prev").addEventListener("click", () => {
+  cal.month = cal.mode === "month" ? new Date(cal.month.getFullYear(), cal.month.getMonth() - 1, 1) : addDays(calPeriod()[0], -60);
+  loadCalendar();
+});
+$("#cal-next").addEventListener("click", () => {
+  cal.month = cal.mode === "month" ? new Date(cal.month.getFullYear(), cal.month.getMonth() + 1, 1) : calPeriod()[1];
+  loadCalendar();
+});
+$("#cal-today").addEventListener("click", () => { cal.month = new Date(new Date().getFullYear(), new Date().getMonth(), 1); loadCalendar(); });
+$("#cal-mode").addEventListener("change", () => {
+  cal.mode = $("#cal-mode").value;
+  if (cal.mode === "month") cal.month = new Date(cal.month.getFullYear(), cal.month.getMonth(), 1);
+  loadCalendar();
+});
+$("#cal-site").addEventListener("change", () => { cal.site = $("#cal-site").value; loadCalendar(); });
+$("#cal-add").addEventListener("click", () => calEdit());
+$("#cal-dialog-close").addEventListener("click", () => $("#cal-dialog").close());
 // ---------- topology map ----------
 
 const topo = { siteId: 0, data: null, pos: new Map(), svg: null, sel: null };
