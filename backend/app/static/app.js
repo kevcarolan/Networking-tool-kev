@@ -1136,6 +1136,262 @@ function openSiteCircuits(id) {
   switchView("circuits");
 }
 
+// ---------- topology map ----------
+
+const topo = { siteId: 0, data: null, pos: new Map(), svg: null, sel: null };
+const SVGNS = "http://www.w3.org/2000/svg";
+const TOPO_W = 150, TOPO_H = 46, TOPO_DX = 190, TOPO_DY = 130;
+
+function svgEl(tag, attrs = {}, ...kids) {
+  const el = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else if (v !== null && v !== undefined && v !== false) el.setAttribute(k, v);
+  }
+  for (const k of kids.flat()) if (k !== null && k !== undefined) el.append(k instanceof Node ? k : document.createTextNode(k));
+  return el;
+}
+
+/** Open the network map, for one site or (0) every site. */
+async function openTopology(siteId = 0) {
+  topo.siteId = Number(siteId) || 0;
+  const sites = [...new Map([...(state.siteIndex || new Map()).values()].map((x) => [x.id, x])).values()]
+    .sort((a, b) => a.name.localeCompare(b.name));
+  $("#topo-site").replaceChildren(h("option", { value: "0" }, "Every site"),
+    ...sites.map((x) => h("option", { value: String(x.id) }, x.name)));
+  $("#topo-site").value = String(topo.siteId);
+  $("#topo-dialog").showModal();
+  await loadTopology();
+}
+
+async function loadTopology() {
+  const q = new URLSearchParams({ site_id: topo.siteId, endpoints: $("#topo-endpoints").checked });
+  try { topo.data = await api(`/api/topology?${q}`); } catch (e) { return toast(e.message); }
+  topo.pos = new Map(Object.entries(topo.data.positions).map(([k, p]) => [k, { ...p }]));
+  if (!topo.portsChosen) $("#topo-ports").checked = topo.data.edges.length <= 25; // busy maps: no port names
+  topoArrange(false);
+  const d = topo.data;
+  const parts = [d.last_scan ? `From the network scan of ${fmtTime(d.last_scan)}.` : "No network scan yet: run one on the Circuits page."];
+  if (d.not_read.length) parts.push(`Not read yet (orange): ${d.not_read.join(", ")}.`);
+  const ends = d.nodes.reduce((n, x) => n + (x.endpoints || 0), 0);
+  if (ends && !$("#topo-endpoints").checked) parts.push(`${ends} phone(s) and access point(s) not shown.`);
+  if (!d.nodes.length) parts.push("No devices at this site.");
+  $("#topo-note").textContent = parts.join(" ");
+  $("#topo-info").textContent = "Click a line to see its ports, a box to open the device. Drag the boxes to tidy the map.";
+  topoDraw();
+}
+
+/** Place boxes in rows: what the site connects out to on top (other sites, routers not in
+ * the inventory), then each hop further down. On the every-site map each site gets its own
+ * block. Boxes someone placed keep their place unless all = true. */
+function topoArrange(all) {
+  const { nodes, edges } = topo.data;
+  const adj = new Map(nodes.map((n) => [n.key, new Set()]));
+  edges.forEach((e) => { adj.get(e.a)?.add(e.b); adj.get(e.b)?.add(e.a); });
+  const groups = new Map();
+  if (topo.siteId) {
+    groups.set("", nodes);
+  } else {
+    const siteOfNode = new Map(nodes.filter((n) => n.kind === "device").map((n) => [n.key, n.site || "No site"]));
+    for (const n of nodes) {
+      const g = siteOfNode.get(n.key) || siteOfNode.get([...adj.get(n.key)].find((x) => siteOfNode.has(x))) || "No site";
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(n);
+    }
+  }
+  let x0 = 40;
+  for (const name of [...groups.keys()].sort((a, b) => a.localeCompare(b))) {
+    x0 += topoArrangeGroup(groups.get(name), adj, x0, all) + TOPO_DX - TOPO_W + 40;
+  }
+}
+
+function topoArrangeGroup(nodes, adj, x0, all) {
+  const inGroup = new Set(nodes.map((n) => n.key));
+  const kind = new Map(nodes.map((n) => [n.key, n.kind]));
+  const near = (k) => [...adj.get(k)].filter((x) => inGroup.has(x));
+  let roots = nodes.filter((n) => n.kind === "other_site" || n.kind === "unmanaged").map((n) => n.key);
+  if (!roots.length) {
+    const deg = (k) => near(k).filter((x) => kind.get(x) !== "endpoint").length;
+    const max = Math.max(0, ...nodes.filter((n) => n.kind === "device").map((n) => deg(n.key)));
+    roots = nodes.filter((n) => n.kind === "device" && deg(n.key) === max && max > 0).map((n) => n.key);
+  }
+  const level = new Map(roots.map((k) => [k, 0]));
+  const queue = [...roots];
+  while (queue.length) {
+    const k = queue.shift();
+    for (const x of near(k).sort()) {
+      if (!level.has(x)) { level.set(x, level.get(k) + 1); queue.push(x); }
+    }
+  }
+  const maxLevel = Math.max(0, ...level.values());
+  nodes.forEach((n) => { if (!level.has(n.key)) level.set(n.key, maxLevel + 1); }); // not connected
+  const rows = new Map();
+  [...nodes].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
+    .forEach((n) => { const l = level.get(n.key); if (!rows.has(l)) rows.set(l, []); rows.get(l).push(n.key); });
+  const order = new Map();
+  const widest = Math.max(1, ...[...rows.values()].map((row) => row.length));
+  [...rows.keys()].sort((a, b) => a - b).forEach((l) => {
+    const row = rows.get(l);
+    // under the boxes they hang from, to keep lines from crossing
+    const above = (k) => { const xs = near(k).filter((x) => level.get(x) < l && order.has(x)).map((x) => order.get(x));
+      return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : Infinity; };
+    row.sort((a, b) => above(a) - above(b));
+    const offset = (widest - row.length) / 2;
+    row.forEach((k, i) => {
+      order.set(k, offset + i);
+      if (all || !topo.pos.has(k)) topo.pos.set(k, { x: Math.round(x0 + (offset + i) * TOPO_DX), y: Math.round(50 + l * TOPO_DY) });
+    });
+  });
+  return (widest - 1) * TOPO_DX + TOPO_W;
+}
+
+function topoDraw() {
+  const { nodes, edges } = topo.data;
+  const byKey = new Map(nodes.map((n) => [n.key, n]));
+  const pts = [...topo.pos.values()];
+  const width = Math.max(600, ...pts.map((p) => p.x + TOPO_W + 40));
+  const height = Math.max(300, ...pts.map((p) => p.y + TOPO_H + 40));
+  const centre = (k) => { const p = topo.pos.get(k); return [p.x + TOPO_W / 2, p.y + TOPO_H / 2]; };
+  const edgeEls = edges.map((e) => {
+    const g = svgEl("g", { class: `topo-edge${e.links.length > 1 ? " multi" : ""}` });
+    const vis = svgEl("line", { class: "vis" }), hit = svgEl("line", { class: "hit" });
+    const label = svgEl("text", { "text-anchor": "middle" });
+    const portA = svgEl("text", { "text-anchor": "middle", class: "port" }), portB = svgEl("text", { "text-anchor": "middle", class: "port" });
+    const place = () => {
+      const [x1, y1] = centre(e.a), [x2, y2] = centre(e.b);
+      for (const l of [vis, hit]) { l.setAttribute("x1", x1); l.setAttribute("y1", y1); l.setAttribute("x2", x2); l.setAttribute("y2", y2); }
+      label.setAttribute("x", (x1 + x2) / 2); label.setAttribute("y", (y1 + y2) / 2 - 4);
+      label.textContent = e.links.length > 1 ? `×${e.links.length}` : "";
+      const at = (t) => [x1 + (x2 - x1) * t, y1 + (y2 - y1) * t];
+      const one = e.links.length === 1;
+      const [ax, ay] = at(0.3), [bx, by] = at(0.7);
+      portA.setAttribute("x", ax); portA.setAttribute("y", ay); portA.textContent = one ? shortPort(e.links[0].a_port) : "";
+      portB.setAttribute("x", bx); portB.setAttribute("y", by); portB.textContent = one ? shortPort(e.links[0].b_port) : "";
+    };
+    place();
+    const select = () => {
+      $$("#topo-wrap .topo-edge.sel").forEach((x) => x.classList.remove("sel"));
+      g.classList.add("sel");
+      const a = byKey.get(e.a).name, b = byKey.get(e.b).name;
+      $("#topo-info").textContent = `${a} ↔ ${b}: ` + e.links.map((l) => `${a} ${l.a_port || "?"} — ${b} ${l.b_port || "?"}`).join(" · ");
+    };
+    hit.addEventListener("click", select);
+    g.append(vis, hit, label, portA, portB);
+    return { e, g, place };
+  });
+  const nodeEls = nodes.map((n) => {
+    const p = topo.pos.get(n.key);
+    const sub = n.kind === "other_site" ? (n.site || "another site")
+      : n.kind === "unmanaged" ? "not in the inventory"
+      : n.kind === "endpoint" ? "phone or access point"
+      : [platformLabel(n.platform), n.endpoints ? `+${n.endpoints} phones/APs` : ""].filter(Boolean).join(" · ");
+    const g = svgEl("g", { class: `topo-node ${n.kind}${n.kind === "device" && !n.read ? " not-read" : ""}`, transform: `translate(${p.x},${p.y})` },
+      svgEl("title", {}, [n.name, n.address, n.platform, n.read_error && `Scan: ${n.read_error}`].filter(Boolean).join("\n")),
+      svgEl("rect", { width: TOPO_W, height: TOPO_H, rx: 6 }),
+      svgEl("text", { x: 10, y: 19 }, n.name.length > 20 ? n.name.slice(0, 19) + "…" : n.name),
+      svgEl("text", { x: 10, y: 36, class: "sub" }, sub.length > 26 ? sub.slice(0, 25) + "…" : sub));
+    topoDrag(g, n, () => edgeEls.filter((x) => x.e.a === n.key || x.e.b === n.key).forEach((x) => x.place()));
+    return g;
+  });
+  const titles = [];
+  if (!topo.siteId) { // the every-site map: each site's name over its boxes
+    const bySite = new Map();
+    nodes.filter((n) => n.kind === "device").forEach((n) => {
+      const p = topo.pos.get(n.key), k = n.site || "No site", b = bySite.get(k);
+      bySite.set(k, b ? { x: Math.min(b.x, p.x), y: Math.min(b.y, p.y) } : { x: p.x, y: p.y });
+    });
+    bySite.forEach((p, name) => titles.push(svgEl("text", { x: p.x, y: 26, class: "topo-site" }, name)));
+  }
+  topo.svg = svgEl("svg", { width, height, viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Network map",
+    class: $("#topo-ports").checked ? "" : "no-ports" }, titles, edgeEls.map((x) => x.g), nodeEls);
+  $("#topo-wrap").replaceChildren(topo.svg);
+}
+
+/** 'GigabitEthernet1/0/48' -> 'Gi1/0/48', 'Ethernet1/49' -> 'Eth1/49': short labels on the lines. */
+function shortPort(p) {
+  return (p || "").replace(/^GigabitEthernet/i, "Gi").replace(/^TenGigabitEthernet/i, "Te")
+    .replace(/^TwentyFiveGigE/i, "Twe").replace(/^HundredGigE/i, "Hu").replace(/^FortyGigabitEthernet/i, "Fo")
+    .replace(/^Ethernet/i, "Eth");
+}
+
+function platformLabel(p) {
+  return (state.platforms || []).find((x) => x.key === p || x.id === p)?.label || p || "";
+}
+
+function topoDrag(g, n, moved) {
+  let start = null, clicked = true;
+  g.addEventListener("pointerdown", (ev) => {
+    const p = topo.pos.get(n.key);
+    start = { x: ev.clientX, y: ev.clientY, px: p.x, py: p.y };
+    clicked = true;
+    g.setPointerCapture(ev.pointerId);
+    g.classList.add("dragging");
+  });
+  g.addEventListener("pointermove", (ev) => {
+    if (!start) return;
+    const dx = ev.clientX - start.x, dy = ev.clientY - start.y;
+    if (Math.abs(dx) + Math.abs(dy) > 4) clicked = false;
+    const p = { x: Math.max(0, Math.round(start.px + dx)), y: Math.max(0, Math.round(start.py + dy)) };
+    topo.pos.set(n.key, p);
+    g.setAttribute("transform", `translate(${p.x},${p.y})`);
+    moved();
+  });
+  g.addEventListener("pointerup", () => {
+    if (!start) return;
+    start = null;
+    g.classList.remove("dragging");
+    if (clicked) topoOpen(n);
+    else topoDraw(); // grow the drawing if a box went past its edge
+  });
+}
+
+function topoOpen(n) {
+  if (n.kind === "device" || n.kind === "other_site") {
+    if (n.kind === "other_site" && n.site_id && confirm(`Show the map of ${n.site}?`)) {
+      topo.siteId = n.site_id;
+      $("#topo-site").value = String(n.site_id);
+      return loadTopology();
+    }
+    const tabs = $$("#detail-tabs button").filter((b) => !b.hidden && !b.classList.contains("locked"));
+    if (!tabs.length) return;
+    openDetail({ device: { id: n.id, name: n.name, address: n.address || "" } });
+    selectDetailTab(tabs.find((b) => b.dataset.tab === "ports") ? "ports" : tabs[0].dataset.tab);
+  } else {
+    $("#topo-info").textContent = `${n.name}: ${[n.platform, n.address].filter(Boolean).join(" · ") || "no details"} (not in the inventory).`;
+  }
+}
+
+function topoSvgFile() {
+  const clone = topo.svg.cloneNode(true);
+  const live = topo.svg.querySelectorAll("*"), copy = clone.querySelectorAll("*");
+  live.forEach((el, i) => {
+    const cs = getComputedStyle(el);
+    const keep = ["fill", "stroke", "stroke-width", "stroke-dasharray", "font-size", "font-family", "paint-order"];
+    copy[i].setAttribute("style", keep.map((k) => `${k}:${cs.getPropertyValue(k)}`).join(";"));
+  });
+  clone.setAttribute("xmlns", SVGNS);
+  clone.insertBefore(svgEl("rect", { width: "100%", height: "100%", fill: getComputedStyle($("#topo-wrap")).backgroundColor }), clone.firstChild);
+  const blob = new Blob([new XMLSerializer().serializeToString(clone)], { type: "image/svg+xml" });
+  const a = h("a", { href: URL.createObjectURL(blob), download: `network-map-${$("#topo-site").selectedOptions[0].text.replace(/\W+/g, "-")}.svg` });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+$("#topo-close").addEventListener("click", () => $("#topo-dialog").close());
+$("#topo-site").addEventListener("change", () => { topo.siteId = Number($("#topo-site").value); loadTopology(); });
+$("#topo-endpoints").addEventListener("change", loadTopology);
+$("#topo-ports").addEventListener("change", () => { topo.portsChosen = true; topo.svg?.classList.toggle("no-ports", !$("#topo-ports").checked); });
+$("#topo-auto").addEventListener("click", () => { topoArrange(true); topoDraw(); });
+$("#topo-svg").addEventListener("click", topoSvgFile);
+$("#topo-save").addEventListener("click", async () => {
+  try {
+    await api("/api/topology/positions", { method: "PUT", body: { site_id: topo.siteId, positions: Object.fromEntries(topo.pos) } });
+    toast("Layout saved for everyone");
+  } catch (e) { toast(e.message); }
+});
+$("#site-map").addEventListener("click", () => openTopology(0));
+$("#sp-map").addEventListener("click", () => openTopology(sp.siteId));
+
 // ---------- shared: column chooser and blank templates ----------
 
 function saveLocal(key, value) {
