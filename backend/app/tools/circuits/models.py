@@ -129,6 +129,36 @@ class LiveArp(Base):
     seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class LiveNeighbor(Base):
+    """A device seen on one of a device's ports (CDP/LLDP) at its last successful read:
+    the links on the topology map."""
+
+    __tablename__ = "ct_live_neighbors"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    device_id: Mapped[int] = mapped_column(
+        ForeignKey("devices.id", ondelete="CASCADE"), index=True)
+    local_port: Mapped[str] = mapped_column(String(100), default="")
+    local_norm: Mapped[str] = mapped_column(String(100), default="")
+    name: Mapped[str] = mapped_column(String(255), default="")
+    remote_port: Mapped[str] = mapped_column(String(100), default="")
+    address: Mapped[str] = mapped_column(String(100), default="")
+    platform: Mapped[str] = mapped_column(String(200), default="")
+    infra: Mapped[bool] = mapped_column(default=True)
+    seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class TopologyPosition(Base):
+    """Where someone put a box on a site's topology map (else it is placed automatically)."""
+
+    __tablename__ = "ct_topology_positions"
+
+    site_id: Mapped[int] = mapped_column(Integer, primary_key=True)  # 0: every site
+    node: Mapped[str] = mapped_column(String(300), primary_key=True)  # 'd:<id>' or 'n:<name>'
+    x: Mapped[int] = mapped_column(Integer)
+    y: Mapped[int] = mapped_column(Integer)
+
+
 class MacLastSeen(Base):
     """Where a MAC was last seen on an edge port, kept after it disappears."""
 

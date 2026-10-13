@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from openpyxl import Workbook
 
 from app.demo import samples as s
+from app.demo import topology as demo_topology
 from app.demo.simnet import IOS_HEALTH, FakeNetwork, SimDevice
 from app.tools.circuits import live
 from app.tools.config_backup.collector import BackupError
@@ -124,6 +125,8 @@ def mac_table(rows: list[dict], moved: int | None = None, missing: int | None = 
 
 def build_network() -> FakeNetwork:
     net = DemoNetwork()
+    addresses = {d.name: address(i) for i, d in enumerate(DEVICES)}
+    platforms = {d.name: d.platform for d in DEVICES}
     for i, d in enumerate(DEVICES):
         outputs = dict(IOS_HEALTH) if d.platform == "cisco_ios" else {}
         sim = SimDevice(d.name, d.platform, d.version, d.image or "running", outputs)
@@ -139,6 +142,7 @@ def build_network() -> FakeNetwork:
                 "show etherchannel summary": s.ETHERCHANNEL,
             })
             sim.outputs.update(outputs)
+        sim.outputs.update(demo_topology.outputs(d.name, d.platform, addresses, platforms))
         for cmd in live.commands_for(d.platform).values():  # other devices: empty tables
             if sim.output(cmd) == s.INVALID:
                 sim.outputs[cmd] = ""

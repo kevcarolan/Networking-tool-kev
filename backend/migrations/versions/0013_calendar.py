@@ -1,15 +1,15 @@
 """Maintenance calendar: changes, maintenance, outages and change freezes.
 
-Revision ID: 0012_calendar
-Revises: 0011_display_pages
+Revision ID: 0013_calendar
+Revises: 0012_topology
 Created: 2026-10-13
 """
 
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0012_calendar"
-down_revision = "0011_display_pages"
+revision = "0013_calendar"
+down_revision = "0012_topology"
 branch_labels = None
 depends_on = None
 
