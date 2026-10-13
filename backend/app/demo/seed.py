@@ -7,6 +7,7 @@ Addresses are from the documentation ranges (192.0.2.0/24, 198.51.100.0/24,
 """
 
 import io
+from datetime import UTC, datetime, timedelta
 import time
 from dataclasses import dataclass
 
@@ -233,6 +234,7 @@ def seed(client, settings, net) -> dict:
     _ok(client.post(f"/api/circuits/imports/{imp['id']}/commit"))
     inventory(client)
     sites(client)
+    calendar(client, ids)
     _ok(client.post("/api/compliance/examples"))  # checked at each device's first backup
     screen = _ok(client.post("/api/displays", json={"name": "Demo wall"})).json()
     return {"display_key": screen["key"], "ids": ids}
@@ -280,6 +282,38 @@ EXTRA = [
 ]
 RACK_OF = {"HQ": "HQ-R02", "DC1": "DC1-R10", "Branch-North": "BN-R01", "Branch-South": "BS-R01",
            "Warehouse": "WH-R01"}
+
+
+def calendar(client, ids: dict) -> None:
+    """Planned work for the next weeks, with a clash or two to spot."""
+    now = datetime.now(UTC).replace(tzinfo=None, minute=0, second=0, microsecond=0)
+    day = lambda n, hour: (now.replace(hour=0) + timedelta(days=n, hours=hour)).isoformat()  # noqa: E731
+    image = next((i for i in _ok(client.get("/api/firmware/images")).json()
+                  if i["platform"] == "cisco_ios"), None)
+    if image:  # an upgrade planned for Thursday night
+        _ok(client.post("/api/firmware/jobs", json={
+            "device_id": ids["hq-acc-sw6"], "image_id": image["id"], "live": False,
+            "change_ref": "CHG0041207", "notes": "Bring hq-acc-sw6 to the standard",
+            "planned_start": day(2, 22), "planned_end": day(2, 23)}))
+    for ev in [
+        {"title": "Replace a fan tray in hq-core1", "kind": "maintenance", "sites": ["Head office"],
+         "devices": [ids["hq-core1"]], "change_ref": "CHG0041188",
+         "start": day(1, 21), "end": day(1, 22)},
+        {"title": "New VLANs for the CCTV upgrade", "kind": "change", "sites": ["Head office"],
+         "devices": [ids["hq-acc-sw5"], ids["hq-acc-sw6"]], "change_ref": "CHG0041210",
+         "start": day(2, 22), "end": day(3, 0), "notes": "Overlaps the hq-acc-sw6 upgrade"},
+        {"title": "ISP line work (provider)", "kind": "outage", "sites": ["Branch North"],
+         "start": day(5, 1), "end": day(5, 5), "notes": "Provider ref 7781-22. Branch North offline."},
+        {"title": "Firewall rule review", "kind": "change", "sites": ["Head office"],
+         "devices": [ids["hq-fw1"]], "change_ref": "CHG0041232", "start": day(9, 19),
+         "end": day(9, 20)},
+        {"title": "Month-end change freeze", "kind": "freeze", "sites": [],
+         "start": day(12, 0), "end": day(15, 0), "notes": "Finance month end: no changes"},
+        {"title": "Warehouse switch stack rebuild", "kind": "change", "sites": ["Warehouse"],
+         "devices": [ids["wh-sw2"]], "change_ref": "CHG0041250", "start": day(13, 20),
+         "end": day(13, 23), "notes": "In the freeze: needs a CAB exception"},
+    ]:
+        _ok(client.post("/api/calendar/events", json=ev))
 
 
 def inventory(client) -> None:

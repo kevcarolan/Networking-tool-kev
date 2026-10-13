@@ -21,6 +21,7 @@ from app.tools.config_backup.collector import fetch_config
 from app.tools.config_backup.service import BackupService
 from app.tools.config_backup.storage import GitConfigStore
 from app.tools.circuits import api as circuits_api
+from app.tools.calendar import api as calendar_api
 from app.tools.circuits.scan import CircuitScanService
 from app.tools.circuits import topology as topology_api
 from app.tools.firmware_upgrade import api as firmware_api
@@ -127,6 +128,7 @@ def create_app(settings: Settings | None = None, fetcher=fetch_config,
     app.include_router(inventory_api.router)  # part of every licence
     app.include_router(sites_api.router)  # part of every licence
     app.include_router(layout_api.router)  # part of every licence
+    app.include_router(calendar_api.router)  # part of every licence
     app.include_router(backup_api.router)
     app.include_router(compliance_api.router)  # the backups licence, on the router itself
     # The tools a licence can leave out (licence.MODULES): refused unless unlocked.

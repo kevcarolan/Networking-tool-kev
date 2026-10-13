@@ -114,6 +114,12 @@ you did and what you expected, and send it over.
 - [ ] **Settings › Email alerts**: Config changes, Compliance and Report (the emails need a
       real mail server).
 
+**Calendar**
+- [ ] **Calendar**: this month, with the hq-acc-sw6 upgrade two nights from now clashing with the
+      VLAN change on the same switch, and the Warehouse change inside the month-end freeze
+      (red outlines). Click each one to see why.
+- [ ] **List**, **Every site** › *Branch North*, **Download .ics** (open it in Outlook).
+- [ ] **+ Add** a maintenance at *Head office* on a device; **Edit**, **Copy**, **Delete** it.
 **Two-factor sign-in**
 - [ ] **Two-factor** (top right) › **Turn on**: scan the QR code with an authenticator app
       on your phone (Microsoft or Google Authenticator), type its code, keep the recovery codes.
