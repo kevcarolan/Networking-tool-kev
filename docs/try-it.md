@@ -72,6 +72,11 @@ you did and what you expected, and send it over.
 - [ ] Click *Head office*'s **Circuits** count: the 72 circuits there. Click a Site link on
       Circuits, Inventory or Config backups: it opens the site.
 - [ ] **Columns** (add *Firmware behind*), **Custom columns**, **Blank template**, **Import**.
+- [ ] **Network map** on the Sites page: every site in its own block. Pick *Head office*: the
+      two cores, six access switches and the firewall, with the data centre spines, the
+      Warehouse and the WAN router on top. Click a line for its ports; click *dc1-spine1* to
+      jump to the data centre's map. Tick **Phones and APs** on *Branch North*. Drag a box,
+      **Save layout**, close and open again; **Arrange**; **Download**.
 
 **Firmware and upgrades**
 - [ ] **Firmware › Versions**: which devices are behind their standard.

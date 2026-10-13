@@ -41,6 +41,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 - [x] Report: Activity › Report, and emailed on a day and time to the recipients of "Report"
 - [x] Wall display: compliance and config changes tiles, Sites and Network pages, pages chosen per screen
 - [x] Health checks and before/after comparison for NX-OS, ASA, Arista, Junos, ArubaOS-Switch, AOS 8, Dell OS10, EXOS, Huawei, IOS-XR, AlliedWare Plus, MikroTik and EdgeOS: environment, alarms, modules/stack, CPU, memory, unsaved config, last restart; interfaces, neighbours, LAG members and modules compared after ([upgrades.md](upgrades.md#the-checks)). Readers from vendor docs: confirm each with a capture (lab tests section 9)
+- [x] Network map (topology) per site and for every site, from the CDP/LLDP neighbours kept at each network scan; drag and save layout, download as SVG ([circuits.md](circuits.md#network-map-topology))
 - [ ] Main and standby server (later)
 - [ ] Later: one overview of several servers (the display feed is the starting point); several customers on one server kept as an idea
 
@@ -117,6 +118,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-13 | Rack positions are the item's lowest U; full depth fills front and rear, half depth one face; height 0 is zero-U | The usual rack convention; patch panels share a U front and rear |
 | 2026-10-13 | Health checks for the other platforms live in one table per platform (`firmware_upgrade/health.py`: commands and a reader per check); the snapshot uses the IOS keys (`interfaces`, `lldp`, `etherchannel`) so one comparison serves every platform | Adding or fixing a platform is one table, checked against a capture; the post-check rules stay the same everywhere |
 | 2026-10-13 | `show reload cause`, `show reboot history` and `display reboot-info` are allowed by exact name in the capture's read-only check | They are read-only but contain words the check refuses; listing them exactly keeps every other "reload"/"reboot" command refused |
+| 2026-10-13 | The network map is drawn from the neighbours kept at the circuit scan (table `ct_live_neighbors`, migration 0012), so it is part of the Circuits module and permission; no new device commands | The scan already reads CDP/LLDP on every switch for uplinks; keeping the names costs nothing and the map never contacts a device |
 | 2026-10-12 | Sites are a list of their own (table `sites`); items and devices keep a Site text, matched to a site's name or code; renaming a site rewrites that text | The owner: a site list cross-referenced with the inventory, without changing how devices and backups store their site |
 
 ## Open questions
@@ -194,3 +196,4 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-13 | Networking-tool-kev | Config change alerts (who changed it from syslog), config compliance (migration 0010), switch port view, report (Activity and scheduled email), wall display Sites and Network pages with per-screen pages (migration 0011); answered which pre/post-checks run on Cisco and Arista |
 | 2026-10-13 | Networking-tool-kev | Owner didn't see the rack elevations after updating: browsers kept the old app.js (no caching instructions were sent). Every response now says Cache-Control: no-cache |
 | 2026-10-13 | Networking-tool-kev | Health checks and before/after comparison for every SSH upgrade platform (NX-OS, ASA extras, Arista, Junos, ArubaOS-Switch, AOS 8, OS10, EXOS, VRP, IOS-XR, AW+, MikroTik, EdgeOS); healthy sample output in the demo network for each command; fault tests (power, alarms, modules, unsaved config, LAG member lost after the reload) |
+| 2026-10-13 | Networking-tool-kev | Network map: neighbours (CDP, LLDP detail and table, MikroTik) kept at each scan, map per site and for every site with links between sites, phones/APs optional, drag and save layout, SVG download; the demo network is cabled (HQ cores, DC leaf/spine, branches, warehouse) |
