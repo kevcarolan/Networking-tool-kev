@@ -106,6 +106,7 @@ class DisplayScreen(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_seen_from: Mapped[str] = mapped_column(String(100), default="")
+    pages: Mapped[str] = mapped_column(Text, default="", server_default="")  # JSON list; "" = all
 
 
 class AlertSent(Base):

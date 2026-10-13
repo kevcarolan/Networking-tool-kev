@@ -2573,29 +2573,38 @@ async function optionsPanel() {
 
 /** Wall displays: read-only status screens on their own port, each with its own link. */
 async function displaysPanel() {
-  const { port, screens } = await api("/api/displays");
+  const { port, screens, page_names: pageNames } = await api("/api/displays");
   const err = errorLine();
   const name = h("input", { name: "display_name", placeholder: "e.g. NOC wall 1", maxlength: 100 });
+  // Which pages a screen rotates through (none ticked: all of them)
+  const pagePicker = (chosen) => h("span", { class: "chips" }, ...Object.entries(pageNames).map(([k, l]) =>
+    h("label", { class: "check" }, h("input", { type: "checkbox", "data-page": k, checked: chosen.includes(k) }), ` ${l}`)));
+  const picked = (el) => $$("input[data-page]", el).filter((c) => c.checked).map((c) => c.dataset.page);
+  const newPages = pagePicker(Object.keys(pageNames));
   const linkFor = (key) => `https://${location.hostname}:${port}/display/#key=${key}`;
   const shown = h("div", { hidden: true });
   const box = h("div", { class: "panel" });
-  const rows = screens.length ? h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "Screen"), h("th", {}, "Last connected"), h("th", {}, "From"), h("th", {}, ""))),
-    h("tbody", {}, screens.map((s) => h("tr", {}, h("td", {}, s.name), h("td", {}, fmtTime(s.last_seen_at)),
+  const rows = screens.length ? h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "Screen"), h("th", {}, "Pages"), h("th", {}, "Last connected"), h("th", {}, "From"), h("th", {}, ""))),
+    h("tbody", {}, screens.map((s) => { const pick = pagePicker(s.pages); return h("tr", {}, h("td", {}, s.name),
+      h("td", {}, pick, h("button", { type: "button", class: "small", onclick: async () => {
+        try { await api(`/api/displays/${s.id}`, { method: "PUT", body: { name: s.name, pages: picked(pick) } }); toast("Pages saved: the screen changes at its next refresh"); } catch (e) { showError(err, e); }
+      } }, "Save pages")),
+      h("td", {}, fmtTime(s.last_seen_at)),
       h("td", {}, s.last_seen_from || "—"),
       h("td", {}, h("button", { type: "button", class: "small", onclick: async () => {
         if (!confirm(`Remove "${s.name}"? Its link stops working straight away.`)) return;
         try { await api(`/api/displays/${s.id}`, { method: "DELETE" }); toast("Display removed"); loadSettings(); } catch (e) { showError(err, e); }
-      } }, "Remove"))))))
+      } }, "Remove"))); })))
     : h("p", { class: "muted" }, "No wall displays yet.");
   box.replaceChildren(
     h("h2", {}, "Wall displays"),
-    h("p", { class: "muted" }, `A read-only status screen for a NOC or office wall: failing backups, firmware compliance and the upgrades under way. It is served on port ${port} only; open that port in the server's firewall just for the screens' network.`),
+    h("p", { class: "muted" }, `A read-only status screen for a NOC or office wall. Its pages take turns: the overview (backups, compliance, config changes, firmware, upgrades, server), the upgrades under way, a sites grid, and the network (syslog errors, config changes, circuits that moved or went missing). It shows names and counts only, never addresses or configs. It is served on port ${port} only; open that port in the server's firewall just for the screens' network.`),
     rows,
-    h("label", {}, "Add a display", name), err,
+    h("label", {}, "Add a display", name), h("div", {}, h("span", { class: "muted" }, "Pages: "), newPages), err,
     h("div", { class: "actions" }, h("button", { type: "button", onclick: async () => {
       err.hidden = true;
       try {
-        const s = await api("/api/displays", { method: "POST", body: { name: name.value } });
+        const s = await api("/api/displays", { method: "POST", body: { name: name.value, pages: picked(newPages) } });
         const link = h("input", { readonly: true, value: linkFor(s.key) });
         shown.replaceChildren(h("p", {}, h("strong", {}, "Open this link on the screen's browser (full screen). It is shown only now: copy it before leaving the page."),
         ), link, h("div", { class: "actions" }, h("button", { type: "button", onclick: () => { link.select(); navigator.clipboard?.writeText(link.value); toast("Link copied"); } }, "Copy link")));

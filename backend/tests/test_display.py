@@ -121,3 +121,45 @@ def test_the_display_page_is_served(client):
     r = client.get("/display/")
     assert r.status_code == 200 and "display.js" in r.text
     assert client.get("/display/display.js").status_code == 200
+
+
+def test_each_screen_chooses_its_pages(admin):
+    key = _screen(admin)["key"]
+    screen = admin.get("/api/displays").json()["screens"][0]
+    assert screen["pages"] == ["overview", "upgrades", "sites", "network"]  # all by default
+    r = admin.put(f"/api/displays/{screen['id']}", json={"name": "NOC wall 1", "pages": ["network", "sites"]})
+    assert r.status_code == 200 and r.json()["pages"] == ["sites", "network"]
+    assert _feed(admin, key).json()["pages"] == ["sites", "network"]
+    assert admin.put(f"/api/displays/{screen['id']}", json={"name": "x", "pages": ["nope"]}).status_code == 422
+
+
+def test_compliance_changes_syslog_circuits_and_sites_without_addresses(app, admin, device, fetcher, settings):
+    from tests.test_alerts import _syslog
+    from tests.test_circuits import _upload
+
+    key = _screen(admin)["key"]
+    admin.post("/api/sites", json={"values": {"name": "Head office", "code": "HQ"}})
+    app.state.backup_service.run(device["id"])
+    admin.post("/api/compliance/rules", json={"name": "SSH 2", "lines": "ip ssh version 2", "severity": "critical"})
+    from tests.conftest import SAMPLE_CONFIG
+
+    fetcher.configs["core-sw1"] = SAMPLE_CONFIG.format(name="core-sw1", address="10.0.0.1").replace(
+        "end\n", "ntp server 192.0.2.1\nend\n")
+    app.state.backup_service.run(device["id"])
+    _syslog(settings, ("10.0.0.1", 2, "%PLATFORM-2-PS_FAIL", "Power supply 2 failed at 10.0.0.1"),
+            ("192.0.2.250", 3, "%LINK-3-UPDOWN", "Gi1/0/1 down"))
+    imp = _upload(admin, make_xlsx()).json()
+    admin.post(f"/api/circuits/imports/{imp['id']}/commit")
+    d = _feed(admin, key).json()
+    assert d["compliance"]["failing"] == 1 and d["compliance"]["top"][0] == {"rule": "SSH 2", "devices": 1, "critical": True}
+    assert d["changes"]["count"] == 1 and d["changes"]["rows"][0]["device"] == "core-sw1"
+    assert d["syslog"]["counts"][2] == 1 and d["syslog"]["counts"][3] == 1
+    latest = {m["type"]: m for m in d["syslog"]["latest"]}
+    assert latest["%PLATFORM-2-PS_FAIL"]["device"] == "core-sw1"
+    assert latest["%LINK-3-UPDOWN"]["device"] == "a sender not in the inventory"
+    assert d["circuits"]["total"] == 5
+    hq = next(s for s in d["sites"] if s["site"] == "Head office")
+    assert hq["listed"] and hq["devices"] == 1 and hq["compliance"] == 1
+    text = json.dumps(d)
+    assert "10.0.0.1" not in text and "192.0.2.250" not in text and "Power supply" not in text
+    assert "ntp server" not in text

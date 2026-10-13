@@ -1,6 +1,7 @@
 // The wall display. The link is  https://<server>:<port>/display/#key=<key>[&rotate=20]
 // The key stays in the #fragment, so it never reaches the web server's logs; it is sent
-// in the Authorization header. Two pages take turns: the overview and the upgrades.
+// in the Authorization header. The pages the screen was set up with take turns: the
+// overview, the upgrades, the sites and the network (syslog, config changes, circuits).
 "use strict";
 
 const params = new URLSearchParams(location.hash.slice(1));
@@ -48,7 +49,7 @@ function tile(label, num, sub, level) {
 }
 
 function overview(d) {
-  const b = d.backups, f = d.firmware, u = d.upgrades, s = d.server;
+  const b = d.backups, f = d.firmware, u = d.upgrades, s = d.server, c = d.compliance, ch = d.changes;
   const running = u.under_way.length;
   const stuck = u.under_way.filter((j) => ["failed", "needs_attention"].includes(j.status)).length;
   const serverOk = s.worker && s.licence.active;
@@ -56,6 +57,10 @@ function overview(d) {
     tile("Failing backups", b.failing,
       `${b.ok} OK · ${b.never} never backed up${b.disabled ? ` · ${b.disabled} off` : ""}`,
       b.failing ? "bad" : b.never ? "warn" : ""),
+    c ? tile("Compliance", c.failing,
+      c.rules ? `device${c.failing === 1 ? "" : "s"} failing a rule · ${c.critical} critical · ${c.checked} checked` : "no rules set",
+      c.critical ? "bad" : c.failing ? "warn" : "") : null,
+    ch ? tile("Config changes", ch.count, "in the last 24 hours", ch.count ? "info" : "") : null,
     tile("Firmware on standard", f.percent === null ? "–" : `${f.percent}%`,
       `${f.behind} behind · ${f.ahead} ahead · ${f.no_standard} no standard`,
       f.behind ? "warn" : ""),
@@ -76,14 +81,63 @@ function overview(d) {
     if (d.attention_more) attention.append(h("div", { class: "more" }, `and ${d.attention_more} more`));
   }
 
-  const sites = h("div", { class: "panel" }, h("h2", {}, "Sites"), h("div", { class: "sites" }, d.sites.map((x) => {
-    const level = x.failing ? "bad" : x.upgrading ? "info" : x.behind ? "warn" : "";
-    const notes = [x.failing && `${x.failing} failing`, x.upgrading && `${x.upgrading} upgrading`,
-      x.behind && `${x.behind} behind`].filter(Boolean);
-    return h("div", { class: `site ${level}` }, h("div", { class: "name" }, x.site),
-      h("div", { class: "sub" }, notes.length ? notes.join(" · ") : `${x.devices} devices OK`));
-  })));
+  const sites = h("div", { class: "panel" }, h("h2", {}, "Sites"), h("div", { class: "sites" }, d.sites.filter((x) => x.devices).map((x) => siteTile(x))));
   return [tiles, h("div", { class: "columns" }, attention, sites)];
+}
+
+function siteTile(x, big = false) {
+  const level = x.failing ? "bad" : x.upgrading ? "info" : (x.behind || x.compliance || x.circuits) ? "warn" : "";
+  const notes = [x.failing && `${x.failing} backup${x.failing > 1 ? "s" : ""} failing`, x.upgrading && `${x.upgrading} upgrading`,
+    x.behind && `${x.behind} firmware behind`, x.compliance && `${x.compliance} failing compliance`,
+    x.circuits && `${x.circuits} circuit${x.circuits > 1 ? "s" : ""} moved or missing`].filter(Boolean);
+  return h("div", { class: `site ${level}${big ? " big" : ""}` }, h("div", { class: "name" }, x.site),
+    h("div", { class: "sub" }, x.devices ? `${x.devices} device${x.devices > 1 ? "s" : ""}` : "no managed devices"),
+    big ? h("ul", { class: "notes" }, (notes.length ? notes : ["All OK"]).map((n) => h("li", {}, n)))
+      : h("div", { class: "sub" }, notes.length ? notes.join(" · ") : "OK"));
+}
+
+// ---------- page 3: sites ----------
+
+function sitesPage(d) {
+  return [h("div", { class: "sites big-grid" }, d.sites.map((x) => siteTile(x, true)))];
+}
+
+// ---------- page 4: network (syslog, config changes, circuits) ----------
+
+const SEV = ["Emergency", "Alert", "Critical", "Error"];
+
+function networkPage(d) {
+  const panels = [];
+  if (d.syslog) {
+    const sl = d.syslog;
+    panels.push(h("div", { class: "panel" }, h("h2", {}, "Syslog: errors and worse, last 24 h"),
+      h("div", { class: "sevs" }, sl.counts.map((n, i) => h("div", { class: `sev s${i}${n ? "" : " zero"}` }, h("div", { class: "num" }, n), h("div", { class: "sub" }, SEV[i])))),
+      sl.latest.length ? h("ul", { class: "list" }, sl.latest.map((m) => h("li", {},
+        h("span", {}, h("span", { class: "what" }, m.device), h("span", { class: "dim" }, ` · ${m.type || m.severity}`)),
+        h("span", { class: m.sev <= 2 ? "why" : "dim" }, `${m.severity} · ${hhmm(when(m.at))}`))))
+        : h("div", { class: "empty" }, "No errors")));
+  }
+  if (d.changes) {
+    panels.push(h("div", { class: "panel" }, h("h2", {}, `Config changes, last 24 h (${d.changes.count})`),
+      d.changes.rows.length ? h("ul", { class: "list" }, d.changes.rows.map((r) => h("li", {},
+        h("span", {}, h("span", { class: "what" }, r.device), r.site ? h("span", { class: "dim" }, ` · ${r.site}`) : ""),
+        h("span", { class: "dim" }, hhmm(when(r.at))))))
+        : h("div", { class: "empty" }, "No changes")));
+  }
+  if (d.circuits) {
+    const c = d.circuits;
+    panels.push(h("div", { class: "panel" }, h("h2", {}, `Circuits (${c.total})`),
+      h("div", { class: "sevs" },
+        h("div", { class: "sev ok" }, h("div", { class: "num" }, c.matches), h("div", { class: "sub" }, "where listed")),
+        h("div", { class: `sev ${c.moved ? "s3" : "zero"}` }, h("div", { class: "num" }, c.moved), h("div", { class: "sub" }, "moved")),
+        h("div", { class: `sev ${c.not_seen ? "s2" : "zero"}` }, h("div", { class: "num" }, c.not_seen), h("div", { class: "sub" }, "not seen"))),
+      c.problems.length ? h("ul", { class: "list" }, c.problems.map((p) => h("li", {},
+        h("span", {}, h("span", { class: "what" }, p.name), h("span", { class: "dim" }, [p.service, p.site].filter(Boolean).map((x) => ` · ${x}`).join(""))),
+        h("span", { class: "why" }, p.status))))
+        : h("div", { class: "empty" }, "Every circuit where it should be"),
+      c.problems_more ? h("div", { class: "more" }, `and ${c.problems_more} more`) : ""));
+  }
+  return [h("div", { class: "network" }, panels)];
 }
 
 // ---------- page 2: upgrades ----------
@@ -127,11 +181,19 @@ function upgrades(d) {
 
 // ---------- drawing, rotation, refresh ----------
 
-const PAGES = [["Overview", "#page-overview", overview], ["Upgrades", "#page-upgrades", upgrades]];
+const PAGES = [["overview", "Overview", "#page-overview", overview], ["upgrades", "Upgrades", "#page-upgrades", upgrades],
+  ["sites", "Sites", "#page-sites", sitesPage], ["network", "Network", "#page-network", networkPage]];
 
 function pagesToShow(d) {
-  // Skip the upgrades page when there is nothing on it.
-  return d && (d.upgrades.under_way.length || d.upgrades.coming_up.length) ? [0, 1] : [0];
+  if (!d) return [0];
+  const chosen = d.pages && d.pages.length ? d.pages : PAGES.map((p) => p[0]);
+  const show = PAGES.map((p, i) => [p[0], i]).filter(([key]) => {
+    if (!chosen.includes(key)) return false;
+    if (key === "upgrades") return d.upgrades.under_way.length || d.upgrades.coming_up.length; // nothing on it
+    if (key === "network") return d.syslog || d.changes || d.circuits;
+    return true;
+  }).map(([, i]) => i);
+  return show.length ? show : [0];
 }
 
 function draw() {
@@ -152,7 +214,7 @@ function draw() {
   $("#screen").textContent = d.screen;
   const show = pagesToShow(d);
   if (!show.includes(state.page)) state.page = show[0];
-  PAGES.forEach(([name, sel, render], i) => {
+  PAGES.forEach(([, name, sel, render], i) => {
     const el = $(sel);
     el.hidden = i !== state.page;
     if (i === state.page) {
