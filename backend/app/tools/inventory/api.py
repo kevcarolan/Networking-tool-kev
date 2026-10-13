@@ -143,9 +143,17 @@ def update_asset(asset_id: int, body: AssetIn, db: Session = Depends(get_db),
             str(body.values["name"]).strip() != asset.name:
         raise HTTPException(422, "A managed device is renamed on Config backups (Edit), so the "
                                  "tools and the inventory keep the same name")
+    before = (asset.type, asset.name, asset.site, asset.building, asset.floor, asset.room)
     changed = _set(db, asset, body.values, user)
+    moved = 0
+    if before[0] == "rack" and before[1:] != (asset.name, asset.site, asset.building,
+                                              asset.floor, asset.room):
+        from app.tools.inventory.layout import follow_rack
+
+        moved = follow_rack(db, asset, before[1])  # its items keep up with the rack
     if changed:
-        audit(db, user.username, "inventory.update", f"{asset.name}: {', '.join(changed)}")
+        audit(db, user.username, "inventory.update", f"{asset.name}: {', '.join(changed)}"
+              + (f" ({moved} items in the rack follow it)" if moved else ""))
     return {"id": asset.id, "changed": changed}
 
 

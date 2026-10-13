@@ -21,6 +21,7 @@ one database.
 | Syslog (receiver on 514, one file per day, search page, device setup help) | `backend/app/tools/syslog/` | Done ([docs/syslog.md](docs/syslog.md)) |
 | Network inventory (every device plus racks, servers, UPSs…; custom columns, import/export) | `backend/app/tools/inventory/` | Done ([docs/inventory.md](docs/inventory.md)) |
 | Sites (site list, what the inventory has at each) | `backend/app/tools/inventory/sites.py` | Done ([docs/sites.md](docs/sites.md)) |
+| Site layout and rack elevations (buildings, floors, rooms; drag to move) | `backend/app/tools/inventory/layout.py` | Done ([docs/racks.md](docs/racks.md)) |
 | Users and activity (per-area permissions, activity report) | `backend/app/core/users.py`, `permissions.py` | Done ([docs/users.md](docs/users.md)) |
 
 Design docs: [docs/design.md](docs/design.md) (platform and backup tool),
@@ -142,6 +143,11 @@ remote); never sync the two automatically.
   text, read by header name on upload (`importer.parse_workbook`/`parse_csv`, `custom=`).
   A circuit's site (`circuits/api.SiteIndex`): its Site column, else its switch's, else the
   switch it was found on; the GUI links any Site value with `siteLink()`.
+  Site layout (`layout.py`, table `site_locations`: building > floor > room, or a room in a
+  building): rows are placed by their Building/Floor/Room text, a row in a rack (its Rack =
+  a rack row's name at the same site) is where the rack is. Rack elevations come from Rack,
+  Position (bottom U), Height (0 = zero-U), Rack face and Depth; `POST /api/racks/move` checks
+  range and overlap. Renames rewrite the rows' text, like sites do.
 * Device access is always injectable (`fetcher=` / `fw_collector=` in `create_app`), so tests
   never touch SSH. Parser tests use real sample output in `app/demo/samples.py` (alias
   `tests/firmware_samples.py`); the newer vendors' samples (`app/demo/vendor_samples.py`) are

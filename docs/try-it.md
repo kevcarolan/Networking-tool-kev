@@ -51,7 +51,7 @@ you did and what you expected, and send it over.
 - [ ] **+ Add device**, edit one, and delete it again.
 
 **Inventory**
-- [ ] 42 items: 25 managed devices and 17 others (racks, UPSs, PDUs, servers, a spare switch).
+- [ ] 43 items: 25 managed devices and 18 others (racks, UPSs, PDUs, servers, a spare switch).
 - [ ] Filter by site, type, status and *Inventory only*; search for `Dell` or `HQ-R01`.
 - [ ] **Columns**: add *Room* and *Power feed*, move them, then **Reset to the defaults**.
 - [ ] Open a managed device: grey values come from the device; type over one.
@@ -64,6 +64,11 @@ you did and what you expected, and send it over.
 - [ ] Four sites, and a note that the inventory also uses *Warehouse*: **Add them to the list**.
 - [ ] Open *Head office*: its details and the 19 items there, with their backup and firmware state.
 - [ ] Rename a site's code (e.g. `HQ` to `HO`), then check the devices' site on Config backups.
+- [ ] Click *Head office*: its buildings, floors and rooms; click **Comms 1** for its two racks.
+- [ ] Drag *spare-c9300-48p* (in **Stores**, on **Ground floor**) into HQ-R01; drag a server onto
+      another item (refused); drag a patch panel to the rear; **Print**.
+- [ ] Add a room (**+ room**), rename it, delete it. **+ Add a rack here** in a room.
+- [ ] In the inventory, click a Rack value: it opens the rack.
 - [ ] Click *Head office*'s **Circuits** count: the 72 circuits there. Click a Site link on
       Circuits, Inventory or Config backups: it opens the site.
 - [ ] **Columns** (add *Firmware behind*), **Custom columns**, **Blank template**, **Import**.

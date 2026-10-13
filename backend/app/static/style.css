@@ -339,3 +339,61 @@ table.recipients input[type=email] { min-width: 220px; }
   background: var(--warn-bg); color: var(--text); }
 .count-link { cursor: pointer; color: var(--accent); }
 .count-link:hover { text-decoration: underline; }
+
+/* One site: the layout tree on the left, the racks of the chosen place on the right */
+.crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-weight: 600; }
+.crumbs .sep { color: var(--muted); font-weight: 400; }
+.sp-body { display: grid; grid-template-columns: minmax(220px, 280px) 1fr; gap: 16px; align-items: start; }
+@media (max-width: 800px) { .sp-body { grid-template-columns: 1fr; } }
+#sp-tree { padding: 10px; }
+#sp-tree ul { list-style: none; margin: 0; padding-left: 14px; }
+#sp-tree > ul { padding-left: 0; }
+.tree-node { display: flex; align-items: center; gap: 4px; padding: 3px 6px; border-radius: 6px; cursor: pointer; }
+.tree-node:hover { background: var(--idle-bg); }
+.tree-node.selected { background: var(--accent); color: var(--accent-text); }
+.tree-node.selected .muted { color: var(--accent-text); }
+.tree-node .kind { font-size: 11px; opacity: 0.7; }
+.tree-node .tools { margin-left: auto; display: none; gap: 2px; }
+.tree-node:hover .tools, .tree-node.selected .tools { display: flex; }
+.tree-node .tools button { padding: 0 5px; font-size: 11px; line-height: 18px; }
+
+/* Rack elevations: one grid row per U, U1 at the bottom */
+.racks { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+.rack { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 10px; }
+.rack h3 { margin: 0 0 2px; font-size: 15px; }
+.rack-faces { display: flex; gap: 10px; }
+.rack-face { display: grid; grid-template-columns: 26px 210px; grid-auto-rows: 20px; border: 2px solid var(--muted);
+  border-radius: 4px; background: var(--bg); }
+.rack-face-title { text-align: center; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.u-num { grid-column: 1; font-size: 10px; color: var(--muted); text-align: right; padding-right: 4px;
+  border-bottom: 1px solid var(--border); line-height: 19px; }
+.u-slot { grid-column: 2; border-bottom: 1px dashed var(--border); }
+.u-slot.drop-ok { background: var(--ok-bg); }
+.rack-item { grid-column: 2; margin: 1px 2px; padding: 0 6px; border-radius: 3px; overflow: hidden; z-index: 1;
+  background: var(--surface); border: 1px solid var(--accent); font-size: 12px; line-height: 17px;
+  display: flex; flex-direction: column; justify-content: center; cursor: pointer; }
+.rack-item small { color: var(--muted); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rack-item b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rack-item.failed { border-color: var(--fail); background: var(--fail-bg); }
+.rack-item.behind { border-left: 4px solid var(--warn); }
+.rack-item.other-side { opacity: 0.45; border-style: dashed; cursor: default; }
+.rack-item.inventory { border-color: var(--idle); }
+.rack-item[draggable="true"] { cursor: grab; }
+.rack-side { display: flex; flex-direction: column; gap: 4px; min-width: 70px; }
+.rack-side .rack-item { margin: 0; writing-mode: vertical-rl; min-height: 90px; padding: 4px 0; }
+.rack-tray { margin-top: 8px; padding: 6px; border: 1px dashed var(--border); border-radius: 6px; min-height: 30px;
+  display: flex; flex-wrap: wrap; gap: 4px; font-size: 12px; }
+.rack-tray .rack-item { margin: 0; padding: 2px 6px; }
+.rack-tray.drop-ok, .loose-items.drop-ok { background: var(--ok-bg); }
+.loose-items { margin-top: 16px; padding: 8px; border: 1px dashed var(--border); border-radius: var(--radius); }
+
+@media print {
+  .topbar, #demo-banner, #licence-banner, .no-print, .dialog-actions { display: none !important; }
+  .sp-body { display: block; }
+  .rack { break-inside: avoid; }
+  body { background: #fff; }
+}
+.rack.focus { outline: 3px solid var(--accent); outline-offset: 2px; }
+.rack-face.drop-ok { outline: 2px solid var(--ok); }
+.tree-node { flex-wrap: wrap; }
+.tree-node.selected .tools button { color: var(--text); }

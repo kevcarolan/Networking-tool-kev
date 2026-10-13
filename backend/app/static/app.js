@@ -870,12 +870,22 @@ function siteLink(text, id = null) {
   return h("span", { class: "link", title: "Open the site", onclick: (ev) => { ev.stopPropagation(); openSite(s.id); } }, text);
 }
 
-/** Go to the Sites page and open one site. */
-async function openSite(id, itemsFirst = true) {
+/** Go to the Sites page and open one site's page. */
+async function openSite(id) {
   if (state.view !== "sites") switchView("sites");
   await site.loading;
-  const r = site.data.sites.find((x) => x.id === id);
-  if (r) siteEdit(r, itemsFirst);
+  openSitePage(id);
+}
+
+/** Open the site page at an item's rack (or where the item is). */
+async function showInRack(assetId) {
+  try {
+    const at = await api(`/api/racks/locate/${assetId}`);
+    if (!at.site_id) return toast("Its Site isn't on the site list, so there's no rack view for it yet");
+    if (state.view !== "sites") switchView("sites");
+    await site.loading;
+    openSitePage(at.site_id, at.location_id, at.rack_id);
+  } catch (e) { toast(e.message); }
 }
 
 /** Go to the Inventory page and open one item. */
@@ -2770,6 +2780,7 @@ function renderInventory() {
       const v = invValue(r, f.key);
       if (f.key === "name") return h("td", {}, h("span", { class: "link", onclick: () => invEdit(r) }, v || "(no name)"));
       if (f.key === "site" && siteOf(v)) return h("td", {}, siteLink(v));
+      if (f.key === "rack" && v) return h("td", {}, h("span", { class: "link", title: "Show the rack", onclick: () => showInRack(r.id) }, v));
       const auto = (r.values[f.key] === null || r.values[f.key] === "" || r.values[f.key] === undefined) && r.auto[f.key];
       return h("td", { class: f.key === "notes" || f.max_length > 1000 ? "wrap" : "", title: auto ? "From the device" : "" },
         auto ? h("span", { class: "muted" }, v) : String(v ?? ""));
@@ -2814,7 +2825,7 @@ function invInput(f, value, auto, locked) {
     list: f.key === "site" && inv.meta && inv.meta.sites ? "inv-site-names" : null });
 }
 
-function invEdit(r = null) {
+function invEdit(r = null, after = loadInventory) {
   const canEdit = inv.meta.can_manage;
   const err = errorLine();
   const groups = new Map();
@@ -2841,14 +2852,18 @@ function invEdit(r = null) {
       else await api("/api/inventory/assets", { method: "POST", body: { values } });
       $("#inv-dialog").close();
       toast("Saved");
-      loadInventory();
+      after();
     } catch (e) { showError(err, e); }
   };
   const buttons = h("div", { class: "dialog-actions" });
+  if (r && (r.values.type === "rack" || r.values.rack)) {
+    buttons.append(h("button", { type: "button", onclick: () => { $("#inv-dialog").close(); showInRack(r.id); } },
+      r.values.type === "rack" ? "Show the rack" : "Show in its rack"));
+  }
   if (r && !r.managed && inv.meta.can_add_devices) buttons.append(h("button", { type: "button", onclick: () => invManage(r) }, "Manage this device…"));
   if (r && !r.managed && canEdit) buttons.append(h("button", { type: "button", class: "danger", onclick: async () => {
     if (!confirm(`Delete ${invValue(r, "name")} from the inventory?`)) return;
-    try { await api(`/api/inventory/assets/${r.id}`, { method: "DELETE" }); $("#inv-dialog").close(); loadInventory(); } catch (e) { showError(err, e); }
+    try { await api(`/api/inventory/assets/${r.id}`, { method: "DELETE" }); $("#inv-dialog").close(); after(); } catch (e) { showError(err, e); }
   } }, "Delete"));
   if (canEdit) buttons.append(h("button", { type: "button", class: "primary", onclick: save }, "Save"));
   invDialog(r ? invValue(r, "name") : "Add to the inventory", form, buttons);
@@ -2997,6 +3012,8 @@ const siteClose = () => $("#site-dialog").close();
 $("#site-dialog-close").addEventListener("click", siteClose);
 
 function loadSites() {
+  $("#sites-list").hidden = false;
+  $("#site-page").hidden = true;
   site.loading = fetchSites();
   return site.loading;
 }
@@ -3049,14 +3066,14 @@ function renderSites() {
   });
   $("#site-table thead").replaceChildren(h("tr", {}, ...cols.map((c) => h("th", {}, c.label))));
   $("#site-table tbody").replaceChildren(...rows.map((r) => h("tr", {}, ...cols.map((c) => {
-    if (c.key === "name") return h("td", {}, h("span", { class: "link", onclick: () => siteEdit(r) }, r.values.name));
+    if (c.key === "name") return h("td", {}, h("span", { class: "link", onclick: () => openSitePage(r.id) }, r.values.name));
     if (c.key.startsWith("#")) {
       const n = r.counts[c.key.slice(1)];
       if (c.key === "#circuits") {
         return h("td", {}, h("span", { class: "count-link", onclick: () => openSiteCircuits(r.id), title: "See this site's circuits" }, n));
       }
       const cls = c.key === "#backup_failed" || c.key === "#behind" ? (n ? "badge failed" : "muted") : "count-link";
-      return h("td", {}, h("span", { class: cls, onclick: () => siteEdit(r, true), title: "See what's at this site" }, n));
+      return h("td", {}, h("span", { class: cls, onclick: () => openSitePage(r.id), title: "See what's at this site" }, n));
     }
     const v = r.values[c.key];
     return h("td", { class: ["address", "access", "circuits", "notes"].includes(c.key) ? "wrap" : "" }, String(v ?? ""));
@@ -3064,6 +3081,13 @@ function renderSites() {
   $("#site-empty").hidden = rows.length > 0;
   $("#site-empty").textContent = site.data.sites.length ? "Nothing matches the filters." :
     "No sites yet. Add them with + Add site, import a spreadsheet (Blank template gives you one to fill in), or add the ones the inventory already uses.";
+}
+
+/** After a site's details change: refresh the page you are on (the list or the site's page). */
+function siteChanged() {
+  if ($("#site-page").hidden) return loadSites();
+  site.loading = fetchSites();
+  refreshSitePage();
 }
 
 /** A site: its details, and what the inventory has there. */
@@ -3089,7 +3113,7 @@ async function siteEdit(r = null, itemsFirst = false) {
         toast("Saved");
       }
       siteClose();
-      loadSites();
+      siteChanged();
     } catch (e) { showError(err, e); }
   };
   const buttons = h("div", { class: "dialog-actions" });
@@ -3163,3 +3187,245 @@ $("#site-template").addEventListener("click", () => templateDialog(siteDialog, "
 $("#site-import").addEventListener("click", () => importDialog(siteDialog, siteClose, "/api/sites",
   "Excel (.xlsx) or CSV, column names in the first row (the same names as in an export or a Blank template). Rows are matched to the list by site code, then name; " +
   "anything not matched is added. Empty cells leave a value as it is. Nothing changes until you press Import.", loadSites));
+
+// ---------- one site: buildings, floors, rooms and rack elevations ----------
+
+const sp = { siteId: null, locId: null, layout: null, data: null, focusRack: null };
+const KIND_LABEL = { building: "Building", floor: "Floor", room: "Room" };
+
+async function openSitePage(siteId, locId = null, focusRack = null) {
+  Object.assign(sp, { siteId, locId, focusRack });
+  $("#sites-list").hidden = true;
+  $("#site-page").hidden = false;
+  await refreshSitePage();
+}
+
+async function refreshSitePage() {
+  try {
+    const q = new URLSearchParams({ site_id: sp.siteId });
+    if (sp.locId) q.set("location_id", sp.locId);
+    [sp.layout, sp.data] = await Promise.all([api(`/api/sites/${sp.siteId}/layout`), api(`/api/racks?${q}`)]);
+  } catch (e) {
+    if (sp.locId) { sp.locId = null; return refreshSitePage(); } // the place was deleted
+    return toast(e.message);
+  }
+  renderSiteTree();
+  renderSiteMain();
+  if (sp.focusRack) {
+    const el = document.getElementById(`rack-${sp.focusRack}`);
+    if (el) { el.scrollIntoView({ block: "nearest" }); el.classList.add("focus"); }
+    sp.focusRack = null;
+  }
+}
+
+function spGo(locId) {
+  sp.locId = locId;
+  refreshSitePage();
+}
+
+function renderSiteTree() {
+  const manage = can("inventory", "manage");
+  const L = sp.layout;
+  const addChild = async (kind, parentId) => {
+    const name = prompt(`Name of the new ${kind}`);
+    if (!name) return;
+    try {
+      const r = await api(`/api/sites/${sp.siteId}/locations`, { method: "POST", body: { kind, name, parent_id: parentId } });
+      sp.locId = r.id;
+      refreshSitePage();
+    } catch (e) { toast(e.message); }
+  };
+  const node = (n) => {
+    const tools = !manage ? null : h("span", { class: "tools" },
+      n.kind === "building" ? h("button", { class: "small", title: "Add a floor", onclick: (ev) => { ev.stopPropagation(); addChild("floor", n.id); } }, "+ floor") : null,
+      n.kind !== "room" ? h("button", { class: "small", title: "Add a room", onclick: (ev) => { ev.stopPropagation(); addChild("room", n.id); } }, "+ room") : null,
+      h("button", { class: "small", title: "Rename", onclick: async (ev) => {
+        ev.stopPropagation();
+        const name = prompt(`New name for ${n.name} (items there get the new name too)`, n.name);
+        if (!name) return;
+        try {
+          const r = await api(`/api/locations/${n.id}`, { method: "PUT", body: { name, notes: n.notes } });
+          toast(r.renamed_on ? `Renamed; changed on ${r.renamed_on} item(s)` : "Renamed");
+          refreshSitePage();
+        } catch (e) { toast(e.message); }
+      } }, "✎"),
+      h("button", { class: "small danger", title: "Delete", onclick: async (ev) => {
+        ev.stopPropagation();
+        if (!confirm(`Delete ${n.name} and everything in it from the layout? Items keep their Building, Floor and Room values.`)) return;
+        try { await api(`/api/locations/${n.id}`, { method: "DELETE" }); refreshSitePage(); } catch (e) { toast(e.message); }
+      } }, "✕"));
+    return h("li", {},
+      h("div", { class: `tree-node${sp.locId === n.id ? " selected" : ""}`, onclick: () => spGo(n.id) },
+        h("span", {}, n.name), h("span", { class: "kind muted" }, ` ${KIND_LABEL[n.kind]} · ${n.items}${n.racks ? ` · ${n.racks} rack${n.racks > 1 ? "s" : ""}` : ""}`), tools),
+      n.children.length ? h("ul", {}, ...n.children.map(node)) : null);
+  };
+  $("#sp-tree").replaceChildren(
+    h("ul", {}, h("li", {},
+      h("div", { class: `tree-node${sp.locId ? "" : " selected"}`, onclick: () => spGo(null) }, h("b", {}, L.site.name),
+        manage ? h("span", { class: "tools" }, h("button", { class: "small", onclick: (ev) => { ev.stopPropagation(); addChild("building", null); } }, "+ building")) : null),
+      L.tree.length ? h("ul", {}, ...L.tree.map(node)) : h("p", { class: "muted" }, manage ? "No buildings yet: + building." : "No buildings yet."))),
+    L.not_placed ? h("p", { class: "muted" }, `${L.not_placed} item(s) at the site aren't in a building yet.`) : "",
+    L.missing.length ? h("div", { class: "notice" },
+      h("span", {}, "Used by items but not in the layout: " + L.missing.map((m) => `${m.path.join(" / ")} (${m.items})`).join(", ")),
+      manage ? h("button", { class: "small", onclick: async () => {
+        try {
+          const r = await api(`/api/sites/${sp.siteId}/layout/from-inventory`, { method: "POST" });
+          toast(`Added ${r.added.length}`);
+          refreshSitePage();
+        } catch (e) { toast(e.message); }
+      } }, "Add them") : null) : "");
+  const path = sp.data.path || [];
+  $("#sp-crumbs").replaceChildren(
+    h("span", { class: "link", onclick: () => switchView("sites") }, "Sites"), h("span", { class: "sep" }, "›"),
+    h("span", { class: "link", onclick: () => spGo(null) }, L.site.name),
+    ...path.flatMap((p) => [h("span", { class: "sep" }, "›"), h("span", { class: "link", onclick: () => spGo(p.id) }, p.name)]));
+}
+
+function renderSiteMain() {
+  const manage = can("inventory", "manage");
+  const d = sp.data;
+  const here = d.path.length ? d.path[d.path.length - 1] : null;
+  const parts = [];
+  parts.push(h("h2", {}, here ? `${KIND_LABEL[here.kind]}: ${here.name}` : `${sp.layout.site.name}: every rack`));
+  if (manage && here) {
+    parts.push(h("div", { class: "toolbar no-print" },
+      h("button", { onclick: () => spAddRack(here) }, "+ Add a rack here"),
+      d.unknown_racks.length ? h("span", { class: "muted" }, `Racks named on items but not in the inventory: ${d.unknown_racks.join(", ")}`) : null,
+      ...d.unknown_racks.slice(0, 5).map((name) => h("button", { class: "small", onclick: () => spAddRack(here, name) }, `Add ${name}`))));
+  } else if (d.unknown_racks.length) {
+    parts.push(h("p", { class: "muted" }, `Racks named on items but not in the inventory: ${d.unknown_racks.join(", ")}`));
+  }
+  if (!d.racks.length) {
+    parts.push(h("p", { class: "muted" }, here ? "No racks here yet. A rack is an inventory item of type rack; its items name it in their Rack column." :
+      "No racks at this site yet. Pick a room on the left and add one."));
+  }
+  parts.push(h("div", { class: "racks" }, ...d.racks.map((r) => rackCard(r, manage))));
+  if (d.racks.length) {
+    parts.push(h("p", { class: "muted rack-key" }, "Key: red, backup failing · orange edge, firmware behind · grey edge, inventory only (not managed) · " +
+      "dashed, a full-depth item seen from the other side." + (manage ? " Drag an item to move it; click it to open it." : " Click an item to open it.")));
+  }
+  if (here) {
+    const loose = h("div", { class: "loose-items" },
+      h("h3", {}, `Here, not in a rack (${d.items.length})`),
+      manage && d.racks.length ? h("p", { class: "muted no-print" }, "Drag an item onto a rack to put it in; drag it back here to take it out.") : null,
+      d.items.length ? h("div", { class: "rack-tray" }, ...d.items.map((i) => rackBlock(i, manage, null))) : h("p", { class: "muted" }, "Nothing."));
+    if (manage) dropTarget(loose, (id) => spMove(id, null, null, "front"));
+    parts.push(loose);
+  }
+  $("#sp-main").replaceChildren(...parts);
+}
+
+async function spAddRack(here, name = null) {
+  name = name || prompt("Name of the rack (e.g. HQ-R03)");
+  if (!name) return;
+  const u = Number(prompt("Height in U", "42")) || 42;
+  const values = { name, type: "rack", rack_units: u, site: sp.layout.site.name };
+  for (const p of sp.data.path) values[p.kind] = p.name;
+  try {
+    await api("/api/inventory/assets", { method: "POST", body: { values } });
+    toast(`Added ${name}`);
+    refreshSitePage();
+  } catch (e) { toast(e.message); }
+}
+
+function rackBlockClass(i) {
+  return ["rack-item", i.backup === "failed" ? "failed" : "", i.compliance === "behind" ? "behind" : "", i.managed ? "" : "inventory"].join(" ");
+}
+
+/** One item as a block: click to open it, drag to move it. */
+function rackBlock(i, manage, extra = "") {
+  const tip = [i.name, i.model, i.type, i.position ? `U${i.position}${i.height > 1 ? `-U${i.position + i.height - 1}` : ""}` : "",
+    i.depth === "half" ? "half depth" : "", i.backup === "failed" ? "backup failing" : "", i.compliance === "behind" ? "firmware behind" : ""]
+    .filter(Boolean).join(" · ");
+  return h("div", { class: `${rackBlockClass(i)} ${extra || ""}`, title: tip, draggable: manage && extra !== "other-side" ? "true" : null,
+    ondragstart: (ev) => {
+      // Where in the item it was picked up (U from its bottom), so it lands where it is dropped
+      const box = ev.currentTarget.getBoundingClientRect();
+      const fromTop = Math.floor((ev.clientY - box.top) / U_PX);
+      const grab = i.position ? Math.max(0, Math.min((i.height || 1) - 1, (i.height || 1) - 1 - fromTop)) : 0;
+      ev.dataTransfer.setData("text/plain", JSON.stringify({ id: i.id, grab }));
+      ev.dataTransfer.effectAllowed = "move";
+    },
+    onclick: () => spOpenItem(i.id) },
+  h("b", {}, i.name), i.height !== 1 || !i.position ? h("small", {}, [i.model, i.type].filter(Boolean).join(" · ")) : null);
+}
+
+const U_PX = 20; // the height of one U on screen (style.css .rack-face)
+
+function dropTarget(el, onDrop) {
+  el.addEventListener("dragover", (ev) => { ev.preventDefault(); el.classList.add("drop-ok"); });
+  el.addEventListener("dragleave", () => el.classList.remove("drop-ok"));
+  el.addEventListener("drop", (ev) => {
+    ev.preventDefault();
+    el.classList.remove("drop-ok");
+    let data = null;
+    try { data = JSON.parse(ev.dataTransfer.getData("text/plain")); } catch { return; }
+    if (data && data.id) onDrop(data.id, ev, data.grab || 0);
+  });
+}
+
+/** A rack: front and rear, U1 at the bottom, 0U items on the side, unplaced items below. */
+function rackCard(r, manage) {
+  const face = (side) => {
+    const grid = h("div", { class: "rack-face" });
+    for (let u = r.height; u >= 1; u--) {
+      const row = r.height - u + 1;
+      const num = h("div", { class: "u-num" }, u);
+      num.style.gridRow = String(row);
+      const slot = h("div", { class: "u-slot", title: `U${u}` });
+      slot.style.gridRow = String(row);
+      grid.append(num, slot);
+    }
+    for (const i of r.items) {
+      if (i.depth === "half" && i.face !== side) continue; // a half-depth item is on one face only
+      const behind = i.depth !== "half" && i.face !== side;
+      const top = i.position + i.height - 1;
+      if (i.position < 1 || top > r.height) continue; // listed in the problems
+      const el = rackBlock(i, manage, behind ? "other-side" : "");
+      el.style.gridRow = `${r.height - top + 1} / span ${i.height}`;
+      grid.append(el);
+    }
+    // Drop anywhere on the face: the U under the pointer is where the picked-up part lands.
+    if (manage) dropTarget(grid, (id, ev, grab) => {
+      const box = grid.getBoundingClientRect();
+      const u = r.height - Math.floor((ev.clientY - box.top - 2) / U_PX);
+      spMove(id, r.id, Math.max(1, Math.min(r.height, u) - grab), side);
+    });
+    return h("div", {}, h("div", { class: "rack-face-title" }, side === "front" ? "Front" : "Rear"), grid);
+  };
+  const tray = h("div", { class: "rack-tray" },
+    r.unplaced.length ? r.unplaced.map((i) => rackBlock(i, manage)) : h("span", { class: "muted" }, "In the rack, no position: none"));
+  if (manage) dropTarget(tray, (id) => spMove(id, r.id, null, "front"));
+  return h("div", { class: "rack", id: `rack-${r.id}` },
+    h("h3", {}, h("span", { class: "link", title: "Open the rack in the inventory", onclick: () => spOpenItem(r.id) }, r.name)),
+    h("p", { class: "muted" }, `${r.path.map((p) => p.name).join(" / ") || "Not in a room"} · ${r.height}U · ${r.used_u}U used, ${r.free_u}U free`),
+    r.problems.length ? h("ul", { class: "errtext" }, ...r.problems.map((p) => h("li", {}, p))) : null,
+    h("div", { class: "rack-faces" }, face("front"), face("rear"),
+      r.zero_u.length ? h("div", { class: "rack-side" }, h("div", { class: "rack-face-title" }, "0U"), ...r.zero_u.map((i) => rackBlock(i, manage))) : null),
+    h("div", { class: "muted" }, "In the rack, not placed:"), tray);
+}
+
+async function spMove(assetId, rackId, position, face) {
+  try {
+    await api("/api/racks/move", { method: "POST", body: { asset_id: assetId, rack_id: rackId, position, face } });
+    refreshSitePage();
+  } catch (e) { toast(e.message); }
+}
+
+/** Open an item's form over the site page; the page refreshes after a change. */
+async function spOpenItem(id) {
+  try {
+    if (!inv.meta) inv.meta = await api("/api/inventory/meta");
+    inv.rows = await api("/api/inventory/assets");
+    const r = inv.rows.find((x) => x.id === id);
+    if (r) invEdit(r, refreshSitePage);
+  } catch (e) { toast(e.message); }
+}
+
+$("#sp-back").addEventListener("click", () => switchView("sites"));
+$("#sp-print").addEventListener("click", () => window.print());
+$("#sp-details").addEventListener("click", async () => {
+  await site.loading;
+  const r = site.data.sites.find((x) => x.id === sp.siteId);
+  if (r) siteEdit(r);
+});

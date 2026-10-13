@@ -33,7 +33,8 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 - [x] Circuit list like the inventory: admins' custom columns (read from uploads by name), per-person columns, CSV uploads, blank templates ([circuits.md](circuits.md)); blank templates for the inventory too
 - [x] Sites: the list of sites with counts of items, devices, failing backups, firmware behind and circuits; circuits linked to sites; site names are links on every page; site detail with everything at the site; custom columns, import/export, blank template ([sites.md](sites.md))
 - [ ] Full install test on Ubuntu (owner, after the demo)
-- [ ] Rack view: a picture of each rack from the inventory's Rack, Position and Height (owner: build later)
+- [x] Site layout (buildings, floors, rooms) and rack elevations: front and rear, zero-U, half depth, drag to move with overlap checks, print ([racks.md](racks.md))
+- [ ] Site plans: a floor plan picture per floor, rooms marked on it to click into (owner: after the layout)
 - [ ] Later: one overview of several servers (the display feed is the starting point); several customers on one server kept as an idea
 
 ### Platform (inherited)
@@ -103,13 +104,15 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-12 | Ubuntu only: no Windows or Mac builds or installers of the full product (the demo still runs anywhere Python does) | The owner: the product is deployed on Ubuntu servers |
 | 2026-10-12 | Circuit list custom columns are text, read from uploads by their name; a header row with only known names is accepted (a blank template with few columns) | Circuit lists come from spreadsheets; checks belong in the sheet, and a template must import whatever columns were chosen |
 | 2026-10-12 | A circuit's site is the list's Site column, else its switch's site, else the site of the switch it was found on (migration 0008) | The owner: circuits linked to sites, "everything linked through"; most lists have no site column, and the switch's site is right for them |
+| 2026-10-13 | Sites are divided into buildings, floors and rooms (a room may sit straight in a building); items are placed by their Building/Floor/Room text, an item in a rack where its rack is | The owner: any site, not one design; text keeps imports and exports working, like Site |
+| 2026-10-13 | Rack positions are the item's lowest U; full depth fills front and rear, half depth one face; height 0 is zero-U | The usual rack convention; patch panels share a U front and rear |
 | 2026-10-12 | Sites are a list of their own (table `sites`); items and devices keep a Site text, matched to a site's name or code; renaming a site rewrites that text | The owner: a site list cross-referenced with the inventory, without changing how devices and backups store their site |
 
 ## Open questions
 
 **Owner's to-do, in this order (remind the owner each session):**
-1. Testing of what is built (next): the demo on the owner's computer, [try-it.md](try-it.md),
-   now including Sites and the circuit columns.
+1. Testing of what is built: the demo (owner, 2026-10-13: "everything looks good so far"),
+   now the site layout and rack elevations too ([try-it.md](try-it.md)).
 2. Full install test on Ubuntu ([install-online.md](install-online.md)), after the demo.
 3. Product name, then branding. Not decided yet (owner, 2026-10-12). Checked on the web:
    * ruled out: NetKeeper / NetKeeper Pro (live US trademark NETKEEPER, reg. 4944745, network
@@ -124,7 +127,8 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 4. Licence terms, editions and pricing: last.
 5. The licence signing key (`python -m app.licence_tool keygen`), any time before the first
    customer licence.
-6. Rack view (later).
+6. Site plans (floor plan pictures), after the rack elevations are tried.
+7. Lab testing on real devices (soon, by the owner).
 
 - Licence agreement: per installation or per site? Managed-service use? Support terms, warranty, liability cap, governing law ([legal/EULA-draft.md](legal/EULA-draft.md))
 
@@ -173,3 +177,4 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-12 | Networking-tool-kev | Circuit list: admins' custom columns (migration 0006), per-person columns, CSV uploads, blank templates (CSV/Excel, the columns you see or all); blank templates for the inventory |
 | 2026-10-12 | Networking-tool-kev | Sites tab (migration 0007): site list with counts from the inventory, site detail, sites the inventory uses but aren't listed, renames carried to items and devices, custom columns, import/export, blank template; demo has four sites |
 | 2026-10-12 | Networking-tool-kev | Circuits linked to sites (Site column, else the switch's site; migration 0008), circuit counts on Sites, site names linked on every page, site items open in the inventory |
+| 2026-10-13 | Networking-tool-kev | Site layout and rack elevations (migration 0009): buildings, floors, rooms from the inventory, site page with the tree and racks front and rear, drag to move with checks, rack names and sites linked from the inventory, print; demo has the layout and racks filled in |
