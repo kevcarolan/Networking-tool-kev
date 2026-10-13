@@ -109,6 +109,13 @@ you did and what you expected, and send it over.
 - [ ] **Settings › Email alerts**: Config changes, Compliance and Report (the emails need a
       real mail server).
 
+**Two-factor sign-in**
+- [ ] **Two-factor** (top right) › **Turn on**: scan the QR code with an authenticator app
+      on your phone (Microsoft or Google Authenticator), type its code, keep the recovery codes.
+      **Sign out** and in again: the code is asked for. Try a recovery code too.
+- [ ] **Users**: the *2FA* badge, and **Reset 2FA**. **Settings** › *Local users must use
+      two-factor sign-in*: a new local user sets it up at their first sign-in.
+
 **Everything else**
 - [ ] The **wall display** link (from the start-up messages) in a second window: the
       overview, the sites and network pages, and the upgrades page while an upgrade runs.

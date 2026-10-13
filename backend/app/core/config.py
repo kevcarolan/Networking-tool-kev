@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     # Local break-glass admin (works even if AD is down). Leave the hash empty to disable.
     local_admin_user: str = "admin"
     local_admin_password_hash: str = ""
+    local_admin_totp_secret: str = ""  # two-factor for the break-glass admin (totp.py)
 
     # Config backup tool
     scheduler_enabled: bool = True
@@ -73,6 +74,7 @@ class Settings(BaseSettings):
     command_timeout: int = 180
     history_retention_days: int = 90
     viewers_can_read_configs: bool = False
+    require_two_factor: bool = False  # local users must set up two-factor sign-in
 
     # Firmware tool
     firmware_check_minutes: int = 1440  # how often each device's version is re-read

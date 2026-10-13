@@ -78,6 +78,9 @@ OPTIONS = (
     Option("firmware_check_minutes", "Read each device's software version every (minutes)", int, 60, 10080),
     Option("circuit_scan_schedule", "Circuit location scan", str, high=40,
            help="'daily 03:00' (every night), 'sun 02:00' (weekly), server time; empty for none"),
+    Option("require_two_factor", "Local users must use two-factor sign-in", bool,
+           help="They set it up (an authenticator app) the next time they sign in. "
+                "AD users added on the Users page can turn it on themselves"),
     Option("viewers_can_read_configs", "Viewers may read device configs", bool,
            help="Configs contain password hashes and keys"),
     Option("upgrade_cpu_warn", "Upgrade pre-check: warn above CPU (%)", int, 1, 100),
