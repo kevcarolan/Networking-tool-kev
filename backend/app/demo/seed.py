@@ -236,6 +236,10 @@ def seed(client, settings, net) -> dict:
     sites(client)
     calendar(client, ids)
     _ok(client.post("/api/compliance/examples"))  # checked at each device's first backup
+    _ok(client.post("/api/monitoring/profiles", json={  # the simulated devices answer any secret
+        "name": "switches-v3", "version": "3", "username": "netops-mon", "level": "authPriv",
+        "auth_protocol": "SHA", "auth_key": "demo-auth-pass", "priv_protocol": "AES",
+        "priv_key": "demo-priv-pass", "is_default": True}))
     screen = _ok(client.post("/api/displays", json={"name": "Demo wall"})).json()
     return {"display_key": screen["key"], "ids": ids}
 

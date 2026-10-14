@@ -7,7 +7,8 @@
   pages in turn (each screen chooses which, ``PAGES``): an overview (backups, compliance,
   config changes, firmware, upgrades, server health, failing devices), the upgrades under
   way with the circuits they affect, a sites grid, and the network (syslog errors, config
-  changes, circuits that moved or went missing).
+  changes, circuits that moved or went missing), and monitoring (devices down, warnings,
+  restarts).
 * Installed servers serve the display on its own port (NETOPS_DISPLAY_PORT, 8443), and
   only there: the nginx site refuses /display/ and /api/display/ on the main port, and the
   host firewall decides who reaches the display port.
@@ -39,7 +40,8 @@ ATTENTION_ROWS = 12
 SEEN_EVERY = timedelta(minutes=1)
 COMING_UP = timedelta(hours=12)  # planned upgrades shown on the wall
 RECENT = timedelta(hours=24)  # config changes and syslog errors shown on the wall
-PAGES = {"overview": "Overview", "upgrades": "Upgrades", "sites": "Sites", "network": "Network"}
+PAGES = {"overview": "Overview", "monitoring": "Monitoring", "upgrades": "Upgrades",
+         "sites": "Sites", "network": "Network"}
 LIST_ROWS = 10
 
 
@@ -168,6 +170,7 @@ def snapshot(db: Session, state) -> dict:
         "attention_more": max(0, len(failing) - ATTENTION_ROWS),
         "firmware": firmware, "upgrades": upgrades, "server": _server(db),
         "compliance": None, "changes": None, "circuits": None, "syslog": None,
+        "monitoring": None,
     }
     failing_rules: dict[int, int] = {}
     if "backups" in modules:
@@ -178,7 +181,11 @@ def snapshot(db: Session, state) -> dict:
         out["circuits"], circuit_problems = _circuits(db)
     if "syslog" in modules and getattr(settings, "syslog_dir", None):
         out["syslog"] = _syslog(db, settings)
-    out["sites"] = _sites(db, devices, failing, behind, upgrades, failing_rules, circuit_problems)
+    down: dict[int, str] = {}
+    if "monitoring" in modules and getattr(settings, "monitor_dir", None):
+        out["monitoring"], down = _monitoring(db, settings, devices)
+    out["sites"] = _sites(db, devices, failing, behind, upgrades, failing_rules, circuit_problems,
+                          down)
     return out
 
 
@@ -368,8 +375,51 @@ def _syslog(db: Session, settings) -> dict:
             "top": [{"device": name(src), "count": n} for src, n in top]}
 
 
+def _monitoring(db: Session, settings, devices: dict) -> tuple[dict, dict[int, str]]:
+    """Devices down or with a warning, and the last day's events: names, sites and times
+    only (a reason can hold an address, so it is a kind of problem, not the text)."""
+    from app.tools.monitoring.api import EVENT_LABELS
+    from app.tools.monitoring.store import MonitorStore
+
+    store = MonitorStore(settings.monitor_dir)
+    status = store.status() or {}
+    running = bool(status) and time.time() - float(status.get("beat") or 0) < max(
+        3 * settings.monitor_poll_seconds, 120)
+    states = {k: v for k, v in store.states().items() if k in devices}
+    counts = {"up": 0, "warning": 0, "down": 0, "unknown": 0, "maintenance": 0}
+    down_rows, warn_rows, down = [], [], {}
+    for device_id, st in states.items():
+        d = devices[device_id]
+        counts[st["status"]] = counts.get(st["status"], 0) + 1
+        counts["maintenance"] += bool(st["maintenance"])
+        row = {"device": d.name, "site": d.site, "maintenance": bool(st["maintenance"]),
+               "since": datetime.fromtimestamp(st["since"], UTC).replace(tzinfo=None)
+               .isoformat(timespec="seconds")}
+        if st["status"] == "down":
+            down_rows.append(row)
+            down[device_id] = d.site
+        elif st["status"] == "warning":
+            problem = ("SNMP not answering" if st["snmp_ok"] == 0 else
+                       "no reply to ping" if st["ping_ok"] == 0 and st["snmp_ok"] else
+                       "missed a check")
+            warn_rows.append({**row, "problem": problem})
+    down_rows.sort(key=lambda r: (r["maintenance"], r["since"]))
+    warn_rows.sort(key=lambda r: r["since"])
+    now = time.time()
+    events = [{"device": devices[e["device_id"]].name, "kind": e["kind"],
+               "label": EVENT_LABELS.get(e["kind"], e["kind"]), "maintenance": bool(e["maintenance"]),
+               "at": datetime.fromtimestamp(e["ts"], UTC).replace(tzinfo=None).isoformat(timespec="seconds")}
+              for e in store.events(now - RECENT.total_seconds(), now + 60, limit=LIST_ROWS * 3)
+              if e["device_id"] in devices][:LIST_ROWS]
+    return {"running": running, "counts": counts, "monitored": len(states),
+            "down": down_rows[:LIST_ROWS], "down_more": max(0, len(down_rows) - LIST_ROWS),
+            "warnings": warn_rows[:LIST_ROWS], "warnings_more": max(0, len(warn_rows) - LIST_ROWS),
+            "events": events}, down
+
+
 def _sites(db: Session, devices: dict, failing: list, behind: set, upgrades: dict,
-           failing_rules: dict[int, int], circuit_problems: dict[str, int]) -> list[dict]:
+           failing_rules: dict[int, int], circuit_problems: dict[str, int],
+           down: dict[int, str] | None = None) -> list[dict]:
     """One tile per site: the site list's sites (by name or code), and any other Site value
     the devices use."""
     from app.tools.inventory.models import Site
@@ -382,7 +432,7 @@ def _sites(db: Session, devices: dict, failing: list, behind: set, upgrades: dic
         return s.name if s else (text or "-")
 
     sites = defaultdict(lambda: {"devices": 0, "failing": 0, "behind": 0, "upgrading": 0,
-                                 "compliance": 0, "circuits": 0, "listed": False})
+                                 "compliance": 0, "circuits": 0, "down": 0, "listed": False})
     for s in index.values():
         sites[s.name]["listed"] = True
     for d in devices.values():
@@ -396,4 +446,6 @@ def _sites(db: Session, devices: dict, failing: list, behind: set, upgrades: dic
         sites[site_of(j["site"])]["upgrading"] += 1
     for key, n in circuit_problems.items():
         sites[site_of(key)]["circuits"] += n
+    for site in (down or {}).values():
+        sites[site_of(site)]["down"] += 1
     return [{"site": name, **v} for name, v in sorted(sites.items(), key=lambda x: x[0].lower())]

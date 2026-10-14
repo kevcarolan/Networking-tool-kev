@@ -15,6 +15,9 @@ one database.
   really is on the network. See [docs/circuits.md](docs/circuits.md).
 * **Syslog**: the devices' log messages in one place, searchable, with email alerts and
   optional TLS. See [docs/syslog.md](docs/syslog.md).
+* **Monitoring**: every device pinged and read over SNMP (v2c, v3) once a minute: up, down,
+  response times, restarts, on the page, the network map and the wall display, with email
+  alerts. See [docs/monitoring.md](docs/monitoring.md).
 * Email alerts, a wall display for NOC screens, per-area user permissions, an activity
   report, and licences that unlock the tools ([docs/licensing.md](docs/licensing.md)).
 

@@ -49,6 +49,7 @@ def import_models() -> None:
     from app.tools.config_backup import models as backup_models  # noqa: F401
     from app.tools.firmware_upgrade import models as firmware_models  # noqa: F401
     from app.tools.inventory import models as inventory_models  # noqa: F401
+    from app.tools.monitoring import models as monitoring_models  # noqa: F401
 
 
 @contextmanager

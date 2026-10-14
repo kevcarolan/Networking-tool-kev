@@ -98,6 +98,7 @@ server checks every minute.
 | Upgrades | An upgrade job (live or dry run) has completed, failed, rolled back, or needs attention |
 | Licence | 30 and 7 days before the licence ends, and when it (or the trial) has ended |
 | Upgrade worker | The upgrade worker has been stopped for more than 10 minutes |
+| Devices down or up | A device went down, came back up or restarted (Monitoring). One email per check; devices in a calendar window or an upgrade are left out |
 | Syslog | Devices sent messages at the level you choose (Critical and worse by default) or worse. They are gathered into at most one email every few minutes (5 by default), listing up to 50, so a storm of messages is one email |
 | Report | The report (below), on the day and at the time you choose |
 
@@ -134,11 +135,15 @@ room. Its pages take turns every 20 seconds; each screen can show all of them or
 (the ticks next to each screen on the Settings page, then **Save pages**):
 
 * **Overview:**
-  * tiles for failing backups, compliance (devices failing a rule), config changes in the
+  * tiles for devices down (when Monitoring is in the licence), failing backups, compliance (devices failing a rule), config changes in the
     last 24 hours, firmware on standard (a percentage, with how many are behind),
     upgrades running, and server health (the upgrade worker and the licence);
   * the devices whose backups are failing, with the reason and for how long;
   * one box per site, coloured by its worst problem.
+* **Monitoring:** how many devices are down, with a warning, up and in maintenance; who is
+  down and for how long; the warnings (SNMP not answering, no reply to ping, a missed
+  check); and what went down, came back or restarted in the last 24 hours. Skipped when
+  nothing is monitored.
 * **Upgrades:**
   * every upgrade under way: the device, live or dry run, the versions, the current step
     with a progress bar, when the window ends, and the circuits it affects (by service and
@@ -147,7 +152,7 @@ room. Its pages take turns every 20 seconds; each screen can show all of them or
 
   This page is skipped when there are none.
 * **Sites:** a large box per site (from the site list), with its devices and what needs a
-  look: failing backups, firmware behind, compliance failures, circuits moved or missing.
+  look: devices down, failing backups, firmware behind, compliance failures, circuits moved or missing.
 * **Network:**
   * syslog errors and worse in the last 24 hours: counts per severity, and the latest by
     device, severity and type (e.g. `%LINK-3-UPDOWN`). The message text isn't shown, as it
@@ -187,7 +192,7 @@ purpose:
 * the break-glass admin;
 * ports, worker counts and timeouts.
 
-Edit `/etc/netops/netops.env`, then run `sudo systemctl restart netops netops-worker netops-syslog`.
+Edit `/etc/netops/netops.env`, then run `sudo systemctl restart netops netops-worker netops-syslog netops-monitor`.
 
 ## 3. Users and permissions
 
@@ -195,12 +200,12 @@ Edit `/etc/netops/netops.env`, then run `sudo systemctl restart netops netops-wo
 anyone without AD; at least 12 characters). Give each a level per area, or start from a
 preset:
 
-| Preset | Devices | Backups | Firmware | Upgrades | Circuits | Syslog |
-|---|---|---|---|---|---|---|
-| Viewer | view | view | view | view | view | view |
-| Backup operator | view | run | view | view | view | view |
-| Upgrader | view | configs | view | live | view | view |
-| Administrator | everything, plus Users, Activity and Settings | | | | |
+| Preset | Devices | Backups | Firmware | Upgrades | Circuits | Syslog | Monitoring |
+|---|---|---|---|---|---|---|---|
+| Viewer | view | view | view | view | view | view | view |
+| Backup operator | view | run | view | view | view | view | view |
+| Upgrader | view | configs | view | live | view | view | view |
+| Administrator | everything, plus Users, Activity and Settings | | | | | | |
 
 * AD users who aren't on the Users page get access from the AD groups.
 * **Two-factor sign-in** (a code from an authenticator app after the password): anyone on
@@ -306,16 +311,42 @@ The full procedure is in [upgrades.md](../upgrades.md).
 
 ## 6. Monitoring
 
-* **Health:** point your monitoring at `https://<server>/api/health`. It answers
+* **The devices:** the **Monitoring** page checks every device once a minute with ping and
+  SNMP, and shows which are up, down or need a look (next section).
+* **The server itself:** point your monitoring at `https://<server>/api/health`. It answers
   `{"ok": true}` when the web app is up.
 * **Logs:** sign-ins, failed sign-ins and every change go to the service log. Forward them
   to your syslog server with `deploy/hardening/rsyslog-forward.conf`
   ([security-hardening.md](../security-hardening.md) §9).
 * **Daily look:** the **Config backups** tiles show failing and never-backed-up devices,
   with the reason (wrong password, unreachable, timeout…).
-* **The devices' syslog:** the server collects it on the **Syslog** page (next section).
+* **The devices' syslog:** the server collects it on the **Syslog** page (6b).
 
-## 6a. Syslog from the devices
+## 6a. Monitoring the devices (ping and SNMP)
+
+The `netops-monitor` service pings every device and reads its SNMP name, description and
+uptime, once a minute. It only reads; it never changes a device.
+
+1. **Firewall:** the server's firewall must allow outgoing ping and UDP 161 to `DEVICE_NETS`
+   (both are in the supplied rules), and so must any firewall in between.
+2. **Devices:** on the Monitoring page, click **Help: set up devices**. Choose the platform,
+   check the server address, and copy the config: a read-only SNMPv3 user (SHA and AES)
+   allowed only from this server, or a read-only v2c community where v3 isn't possible.
+3. **SNMP profile:** **SNMP profiles** › **+ Add profile** with the same user and passwords,
+   ticked as the default. **Test on this device** checks it straight away. Devices on
+   another profile: tick them in the list and choose **Use this SNMP profile**.
+4. **Timing:** on **Settings › Site and defaults**, *check every (seconds)* (60), *down after
+   this many checks* (2) and *keep every check for (days)* (35).
+5. **Who sees it:** the **Monitoring** permission (none, view, manage) on the Users page.
+   SNMP profiles need *credentials* for Devices and credentials.
+6. **Alerts:** give a recipient **Devices down or up** under Email alerts.
+
+Planned work in the **Calendar** (a change, maintenance or outage) and upgrade jobs under
+way mark their devices *maintenance*: what happens to them is recorded, not emailed.
+
+Statuses, sizing and troubleshooting: [monitoring.md](../monitoring.md).
+
+## 6b. Syslog from the devices
 
 The server receives the devices' syslog on UDP and TCP 514 (the `netops-syslog` service)
 and keeps it in one file per day under `/var/lib/netops/syslog/`.
@@ -374,6 +405,8 @@ Settings, the key and the licence are kept. See [install-airgap.md](../install-a
 | "Your session has expired" | Sign-ins last at most `NETOPS_SESSION_MAX_AGE_HOURS` (12 by default), even while in use: sign in again |
 | "The upgrade worker isn't running" | `systemctl status netops-worker`; `journalctl -u netops-worker -n 50` |
 | "The syslog receiver isn't running" | `systemctl status netops-syslog`; `journalctl -u netops-syslog -n 50` |
+| "The monitoring poller isn't running" | `systemctl status netops-monitor`; `journalctl -u netops-monitor -n 50` |
+| A device shows down, or "SNMP: No answer (timed out)", but works | Ping and UDP 161 from the server: `DEVICE_NETS` in the firewall, firewalls in between, the device's SNMP access list and user or community ([monitoring.md](../monitoring.md#troubleshooting)) |
 | A device's syslog doesn't arrive, or shows as "not in the inventory" | `SYSLOG_SOURCES` in the firewall; the device's logging source interface must be the inventory address ([syslog.md](../syslog.md)) |
 | Can't add devices or start upgrades | The trial or licence has ended: Settings › Licence |
 | No email alerts arrive | Settings › Email alerts › **Send test email** shows the mail server's answer. Check `SMTP_HOSTS` in the firewall and the relay's certificate |

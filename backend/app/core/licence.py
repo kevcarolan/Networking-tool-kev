@@ -46,7 +46,7 @@ BEGIN, END = "-----BEGIN LICENCE-----", "-----END LICENCE-----"
 # The tools a licence can unlock. Inventory, users, settings, alerts and the wall display are
 # always there.
 MODULES = {"backups": "Config backups", "firmware": "Firmware", "upgrades": "Upgrade jobs",
-           "circuits": "Circuits", "syslog": "Syslog"}
+           "circuits": "Circuits", "syslog": "Syslog", "monitoring": "Monitoring"}
 
 INSTALL_ID = "install_id"
 TRIAL_STARTED = "trial_started_at"

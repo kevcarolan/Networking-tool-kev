@@ -515,3 +515,38 @@ pre.config.small { font-size: 11px; max-height: 120px; padding: 4px 6px; margin:
 .link:hover { text-decoration: underline; }
 /* A row's buttons stay on one line (td.actions is a table cell, not the wrapping .actions box) */
 td.actions { display: table-cell; }
+
+/* monitoring */
+.tile.mon-down .num { color: var(--fail); }
+.tile.mon-warning .num { color: var(--warn); }
+.tile.mon-up .num { color: var(--ok); }
+.tile.mon-maintenance .num { color: var(--accent); }
+.tile.mon-off .num, .tile.mon-unknown .num { color: var(--idle); }
+.badge.mon-up, .badge.ev-up, .badge.ev-snmp_ok { background: var(--ok-bg); color: var(--ok); }
+.badge.mon-down, .badge.ev-down { background: var(--fail-bg); color: var(--fail); font-weight: 600; }
+.badge.mon-warning, .badge.ev-restarted, .badge.ev-snmp_failed { background: var(--warn-bg); color: var(--warn); }
+.badge.mon-unknown, .badge.mon-waiting, .badge.mon-off { background: var(--idle-bg); color: var(--idle); }
+.badge.mon-maint { background: transparent; border: 1px solid var(--accent); color: var(--accent); margin-left: 4px; }
+#mon-table tbody tr { cursor: pointer; }
+#mon-table tr.down td:first-child + td { font-weight: 600; }
+#mon-table td.note { max-width: 420px; }
+#mon-events tbody tr { cursor: pointer; }
+th.pick, td.pick { width: 28px; }
+.toolbar.bulk { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 10px; }
+.seg { display: inline-flex; gap: 2px; }
+.seg button.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.mon-graph { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px; margin-bottom: 12px; }
+.mon-graph svg { width: 100%; height: auto; display: block; }
+.mon-graph text { font-size: 11px; fill: var(--muted); }
+.mon-graph .grid { stroke: var(--border); stroke-width: 1; }
+.mon-graph .line { fill: none; stroke: var(--accent); stroke-width: 1.8; }
+.mon-graph .band { fill: var(--accent); fill-opacity: 0.15; stroke: none; }
+.mon-graph .miss { fill: var(--warn); }
+.mon-graph .miss.all { fill: var(--fail); }
+dl.facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
+dl.facts dt { color: var(--muted); }
+dl.facts dd { margin: 0; overflow-wrap: anywhere; }
+.test-row { display: inline-flex; gap: 6px; align-items: center; }
+.topo-node.mon-up rect { stroke: var(--ok); stroke-width: 2; }
+.topo-node.mon-warning rect { stroke: var(--warn); stroke-width: 2.5; }
+.topo-node.mon-down rect { stroke: var(--fail); stroke-width: 3; fill: var(--fail-bg); }

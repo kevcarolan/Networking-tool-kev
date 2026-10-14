@@ -128,6 +128,11 @@ class Settings(BaseSettings):
     syslog_keep_free_mb: int = 2048  # stop storing while this much disk is still free
     syslog_rate_per_source: int = 2000  # messages a second from one sender; more are dropped
 
+    # Monitoring (the poller is its own service, netops-monitor; app/tools/monitoring/poller.py)
+    monitor_poll_seconds: int = 60  # Settings page: ping and SNMP every device this often
+    monitor_down_after: int = 2  # Settings page: polls in a row without an answer = down
+    monitor_keep_days: int = 35  # Settings page: every poll kept this long (daily totals: a year)
+    monitor_workers: int = 50  # devices polled at the same time
 
     def record_env(self) -> frozenset[str]:
         """The settings given in netops.env or the environment (not defaults)."""
@@ -150,6 +155,10 @@ class Settings(BaseSettings):
     @property
     def syslog_dir(self) -> Path:
         return self.data_dir / "syslog"
+
+    @property
+    def monitor_dir(self) -> Path:
+        return self.data_dir / "monitoring"
 
     def prepare(self) -> "Settings":
         """Create the data directory and fill in generated secrets."""

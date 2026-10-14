@@ -8,11 +8,13 @@ Sign in as ``demo`` / ``demo-password``. Backups, version checks, circuit scans 
 jobs (live ones too) all run against the simulator in app/demo/simnet.py; nothing is sent
 to a real device, and the device addresses are documentation addresses that are never
 routed. The upgrade worker runs inside this process. Syslog messages are made up
-(app/demo/syslog.py): three days of history, then one every few seconds. Uses its own data folder, never the
-real one, and needs no licence.
+(app/demo/syslog.py): three days of history, then one every few seconds. Monitoring polls
+the simulated devices (app/demo/monitor.py), with three days of made-up history. Uses its
+own data folder, never the real one, and needs no licence.
 """
 
 import argparse
+import asyncio
 import logging
 import shutil
 import threading
@@ -24,6 +26,7 @@ from fastapi.testclient import TestClient
 from app.core import licence
 from app.core.config import REPO_ROOT, Settings
 from app.demo import seed
+from app.demo import monitor as demo_monitor
 from app.demo import syslog as demo_syslog
 from app.main import create_app
 from app.worker import UpgradeWorker
@@ -35,6 +38,7 @@ def settings_for(data: Path, port: int) -> Settings:
         session_https_only=False, ldap_url="", local_admin_password_hash="",
         upgrade_live_platforms=seed.LIVE_PLATFORMS, upgrade_settle_seconds=10,
         upgrade_poll_seconds=5, upgrade_reload_timeout_min=10, circuit_scan_schedule="",
+        monitor_poll_seconds=30,
     ).prepare()
 
 
@@ -43,7 +47,7 @@ def build(data: Path, port: int, net=None, scheduler: bool = True) -> tuple:
     settings = settings_for(data, port)
     net = net or seed.build_network()
     app = create_app(settings, fetcher=seed.fetcher, fw_collector=net.show, upgrade_io=net,
-                     start_scheduler=scheduler)
+                     start_scheduler=scheduler, snmp_client=demo_monitor.sim_for(net))
     app.state.demo = True
     svc = app.state.job_service
     svc.sleep, svc.monotonic = net.sleep, net.monotonic
@@ -76,6 +80,11 @@ def first_run(app, net) -> dict | None:
             app.state.backup_service.run(device_id)
             app.state.firmware_service.check(device_id)
         app.state.circuit_scan.scan("demo")
+        poller = demo_monitor.build(app.state.settings, app.state.snmp_client, app.state.cipher)
+        demo_monitor.history(poller)  # three days of checks for the graphs
+        poller.housekeeping()
+        asyncio.run(poller.run_round())  # the page has today's state straight away
+        poller.store.close()
     return info
 
 
@@ -109,6 +118,7 @@ def main(argv=None) -> None:
     app, net, worker = build(args.data, args.port, net)
     threading.Thread(target=worker.run_forever, name="demo-worker", daemon=True).start()
     demo_syslog.start(app.state.settings, threading.Event())  # history, then a trickle
+    demo_monitor.start(app.state.settings, app.state.snmp_client, app.state.cipher)  # simulated
 
     url = f"http://127.0.0.1:{args.port}"
     print(f"\n  Demo running on {url}  (sign in as {seed.ADMIN_USER} / {seed.ADMIN_PASSWORD})")

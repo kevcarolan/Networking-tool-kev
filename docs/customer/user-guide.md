@@ -186,6 +186,29 @@ The master circuit list: every end device or service and the switch port it uses
 Upgrade jobs save the circuits on the device before and after, and warn about any that
 haven't come back. Details: [circuits.md](../circuits.md).
 
+## Monitoring
+
+Which devices are up, which are down, and which need a look. Every device is checked once a
+minute with ping and SNMP; the server only asks, it never changes anything.
+
+* **The tiles** count the devices **Down**, with a **Warning**, **Up**, in **maintenance** and
+  **Not monitored**. Click one to show only those. The list puts the worst first.
+* **Down:** no answer to ping or SNMP for two checks in a row (about two minutes).
+  **Warning:** it answers, but something needs a look; the *Note* says what (SNMP fails, no
+  reply to ping, a missed check). **maintenance:** in a calendar window or an upgrade, so
+  nobody is emailed about it.
+* **Each row:** response time, how long the device has been up (it restarted then), how
+  many checks it answered in the last 7 days, and since when it has been in its status.
+* **Click a device** for its response-time graph (6 hours to a year: the line is the
+  average, the band the worst, red marks the checks with no answer), how many checks it
+  answered over a day, a week, a month and a year, what it says about itself, and its
+  events (down, back up, restarted, SNMP stopped or started answering).
+* **Last 24 hours** under the list: everything that went down, came back or restarted.
+* **Network map:** the devices coloured green (up), orange (warning) and red (down).
+* With *manage*: switch monitoring, ping or SNMP off for a device (its window, or tick
+  several and use the bar above the list). **SNMP profiles** and **Help: set up devices**
+  (the SNMP config for each platform) are for admins; see [monitoring.md](../monitoring.md).
+
 ## Calendar
 
 Planned work in one place: every upgrade job's window (shown to people who can see upgrade
