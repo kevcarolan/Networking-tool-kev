@@ -20,6 +20,7 @@ from app.core.audit import audit
 from app.core.auth import User, require
 from app.core.db import get_db
 from app.core.models import Device
+from app.tools.monitoring import health as hw
 from app.tools.monitoring import howto
 from app.tools.monitoring import ifaces as ifm
 from app.tools.monitoring.models import LEVELS, VERSIONS, MonitorTarget, SnmpProfile
@@ -37,7 +38,8 @@ STATUS_LABELS = {"up": "Up", "warning": "Warning", "down": "Down", "unknown": "C
                  OFF: "Not monitored", WAITING: "Waiting for the first check"}
 EVENT_LABELS = {"down": "Down", "up": "Back up", "restarted": "Restarted",
                 "snmp_failed": "SNMP stopped answering", "snmp_ok": "SNMP answers again",
-                "port_down": "Port down", "port_up": "Port back up"}
+                "port_down": "Port down", "port_up": "Port back up",
+                "health_problem": "Hardware problem", "health_ok": "Hardware back to normal"}
 TOP_ROWS = 10
 MAX_RANGE_DAYS = 400
 
@@ -71,6 +73,7 @@ def device_rows(db: Session, store: MonitorStore, running: bool) -> list[dict]:
     profiles, default = _profiles(db)
     choices = {t.device_id: t for t in db.scalars(select(MonitorTarget))}
     states = store.states()
+    healths = store.health() or {}
     week = store.availability(7)
     sites = _sites(db)
     rows = []
@@ -99,8 +102,18 @@ def device_rows(db: Session, store: MonitorStore, running: bool) -> list[dict]:
             "maintenance": bool((st or {}).get("maintenance")),
             "sys_name": (st or {}).get("sys_name", ""), "availability_7d": week.get(d.id),
             "stale": bool(st) and not running,
+            **_health_summary(healths.get(d.id) if monitored and uses_snmp else None),
         })
     return rows
+
+
+def _health_summary(h: dict | None) -> dict:
+    if not h or not h.get("ts"):
+        return {"health": None, "cpu": None, "memory": None, "hardware_problems": []}
+    first = lambda kind: next((r["value"] for r in h["readings"] if r["kind"] == kind and r["value"] is not None), None)  # noqa: E731
+    cpu = [r["value"] for r in h["readings"] if r["kind"] == "cpu" and r["value"] is not None]
+    return {"health": h["status"], "cpu": max(cpu) if cpu else None, "memory": first("memory"),
+            "hardware_problems": sorted(h["problems"].values())}
 
 
 def counts_of(rows: list[dict]) -> dict:
@@ -108,6 +121,7 @@ def counts_of(rows: list[dict]) -> dict:
     for r in rows:
         counts[r["status"]] = counts.get(r["status"], 0) + 1
     counts["maintenance"] = sum(1 for r in rows if r["maintenance"] and r["monitored"])
+    counts["hardware"] = sum(1 for r in rows if r["hardware_problems"])
     return counts
 
 
@@ -179,6 +193,48 @@ def events(request: Request, hours: int = Query(24, ge=1, le=MAX_RANGE_DAYS * 24
                                     kinds=wanted, limit=limit)
     names = dict(db.execute(select(Device.id, Device.name)).all())
     return {"events": [_event_out(e, names) for e in rows], "labels": EVENT_LABELS}
+
+
+# --- hardware health -------------------------------------------------------------------------
+
+@router.get("/devices/{device_id}/health")
+def device_health(device_id: int, request: Request,
+                  hours: int = Query(24, ge=1, le=MAX_RANGE_DAYS * 24),
+                  db: Session = Depends(get_db), _: User = Depends(VIEW)):
+    """CPU, memory, temperatures, fans and power supplies as last read, and over time."""
+    d = db.get(Device, device_id)
+    if d is None:
+        raise HTTPException(404, "Device not found")
+    s = request.app.state.settings
+    store = store_of(request)
+    h = store.health(device_id) or {}
+    now = time.time()
+    since = now - hours * 3600
+    order = {"cpu": 0, "memory": 1, "psu": 2, "fan": 3, "temperature": 4}
+    readings = sorted(h.get("readings") or [], key=lambda r: (order.get(r["kind"], 9), r["name"]))
+    return {"device": d.name, "platform": d.platform, "read_at": h.get("ts"),
+            "status": h.get("status"), "error": h.get("error", ""),
+            "readings": [{**r, "kind_label": hw.KINDS.get(r["kind"], r["kind"])} for r in readings],
+            "problems": sorted((h.get("problems") or {}).values()), "sources": h.get("sources") or [],
+            "interval": s.monitor_health_seconds, "cpu_warn": s.monitor_cpu_warn,
+            "mem_warn": s.monitor_mem_warn, "hours": hours, "since_ts": since, "until_ts": now,
+            "detail": hours <= s.monitor_interface_keep_days * 24,
+            "graph": store.health_samples(device_id, since, now, buckets=min(288, max(24, hours * 4)),
+                                          detail_days=s.monitor_interface_keep_days)}
+
+
+@router.get("/hardware")
+def hardware(request: Request, db: Session = Depends(get_db), _: User = Depends(VIEW)):
+    """Every device with a hardware problem now."""
+    names = {d.id: d for d in db.scalars(select(Device))}
+    rows = []
+    for device_id, h in (store_of(request).health() or {}).items():
+        if h["problems"] and device_id in names:
+            rows.append({"device_id": device_id, "device": names[device_id].name,
+                         "site": names[device_id].site, "status": h["status"],
+                         "problems": sorted(h["problems"].values()), "read_at": h["ts"]})
+    rows.sort(key=lambda r: (r["status"] != hw.CRITICAL, r["device"]))
+    return {"devices": rows}
 
 
 # --- interfaces ------------------------------------------------------------------------------

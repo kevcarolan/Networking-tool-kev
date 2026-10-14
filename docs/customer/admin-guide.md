@@ -98,7 +98,7 @@ server checks every minute.
 | Upgrades | An upgrade job (live or dry run) has completed, failed, rolled back, or needs attention |
 | Licence | 30 and 7 days before the licence ends, and when it (or the trial) has ended |
 | Upgrade worker | The upgrade worker has been stopped for more than 10 minutes |
-| Devices down or up | A device went down, came back up or restarted, or a port with a description (or a port-channel) went down or came back (Monitoring). One email per check; devices in a calendar window or an upgrade are left out |
+| Devices down or up | A device went down, came back up or restarted, a hardware problem started or cleared (a failed fan or power supply, a temperature alarm, CPU or memory over the threshold), or a port with a description (or a port-channel) went down or came back (Monitoring). One email per check; devices in a calendar window or an upgrade are left out |
 | Syslog | Devices sent messages at the level you choose (Critical and worse by default) or worse. They are gathered into at most one email every few minutes (5 by default), listing up to 50, so a storm of messages is one email |
 | Report | The report (below), on the day and at the time you choose |
 
@@ -142,7 +142,8 @@ room. Its pages take turns every 20 seconds; each screen can show all of them or
   * one box per site, coloured by its worst problem.
 * **Monitoring:** how many devices are down, with a warning, up and in maintenance; who is
   down and for how long; the warnings (SNMP not answering, no reply to ping, a missed
-  check); what went down, came back or restarted in the last 24 hours; and the busiest
+  check, hardware problem); the hardware problems by device (for example "PowerSupply-2
+  failed"); what went down, came back or restarted in the last 24 hours; and the busiest
   ports and those with errors (port names only, never their descriptions). Skipped when
   nothing is monitored.
 * **Upgrades:**
@@ -326,8 +327,9 @@ The full procedure is in [upgrades.md](../upgrades.md).
 ## 6a. Monitoring the devices (ping and SNMP)
 
 The `netops-monitor` service pings every device and reads its SNMP name, description and
-uptime, once a minute. Every 5 minutes it also reads each device's interfaces: traffic,
-errors, discards and status. It only reads; it never changes a device.
+uptime, once a minute. Every 5 minutes it also reads each device's interfaces (traffic,
+errors, discards and status) and its hardware health (CPU, memory, temperatures, fans and
+power supplies). It only reads; it never changes a device.
 
 1. **Firewall:** the server's firewall must allow outgoing ping and UDP 161 to `DEVICE_NETS`
    (both are in the supplied rules), and so must any firewall in between.
@@ -342,7 +344,8 @@ errors, discards and status. It only reads; it never changes a device.
    * *down after this many checks* (2);
    * *keep every check for (days)* (35);
    * *read the interfaces every (seconds)* (300);
-   * *keep every interface reading for (days)* (7; after that, hourly figures are kept for 13 months).
+   * *keep every interface reading for (days)* (7; after that, hourly figures are kept for 13 months);
+   * *read hardware health every (seconds)* (300), *warn at CPU (%)* (85) and *warn at memory used (%)* (90).
 5. **Who sees it:** the **Monitoring** permission (none, view, manage) on the Users page.
    SNMP profiles need *credentials* for Devices and credentials.
 6. **Alerts:** give a recipient **Devices down or up** under Email alerts.

@@ -20,7 +20,7 @@ one database.
 | Firmware (version report, image library, upgrade jobs) | `backend/app/tools/firmware_upgrade/` | Built for every platform; needs lab testing ([docs/upgrades.md](docs/upgrades.md), [docs/upgrade-lab-tests.md](docs/upgrade-lab-tests.md)) |
 | Circuits (circuit list from Excel, live location from MAC/ARP tables) | `backend/app/tools/circuits/` | Done; live locations need lab testing ([docs/circuits.md](docs/circuits.md)) |
 | Syslog (receiver on 514, one file per day, search page, device setup help) | `backend/app/tools/syslog/` | Done ([docs/syslog.md](docs/syslog.md)) |
-| Monitoring (ping and SNMP: up/down, response times, restarts, interfaces and traffic; map, wall, alerts) | `backend/app/tools/monitoring/` | Phases 1 and 2 done; phase 3 (health) later ([docs/monitoring.md](docs/monitoring.md)) |
+| Monitoring (ping and SNMP: up/down, response times, restarts, interfaces and traffic, hardware health; map, wall, alerts) | `backend/app/tools/monitoring/` | Done: up/down, interfaces, hardware health ([docs/monitoring.md](docs/monitoring.md)); health readers need lab confirmation |
 | Network inventory (every device plus racks, servers, UPSs…; custom columns, import/export) | `backend/app/tools/inventory/` | Done ([docs/inventory.md](docs/inventory.md)) |
 | Sites (site list, what the inventory has at each) | `backend/app/tools/inventory/sites.py` | Done ([docs/sites.md](docs/sites.md)) |
 | Site layout and rack elevations (buildings, floors, rooms; drag to move) | `backend/app/tools/inventory/layout.py` | Done ([docs/racks.md](docs/racks.md)) |
@@ -145,7 +145,9 @@ remote); never sync the two automatically.
   (`store.py`: `state.db` with states, interfaces, events and daily totals, a file per UTC
   day of checks, `ifd-<day>.db` interface readings and `ifh-<month>.db` hourly rollups; not
   Alembic) and writes `status.json`; the web app only reads. Interfaces: `ifaces.py`
-  (IF-MIB columns, counters to rates). Read-only towards devices:
+  (IF-MIB columns, counters to rates). Hardware health: `health.py` (`PLATFORM_PROBES`, one
+  entry per platform, a test checks; readers from vendor MIB docs until confirmed in the lab;
+  the simulator answers them in `app/demo/monitor.py` `health_mib`). Read-only towards devices:
   ping sockets (`ping.py`) and SNMP GET/GETBULK (`snmp.py`, pysnmp), never SET, no traps
   (syslog covers device messages). SNMP profiles (`mon_profiles`, secrets encrypted) need
   `inventory:credentials`; choosing a device's profile needs `inventory:addresses`; area

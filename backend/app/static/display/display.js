@@ -57,7 +57,7 @@ function overview(d) {
   const m = d.monitoring;
   const tiles = h("div", { class: "tiles" },
     m ? tile("Devices down", m.counts.down,
-      `${m.counts.up} up · ${m.counts.warning} warning${m.counts.maintenance ? ` · ${m.counts.maintenance} in maintenance` : ""}${m.running ? "" : " · NOT CHECKING"}`,
+      `${m.counts.up} up · ${m.counts.warning} warning${m.counts.hardware ? ` · ${m.counts.hardware} hardware` : ""}${m.counts.maintenance ? ` · ${m.counts.maintenance} in maintenance` : ""}${m.running ? "" : " · NOT CHECKING"}`,
       m.down.some((x) => !x.maintenance) || !m.running ? "bad" : m.counts.warning || m.counts.down ? "warn" : "") : null,
     tile("Failing backups", b.failing,
       `${b.ok} OK · ${b.never} never backed up${b.disabled ? ` · ${b.disabled} off` : ""}`,
@@ -129,6 +129,12 @@ function monitoringPage(d) {
         h("span", {}, h("span", { class: "what" }, e.device), h("span", { class: "dim" }, ` · ${e.label}`)),
         h("span", { class: e.kind === "down" && !e.maintenance ? "why" : "dim" }, hhmm(when(e.at))))))
         : h("div", { class: "empty" }, "Nothing went down or restarted"))];
+  if (m.hardware && m.hardware.length) {
+    panels.push(h("div", { class: "panel" }, h("h2", {}, `Hardware (${m.counts.hardware})`),
+      h("ul", { class: "list" }, m.hardware.map((x) => h("li", {},
+        h("span", {}, h("span", { class: "what" }, x.device), x.site ? h("span", { class: "dim" }, ` · ${x.site}`) : ""),
+        h("span", { class: x.critical ? "why" : "warn-text" }, x.problems.join("; ")))))));
+  }
   if (m.busiest.length || m.port_errors.length) {
     panels.push(h("div", { class: "panel" }, h("h2", {}, "Busiest ports"),
       h("ul", { class: "list" }, m.busiest.map((p) => h("li", {},

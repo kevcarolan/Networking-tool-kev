@@ -378,7 +378,8 @@ def _syslog(db: Session, settings) -> dict:
 def _monitoring(db: Session, settings, devices: dict) -> tuple[dict, dict[int, str]]:
     """Devices down or with a warning, the last day's events, and the busiest ports and
     those with errors: names, sites, port names and numbers only (a reason or a port's
-    description can hold an address, so neither is shown)."""
+    description can hold an address, so neither is shown). Hardware problems name the part
+    as the device names it (e.g. "PowerSupply-2 failed")."""
     from app.tools.monitoring.api import EVENT_LABELS
     from app.tools.monitoring.store import MonitorStore
 
@@ -400,7 +401,8 @@ def _monitoring(db: Session, settings, devices: dict) -> tuple[dict, dict[int, s
             down_rows.append(row)
             down[device_id] = d.site
         elif st["status"] == "warning":
-            problem = ("SNMP not answering" if st["snmp_ok"] == 0 else
+            problem = ("hardware problem" if (st["reason"] or "").startswith("Hardware") else
+                       "SNMP not answering" if st["snmp_ok"] == 0 else
                        "no reply to ping" if st["ping_ok"] == 0 and st["snmp_ok"] else
                        "missed a check")
             warn_rows.append({**row, "problem": problem})
@@ -419,7 +421,16 @@ def _monitoring(db: Session, settings, devices: dict) -> tuple[dict, dict[int, s
     errors = sorted((r for r in ports if (r["errors"] or 0) + (r["discards"] or 0) > 0),
                     key=lambda r: -((r["errors"] or 0) * 10 + (r["discards"] or 0)))[:6]
     port = lambda r: {"device": devices[r["device_id"]].name, "port": r["name"] or r["descr"]}  # noqa: E731
+    hardware = []
+    for device_id, h in (store.health() or {}).items():
+        if h["problems"] and device_id in devices and device_id in states:
+            hardware.append({"device": devices[device_id].name, "site": devices[device_id].site,
+                             "critical": h["status"] == "critical",
+                             "problems": sorted(h["problems"].values())[:3]})
+    hardware.sort(key=lambda r: (not r["critical"], r["device"]))
+    counts["hardware"] = len(hardware)
     return {"running": running, "counts": counts, "monitored": len(states),
+            "hardware": hardware[:LIST_ROWS],
             "busiest": [{**port(r), "util": round(util(r), 3)} for r in busiest],
             "port_errors": [{**port(r), "errors": r["errors"] or 0, "discards": r["discards"] or 0}
                             for r in errors],

@@ -48,6 +48,8 @@ class SimMonitor:
         self.rtt: dict[str, float] = {}
         self.boot: dict[str, float] = {}
         self.no_interfaces: set[str] = set()  # answers the system values only
+        self.faults: dict[str, set[str]] = {}  # device -> hardware faults: psu2, fan2, temp
+        self.cpu: dict[str, float] = {}  # device -> CPU % (else a quiet daily curve)
         self._reloads: dict[str, int] = {}
         self._was_up: dict[str, bool] = {}
         self._rand = random.Random(seed)
@@ -89,7 +91,12 @@ class SimMonitor:
         values = {SYS_NAME: name, SYS_UPTIME: int((self.clock() - boot) * 100) % 2**32,
                   SYS_DESCR: DESCR.get(platform, "Network device {v}").format(v=getattr(dev, "version", "")),
                   SYS_OBJECT_ID: OBJECT_ID.get(platform, "1.3.6.1.4.1.8072.3.2.10")}
-        return {o: values.get(o) for o in oids}
+        mib = self.mib(name, platform)
+        return {o: values[o] if o in values else mib.get(o) for o in oids}
+
+    def mib(self, name: str, platform: str) -> dict[str, object]:
+        """The device's hardware health values (instance OID -> value), as its vendor's MIBs give them."""
+        return health_mib(name, platform, self.clock(), self.faults.get(name, set()), self.cpu.get(name))
 
     async def walk(self, target, oid: str, max_rows: int = 20000) -> list:
         await self.get(target, [SYS_NAME])
@@ -98,10 +105,93 @@ class SimMonitor:
             return []
         key = next((k for k, v in ifm.COLUMNS.items() if v == oid), None)
         if key is None:
-            return []
+            mib = self.mib(name, getattr(dev, "platform", ""))
+            rows = [(o, v) for o, v in mib.items() if o.startswith(oid + ".")]
+            return sorted(rows, key=lambda r: [int(x) for x in r[0].split(".")])[:max_rows]
         t = self.clock()
         return [(f"{oid}.{p.index}", p.value(key, t))
                 for p in ports_of(name, getattr(dev, "platform", ""))][:max_rows]
+
+
+# --- the simulated hardware -----------------------------------------------------------------
+
+def health_mib(name: str, platform: str, t: float, faults: set[str], cpu: float | None) -> dict[str, object]:
+    """CPU, memory, temperatures, fans and power supplies in the MIBs the health readers use
+    for each platform (app/tools/monitoring/health.py)."""
+    seed = sum(ord(c) for c in name)
+    day = math.sin(2 * math.pi * t / DAY + math.pi / 2 - 2 * math.pi * PEAK_HOUR / 24)
+    load = cpu if cpu is not None else round(8 + seed % 9 + 6 * max(day, 0) + (seed % 3), 1)
+    mem = 35 + seed % 30
+    temp = 30 + seed % 8 + round(3 * max(day, 0))
+    m: dict[str, object] = {}
+    ok_psu2 = "psu2" not in faults
+    ok_fan2 = "fan2" not in faults
+    hot = "temp" in faults
+    if platform in ("cisco_ios", "cisco_asa", "cisco_nxos"):
+        m["1.3.6.1.4.1.9.9.109.1.1.1.1.8.1"] = int(load)  # cpmCPUTotal5minRev
+        if platform == "cisco_asa":
+            m["1.3.6.1.4.1.9.9.48.1.1.1.2.1"] = "System memory"
+            m["1.3.6.1.4.1.9.9.48.1.1.1.5.1"] = mem * 80_000_000 // 100
+            m["1.3.6.1.4.1.9.9.48.1.1.1.6.1"] = (100 - mem) * 80_000_000 // 100
+        else:
+            m["1.3.6.1.4.1.9.9.109.1.1.1.1.12.1"] = mem * 8_000_000 // 100  # KB used
+            m["1.3.6.1.4.1.9.9.109.1.1.1.1.13.1"] = (100 - mem) * 8_000_000 // 100
+    if platform == "cisco_ios":
+        b = "1.3.6.1.4.1.9.9.13.1"
+        for i, (n, v) in enumerate((("Inlet Temp Sensor", temp), ("Hotspot Temp Sensor", temp + 14)), 1):
+            m[f"{b}.3.1.2.{i}"], m[f"{b}.3.1.3.{i}"] = f"Switch 1 - {n}", v + (25 if hot else 0)
+            m[f"{b}.3.1.6.{i}"] = 3 if hot else 1
+        for i in (1, 2, 3):
+            m[f"{b}.4.1.2.{i}"], m[f"{b}.4.1.3.{i}"] = f"Switch 1 - FAN {i}", 1 if i != 2 or ok_fan2 else 6
+        m[f"{b}.5.1.2.1"], m[f"{b}.5.1.3.1"] = "Switch 1 - Power Supply A", 1
+        m[f"{b}.5.1.2.2"], m[f"{b}.5.1.3.2"] = "Switch 1 - Power Supply B", 1 if ok_psu2 else 6
+    if platform == "cisco_nxos":
+        s, f = "1.3.6.1.4.1.9.9.91.1.1.1.1", "1.3.6.1.4.1.9.9.117.1"
+        for k, n, v in ((21590, "module-1 FRONT", temp), (21591, "module-1 BACK", temp + 6),
+                        (21592, "module-1 CPU", temp + 12)):
+            m[f"{s}.1.{k}"], m[f"{s}.2.{k}"], m[f"{s}.3.{k}"] = 8, 9, 0
+            m[f"{s}.4.{k}"], m[f"{s}.5.{k}"], m[f"{ENT_NAME}.{k}"] = v, 1, n
+        for k, n, ok in ((470, "PowerSupply-1", True), (471, "PowerSupply-2", ok_psu2)):
+            m[f"{f}.1.2.1.2.{k}"], m[f"{ENT_NAME}.{k}"] = 2 if ok else 8, n
+        for k in (534, 535, 536, 537):
+            m[f"{f}.4.1.1.1.{k}"], m[f"{ENT_NAME}.{k}"] = 2 if k != 535 or ok_fan2 else 3, f"Fan Module-{k - 533}"
+    if platform == "juniper_junos":
+        b = "1.3.6.1.4.1.2636.3.1.13.1"
+        rows = [("9.1.0.0", "Routing Engine 0", 2, temp + 8, int(load), mem),
+                ("7.1.0.0", "FPC: QFX5120-48Y @ 0/*/*", 2, temp + 12, 0, 0),
+                ("2.1.0.0", "Power Supply 0", 2, 0, 0, 0), ("2.2.0.0", "Power Supply 1", 2 if ok_psu2 else 6, 0, 0, 0),
+                ("4.1.0.0", "Fan Tray 0 Fan 0", 2, 0, 0, 0), ("4.2.0.0", "Fan Tray 1 Fan 0", 2 if ok_fan2 else 6, 0, 0, 0)]
+        for k, d, st, tp, c, me in rows:
+            m[f"{b}.5.{k}"], m[f"{b}.6.{k}"], m[f"{b}.7.{k}"], m[f"{b}.8.{k}"], m[f"{b}.11.{k}"] = d, st, tp, c, me
+    if platform == "aruba_osswitch":
+        m["1.3.6.1.4.1.11.2.14.11.5.1.9.6.1.0"] = int(load)
+        m["1.3.6.1.4.1.11.2.14.11.5.1.1.2.1.1.1.5.1"] = 400_000_000
+        m["1.3.6.1.4.1.11.2.14.11.5.1.1.2.1.1.1.6.1"] = 400_000_000 * (100 - mem) // 100
+        for i, (d, st) in enumerate((("Fan Sensor", 4 if ok_fan2 else 2), ("Power Supply Sensor", 4 if ok_psu2 else 2),
+                                     ("Over-temperature Sensor", 2 if hot else 4)), 1):
+            m[f"1.3.6.1.4.1.11.2.14.11.1.2.6.1.7.{i}"], m[f"1.3.6.1.4.1.11.2.14.11.1.2.6.1.4.{i}"] = d, st
+    if platform == "mikrotik_routeros":
+        for i, (n, v, u) in enumerate((("temperature", temp + 10, 1), ("cpu-temperature", temp + 20, 1),
+                                       ("fan1-speed", 5200, 2), ("fan2-speed", 5100 if ok_fan2 else 0, 2)), 1):
+            g = "1.3.6.1.4.1.14988.1.1.3.100.1"
+            m[f"{g}.2.{i}"], m[f"{g}.3.{i}"], m[f"{g}.4.{i}"] = n, v, u
+    if platform in ("arista_eos", "dell_os10", "allied_awplus", "mikrotik_routeros"):
+        for core in range(1, 5):  # HOST-RESOURCES: per core, the last minute
+            m[f"1.3.6.1.2.1.25.3.3.1.2.{core}"] = max(0, int(load) + core - 2)
+        h = "1.3.6.1.2.1.25.2.3.1"
+        m[f"{h}.2.1"], m[f"{h}.3.1"], m[f"{h}.4.1"] = "1.3.6.1.2.1.25.2.1.2", "RAM", 1024
+        m[f"{h}.5.1"], m[f"{h}.6.1"] = 8_000_000, 8_000_000 * mem // 100
+    if platform in ("arista_eos", "dell_os10", "allied_awplus"):
+        e = "1.3.6.1.2.1.99.1.1.1"
+        sensors = [(100006001, "Cpu temp sensor", 8, temp + 15, 1), (100006002, "Inlet sensor", 8, temp, 1 if not hot else 3),
+                   (100601111, "Fan 1/1", 10, 8100, 1), (100602111, "Fan 2/1", 10, 8000 if ok_fan2 else 0, 1 if ok_fan2 else 3)]
+        for k, n, kind, v, st in sensors:
+            m[f"{e}.1.{k}"], m[f"{e}.2.{k}"], m[f"{e}.3.{k}"] = kind, 9, 0
+            m[f"{e}.4.{k}"], m[f"{e}.5.{k}"], m[f"{ENT_NAME}.{k}"] = v, st, n
+    return m
+
+
+ENT_NAME = "1.3.6.1.2.1.47.1.1.1.1.7"
 
 
 # --- the simulated interfaces --------------------------------------------------------------
@@ -219,6 +309,8 @@ def ports_of(name: str, platform: str) -> list[SimPort]:
 DOWN = {"bn-sw3"}  # unplugged at the branch (its backups fail too)
 NO_PING = {"hq-fw1"}  # the firewall drops ping; SNMP answers
 SNMP_ERROR = {"bn-rtr1": "The device doesn't know this SNMPv3 user"}  # not set up for SNMP yet
+FAULTS = {"hq-core2": {"psu2"}, "wh-sw3": {"fan2"}}  # a failed power supply, a stopped fan
+CPU_HIGH = {"dc1-leaf2": 92.0}  # a busy control plane
 RTT = {"HQ": 1.2, "DC1": 0.6, "Branch-North": 14.0, "Branch-South": 18.0, "Warehouse": 26.0}
 HISTORY_DAYS = 3
 
@@ -233,6 +325,8 @@ def sim_for(net, clock=time.time) -> SimMonitor:
     sim.no_ping |= NO_PING
     sim.snmp_error.update(SNMP_ERROR)
     sim.rtt.update({d.name: RTT.get(d.site, 2.0) for d in seed.DEVICES})
+    sim.faults.update({k: set(v) for k, v in FAULTS.items()})
+    sim.cpu.update(CPU_HIGH)
     return sim
 
 
@@ -318,8 +412,57 @@ def history(poller, now: float | None = None) -> None:
                               "in_err": p.value("in_err", t0), "out_err": 0, "in_disc": 0,
                               "out_disc": p.value("out_disc", t0), "hc": True}} for p in ports]
         poller.store.save_interfaces(device_id, rows, isamples)
+    # hardware health: a reading every 15 minutes, and where it stands now
+    import asyncio
+
+    from app.tools.monitoring import health as hw
+    from app.tools.monitoring.snmp import SnmpTarget
+
+    sim, clock = poller.snmp, poller.snmp.clock
+    fault_since = {"hq-core2": now - 6 * 3600, "wh-sw3": now - 30 * 3600}
+    try:
+        for name, device_id in ids.items():
+            if name in DOWN or name in SNMP_ERROR:
+                continue
+            target = SnmpTarget(seed.address(next(i for i, d in enumerate(seed.DEVICES) if d.name == name)))
+            hsamples, record = [], None
+            t = start - start % 900
+            while t <= t0:
+                sim.clock = lambda t=t: t
+                faults = sim.faults.get(name, set())
+                if name in fault_since and t < fault_since[name]:
+                    sim.faults[name] = set()
+                if name in CPU_HIGH and t < now - 2 * 3600:
+                    sim.cpu.pop(name, None)
+                readings, sources = asyncio.run(hw.read(sim, target, platform.get(name, "")))
+                sim.faults[name] = faults
+                if name in CPU_HIGH:
+                    sim.cpu[name] = CPU_HIGH[name]
+                hw.judge(readings, poller.settings.monitor_cpu_warn, poller.settings.monitor_mem_warn)
+                for kind in ("cpu", "memory"):
+                    vals = [r.value for r in readings if r.kind == kind and r.value is not None]
+                    if vals:
+                        hsamples.append((t, kind, max(vals)))
+                for r in [r for r in readings if r.kind == "temperature" and r.value is not None][:8]:
+                    hsamples.append((t, f"t:{r.name}", r.value))
+                record = {"device_id": device_id, "ts": t, "status": hw.worst(readings),
+                          "readings": [r.as_dict() for r in readings], "problems": hw.problems(readings),
+                          "sources": sources, "discovered": t, "error": ""}
+                t += 900
+            if record:
+                poller.store.save_health(record, hsamples)
+    finally:
+        sim.clock = clock
+    poller.store.save([], [
+        {"ts": fault_since["hq-core2"], "device_id": ids["hq-core2"], "kind": "health_problem",
+         "detail": "PowerSupply-2 failed"},
+        {"ts": fault_since["wh-sw3"], "device_id": ids["wh-sw3"], "kind": "health_problem",
+         "detail": "Fan 2/1 failed"},
+        {"ts": now - 2 * 3600, "device_id": ids["dc1-leaf2"], "kind": "health_problem", "detail": "CPU 92%"},
+    ], [])
     poller.store.rollup(now, back_hours=HISTORY_DAYS * 24 + 2)
     poller.if_prev = {}
+    poller.health = {}
 
 
 def start(settings, sim: SimMonitor, cipher) -> None:
