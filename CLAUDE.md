@@ -20,6 +20,7 @@ one database.
 | Firmware (version report, image library, upgrade jobs) | `backend/app/tools/firmware_upgrade/` | Built for every platform; needs lab testing ([docs/upgrades.md](docs/upgrades.md), [docs/upgrade-lab-tests.md](docs/upgrade-lab-tests.md)) |
 | Circuits (circuit list from Excel, live location from MAC/ARP tables) | `backend/app/tools/circuits/` | Done; live locations need lab testing ([docs/circuits.md](docs/circuits.md)) |
 | Syslog (receiver on 514, one file per day, search page, device setup help) | `backend/app/tools/syslog/` | Done ([docs/syslog.md](docs/syslog.md)) |
+| Monitoring (ping and SNMP: up/down, response times, restarts; map, wall, alerts) | `backend/app/tools/monitoring/` | Phase 1 done; phase 2 (interfaces) next ([docs/monitoring.md](docs/monitoring.md)) |
 | Network inventory (every device plus racks, servers, UPSs…; custom columns, import/export) | `backend/app/tools/inventory/` | Done ([docs/inventory.md](docs/inventory.md)) |
 | Sites (site list, what the inventory has at each) | `backend/app/tools/inventory/sites.py` | Done ([docs/sites.md](docs/sites.md)) |
 | Site layout and rack elevations (buildings, floors, rooms; drag to move) | `backend/app/tools/inventory/layout.py` | Done ([docs/racks.md](docs/racks.md)) |
@@ -92,7 +93,7 @@ remote); never sync the two automatically.
   only for `backups:configs`. Licences (`core/licence.py`, made with `python -m app.licence_tool`, see
   [docs/licensing.md](docs/licensing.md)): a 60-day trial, then signed licences with an end
   date, a device count and the tools it unlocks (`licence.MODULES`: backups, firmware,
-  upgrades, circuits, syslog; one full install, the licence unlocks parts of it). A tool's
+  upgrades, circuits, syslog, monitoring; one full install, the licence unlocks parts of it). A tool's
   router gets `Depends(licence.module(...))`, its scheduler checks `licence.has_module`,
   and the GUI greys out its tab (`data-module`). The trial and older licences unlock
   everything. Without a licence, only new work is blocked (`licence.require_active`,
@@ -107,7 +108,7 @@ remote); never sync the two automatically.
   `api()` helpers in `app.js`, keep styles on the CSS variables in `style.css` (light and dark),
   and hide admin-only controls with `data-admin`.
 * Permissions are a level per area (`core/permissions.py`: inventory, backups, firmware, upgrades,
-  circuits; inventory's `addresses` level guards anything that decides where a credential is sent) plus the admin flag (users, activity). Protect endpoints with `require(area, level)`
+  circuits, syslog, monitoring; inventory's `addresses` level guards anything that decides where a credential is sent) plus the admin flag (users, activity). Protect endpoints with `require(area, level)`
   (`require_admin` only for users/activity); in the GUI use `can(area, level)` and
   `data-perm="area:level"`. Users are added on the Users page (`core/users.py`, table `users`) or
   come from AD groups as a fallback ([docs/users.md](docs/users.md)). Live upgrade jobs also
@@ -139,6 +140,18 @@ remote); never sync the two automatically.
   address, matched to the inventory in `sources.py`. Suggested device configs per platform
   are in `howto.py`: add one for every new platform (a test checks). The demo fills it from
   `app/demo/syslog.py`.
+* Monitoring (`tools/monitoring/`): the poller (`poller.py`, `python -m app.tools.monitoring`,
+  `netops-monitor.service`, no capabilities) is the only writer of `<data>/monitoring/`
+  (`store.py`: `state.db` with states, events and daily totals, plus a file per UTC day;
+  not Alembic) and writes `status.json`; the web app only reads. Read-only towards devices:
+  ping sockets (`ping.py`) and SNMP GET/GETBULK (`snmp.py`, pysnmp), never SET, no traps
+  (syslog covers device messages). SNMP profiles (`mon_profiles`, secrets encrypted) need
+  `inventory:credentials`; choosing a device's profile needs `inventory:addresses`; area
+  `monitoring` (none/view/manage). Ping and SNMP are injectable (`Poller(snmp=, pinger=)`,
+  `create_app(snmp_client=)`); tests and the demo use `app/demo/monitor.py` (`SimMonitor`).
+  Suggested SNMP configs per platform are in `howto.py`: add one for every new platform (a
+  test checks). Calendar windows and upgrades under way mark devices "maintenance" (events
+  kept, not emailed). The wall display shows names and statuses only, never reasons.
 * Inventory (`tools/inventory/`): table `assets`, one row per thing; a row with `device_id`
   is managed and every device gets one (`fields.sync_devices`, which also links an existing
   row by name or address). Built-in columns are `fields.STANDARD` (page, import and export

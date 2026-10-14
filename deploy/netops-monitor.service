@@ -1,0 +1,53 @@
+# Monitoring poller (systemd). Installed by deploy/airgap/install.sh.
+# Every minute it pings each monitored device and reads its SNMP system values (GET only,
+# never SET), and keeps what it finds in /var/lib/netops/monitoring/ (the Monitoring page
+# reads it). A separate service, so restarting the web app doesn't stop the checks.
+# No extra rights: ping uses the kernel's ping sockets (net.ipv4.ping_group_range, which
+# Ubuntu allows for every group), and SNMP polling is ordinary outgoing UDP 161.
+# Check the sandboxing with:  systemd-analyze security netops-monitor
+[Unit]
+Description=Monitoring poller (ping and SNMP)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=netops
+Group=netops
+WorkingDirectory=/opt/netops/current/backend
+EnvironmentFile=/etc/netops/netops.env
+Environment=NETOPS_DATA_DIR=/var/lib/netops NETOPS_CREDENTIAL_KEY_FILE=/etc/netops/credential.key
+ExecStart=/opt/netops/current/venv/bin/python -m app.tools.monitoring
+SyslogIdentifier=netops-monitor
+Restart=always
+RestartSec=5
+UMask=0027
+
+# Sandboxing: writes only to its data folder, sees no home folders or devices, no
+# privileges at all.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/netops
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RemoveIPC=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+
+[Install]
+WantedBy=multi-user.target

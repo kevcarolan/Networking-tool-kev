@@ -250,6 +250,17 @@ What the installer set up, for your security review:
   addresses can be faked, so treat syslog as a diagnostic aid, not evidence). The messages
   can hold user names and addresses: the **Syslog** permission controls who sees them,
   and downloads are in the activity report ([syslog.md](syslog.md)).
+* **Monitoring (ping and SNMP, outgoing to `DEVICE_NETS`):** its own service,
+  `netops-monitor`, as the `netops` account with the same sandbox and no extra rights at
+  all (ping uses the kernel's ping sockets, `net.ipv4.ping_group_range`). It only asks:
+  ICMP echo and SNMP GET/GETBULK, never SET, and it receives no traps. Use SNMPv3 with
+  authentication and encryption (SHA and AES), a read-only view, and an access list that
+  allows only this server: the Monitoring page's **Help: set up devices** has the config per
+  platform. SNMPv2c sends the community in clear text; keep it to devices that can't do v3,
+  on the management network. The SNMP passwords and communities are encrypted with the
+  credential key, never shown again, and managed only with the *credentials* level; choosing
+  which device gets them needs *addresses*. The wall display shows names and statuses only
+  ([monitoring.md](monitoring.md)).
 * **Licence:** checked on the server against a public key built into the code. Nothing is
   sent anywhere, and no outbound access is needed ([licensing.md](licensing.md)).
 * **Certificates:** the app can't write to `/etc/netops/tls` or reload nginx. A certificate

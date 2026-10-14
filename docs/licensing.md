@@ -31,18 +31,20 @@ Every server gets the full product. The licence decides which tools are unlocked
 | `upgrades` | Upgrade jobs (always brings `firmware`, which holds the images) |
 | `circuits` | Circuits: the circuit list and the nightly comparison with the network |
 | `syslog` | Syslog: the receiver, the Syslog page and syslog email alerts |
+| `monitoring` | Monitoring: the ping and SNMP poller, the Monitoring page, map colours, its wall display page and alerts |
 
 Always included: the device inventory and credentials, users and the activity report,
 Settings, email alerts for whatever is unlocked, and the wall display.
 
 * A tool that isn't unlocked is greyed out with a padlock in the top bar. Clicking it
   says it isn't in the licence and lists what is.
-* Its scheduled work doesn't run: no backups, version checks, circuit scans, or syslog
-  stored. Its pages and API are refused.
+* Its scheduled work doesn't run: no backups, version checks, circuit scans, syslog
+  stored, or monitoring checks. Its pages and API are refused.
 * Without **backups**, the Config backups page still lists the devices and lets you manage
   them, because the other tools need the inventory.
 * The **trial**, licences made before modules existed, and your own internal licence
-  unlock everything.
+  unlock everything. A licence that lists its modules unlocks only those: one made before
+  a module existed (such as `monitoring`) doesn't include it until it is renewed with it.
 * A module left out at renewal keeps its data. Nothing is deleted, and an upgrade job
   already under way still finishes or rolls back.
 
@@ -113,7 +115,7 @@ python -m app.licence_tool show acme-2027.lic
 
 * `--expires` is the **last day** the licence works.
 * `--devices` counts every device in the inventory.
-* `--modules`: `backups`, `firmware`, `upgrades`, `circuits`, `syslog`, comma separated.
+* `--modules`: `backups`, `firmware`, `upgrades`, `circuits`, `syslog`, `monitoring`, comma separated.
   Leave it out for all of them. `show` lists what a licence unlocks.
 * Send the `.lic` file, or its text, to the customer. It is not secret.
 

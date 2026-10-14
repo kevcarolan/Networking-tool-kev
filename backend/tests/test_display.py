@@ -126,7 +126,7 @@ def test_the_display_page_is_served(client):
 def test_each_screen_chooses_its_pages(admin):
     key = _screen(admin)["key"]
     screen = admin.get("/api/displays").json()["screens"][0]
-    assert screen["pages"] == ["overview", "upgrades", "sites", "network"]  # all by default
+    assert screen["pages"] == ["overview", "monitoring", "upgrades", "sites", "network"]  # all by default
     r = admin.put(f"/api/displays/{screen['id']}", json={"name": "NOC wall 1", "pages": ["network", "sites"]})
     assert r.status_code == 200 and r.json()["pages"] == ["sites", "network"]
     assert _feed(admin, key).json()["pages"] == ["sites", "network"]

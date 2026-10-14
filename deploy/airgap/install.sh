@@ -135,6 +135,7 @@ fi
 install -m 0644 "$STAGE/deploy/netops.service" /etc/systemd/system/netops.service
 install -m 0644 "$STAGE/deploy/netops-worker.service" /etc/systemd/system/netops-worker.service
 install -m 0644 "$STAGE/deploy/netops-syslog.service" /etc/systemd/system/netops-syslog.service
+install -m 0644 "$STAGE/deploy/netops-monitor.service" /etc/systemd/system/netops-monitor.service
 install -m 0644 "$STAGE/deploy/netops-backup.service" /etc/systemd/system/netops-backup.service
 install -m 0644 "$STAGE/deploy/netops-backup.timer" /etc/systemd/system/netops-backup.timer
 install -m 0750 "$STAGE/deploy/netops-backup.sh" /usr/local/sbin/netops-backup
@@ -215,6 +216,9 @@ if have_systemd; then
   # sending over TCP reconnect, UDP messages in that second are lost).
   systemctl enable --quiet netops-syslog
   systemctl restart netops-syslog || echo "The syslog receiver didn't start: check 'journalctl -u netops-syslog'."
+  # The monitoring poller: restarted with each release (it carries on where it was).
+  systemctl enable --quiet netops-monitor
+  systemctl restart netops-monitor || echo "The monitoring poller didn't start: check 'journalctl -u netops-monitor'."
   if [[ -n "${NGINX_PORT_CHANGED:-}${NGINX_DISPLAY_ADDED:-}" ]]; then
     if nginx -t 2>/dev/null; then
       systemctl reload nginx || true
@@ -247,6 +251,7 @@ if have_systemd; then
         ln -sfn "$CURRENT" "$PREFIX/current"
         systemctl restart netops
         systemctl restart netops-syslog 2>/dev/null || true
+        systemctl restart netops-monitor 2>/dev/null || true
         if health; then
           systemctl start netops-worker 2>/dev/null || true
           die "rolled back to $(basename "$CURRENT"); fix the problem above and try again"
@@ -279,7 +284,7 @@ if [[ -n "$FIRST_INSTALL" ]] && have_systemd && command -v nginx >/dev/null \
   ln -sf "$DISPLAY_SITE" /etc/nginx/sites-enabled/netops-display
   rm -f /etc/nginx/sites-enabled/default
   nginx -t && systemctl reload-or-restart nginx
-  systemctl enable --quiet --now netops netops-worker netops-syslog
+  systemctl enable --quiet --now netops netops-worker netops-syslog netops-monitor
   health || echo "The app hasn't answered yet: check 'journalctl -u netops'."
   SETUP_STARTED=1
 fi
@@ -311,7 +316,7 @@ Next steps (docs/install-airgap.md, section "First-time configuration"):
      /etc/nginx/sites-available/netops, then:
        ln -sf /etc/nginx/sites-available/netops /etc/nginx/sites-enabled/netops
        rm -f /etc/nginx/sites-enabled/default && nginx -t && systemctl reload nginx
-  3. sudo systemctl enable --now netops netops-worker netops-syslog
+  3. sudo systemctl enable --now netops netops-worker netops-syslog netops-monitor
   4. Production: apply the hardening steps in docs/security-hardening.md
      before adding real device credentials.
 EOF

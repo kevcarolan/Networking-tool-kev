@@ -91,6 +91,12 @@ OPTIONS = (
            help="When the folder is bigger, the oldest days are deleted first"),
     Option("syslog_inventory_only", "Syslog: keep messages only from inventory devices", bool,
            help="Otherwise every sender the server's firewall lets through is kept"),
+    Option("monitor_poll_seconds", "Monitoring: check every device every (seconds)", int, 30, 3600,
+           help="Ping and SNMP; 60 is usual"),
+    Option("monitor_down_after", "Monitoring: down after this many checks without an answer",
+           int, 1, 10, help="2 means a device is down after about two minutes of silence"),
+    Option("monitor_keep_days", "Monitoring: keep every check for (days)", int, 7, 400,
+           help="For the graphs. Daily totals (availability) are kept for a year"),
     Option("upgrade_backup_max_age_hours", "Take a fresh backup before an upgrade if older than (hours)",
            int, 1, 720),
 )

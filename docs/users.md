@@ -76,6 +76,7 @@ Each user has a level in each area. Each level includes the ones before it.
 | Upgrade jobs | none · **view**: jobs and reports · **dry run**: plan and run dry-run jobs · **live**: plan and run live upgrades |
 | Circuits | none · **view**: the list and exports · **manage**: upload the list and scan the network |
 | Syslog | none · **view**: search and download the devices' log messages (users added before syslog existed get **view**) |
+| Monitoring | none · **view**: which devices are up or down, response times, restarts · **manage**: also switch monitoring, ping or SNMP on and off per device (users added before monitoring existed get **view**). SNMP profiles need *credentials* for Devices and credentials, and choosing a device's profile needs *addresses* |
 
 **Administrator** (a tick box) means the top level everywhere, plus the Users and
 Activity pages.

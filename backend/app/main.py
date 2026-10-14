@@ -33,6 +33,7 @@ from app.tools.inventory import api as inventory_api
 from app.tools.config_backup import compliance as compliance_api
 from app.tools.inventory import layout as layout_api
 from app.tools.inventory import sites as sites_api
+from app.tools.monitoring import api as monitoring_api
 from app.tools.syslog import api as syslog_api
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -46,7 +47,7 @@ _SECURITY_HEADERS = {
 
 def create_app(settings: Settings | None = None, fetcher=fetch_config,
                start_scheduler: bool | None = None, fw_collector=run_commands,
-               upgrade_io: DeviceIO | None = None, mailer=None) -> FastAPI:
+               upgrade_io: DeviceIO | None = None, mailer=None, snmp_client=None) -> FastAPI:
     settings = settings or get_settings()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     init_engine(settings.database_url)
@@ -98,6 +99,7 @@ def create_app(settings: Settings | None = None, fetcher=fetch_config,
     app.state.alert_service = alert_service
     app.state.job_service = job_service
     app.state.upgrade_io = upgrade_io
+    app.state.snmp_client = snmp_client  # None: real SNMP (the profile Test button)
 
     app.add_middleware(
         SessionMiddleware, secret_key=settings.secret_key, session_cookie="netops_session",
@@ -138,6 +140,7 @@ def create_app(settings: Settings | None = None, fetcher=fetch_config,
     app.include_router(circuits_api.router, dependencies=[Depends(licence.module("circuits"))])
     app.include_router(topology_api.router, dependencies=[Depends(licence.module("circuits"))])
     app.include_router(syslog_api.router, dependencies=[Depends(licence.module("syslog"))])
+    app.include_router(monitoring_api.router, dependencies=[Depends(licence.module("monitoring"))])
 
     @app.get("/api/health", include_in_schema=False)
     def health():

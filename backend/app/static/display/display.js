@@ -1,7 +1,8 @@
 // The wall display. The link is  https://<server>:<port>/display/#key=<key>[&rotate=20]
 // The key stays in the #fragment, so it never reaches the web server's logs; it is sent
 // in the Authorization header. The pages the screen was set up with take turns: the
-// overview, the upgrades, the sites and the network (syslog, config changes, circuits).
+// overview, monitoring (devices down), the upgrades, the sites and the network (syslog,
+// config changes, circuits).
 "use strict";
 
 const params = new URLSearchParams(location.hash.slice(1));
@@ -53,7 +54,11 @@ function overview(d) {
   const running = u.under_way.length;
   const stuck = u.under_way.filter((j) => ["failed", "needs_attention"].includes(j.status)).length;
   const serverOk = s.worker && s.licence.active;
+  const m = d.monitoring;
   const tiles = h("div", { class: "tiles" },
+    m ? tile("Devices down", m.counts.down,
+      `${m.counts.up} up · ${m.counts.warning} warning${m.counts.maintenance ? ` · ${m.counts.maintenance} in maintenance` : ""}${m.running ? "" : " · NOT CHECKING"}`,
+      m.down.some((x) => !x.maintenance) || !m.running ? "bad" : m.counts.warning || m.counts.down ? "warn" : "") : null,
     tile("Failing backups", b.failing,
       `${b.ok} OK · ${b.never} never backed up${b.disabled ? ` · ${b.disabled} off` : ""}`,
       b.failing ? "bad" : b.never ? "warn" : ""),
@@ -86,14 +91,46 @@ function overview(d) {
 }
 
 function siteTile(x, big = false) {
-  const level = x.failing ? "bad" : x.upgrading ? "info" : (x.behind || x.compliance || x.circuits) ? "warn" : "";
-  const notes = [x.failing && `${x.failing} backup${x.failing > 1 ? "s" : ""} failing`, x.upgrading && `${x.upgrading} upgrading`,
+  const level = x.down || x.failing ? "bad" : x.upgrading ? "info" : (x.behind || x.compliance || x.circuits) ? "warn" : "";
+  const notes = [x.down && `${x.down} device${x.down > 1 ? "s" : ""} DOWN`, x.failing && `${x.failing} backup${x.failing > 1 ? "s" : ""} failing`, x.upgrading && `${x.upgrading} upgrading`,
     x.behind && `${x.behind} firmware behind`, x.compliance && `${x.compliance} failing compliance`,
     x.circuits && `${x.circuits} circuit${x.circuits > 1 ? "s" : ""} moved or missing`].filter(Boolean);
   return h("div", { class: `site ${level}${big ? " big" : ""}` }, h("div", { class: "name" }, x.site),
     h("div", { class: "sub" }, x.devices ? `${x.devices} device${x.devices > 1 ? "s" : ""}` : "no managed devices"),
     big ? h("ul", { class: "notes" }, (notes.length ? notes : ["All OK"]).map((n) => h("li", {}, n)))
       : h("div", { class: "sub" }, notes.length ? notes.join(" · ") : "OK"));
+}
+
+// ---------- page: monitoring ----------
+
+function monitoringPage(d) {
+  const m = d.monitoring, c = m.counts;
+  const out = [h("div", { class: "sevs big" },
+    h("div", { class: `sev ${c.down ? "s0" : "zero"}` }, h("div", { class: "num" }, c.down), h("div", { class: "sub" }, "down")),
+    h("div", { class: `sev ${c.warning ? "s3" : "zero"}` }, h("div", { class: "num" }, c.warning), h("div", { class: "sub" }, "warning")),
+    h("div", { class: "sev ok" }, h("div", { class: "num" }, c.up), h("div", { class: "sub" }, "up")),
+    h("div", { class: `sev ${c.maintenance ? "info" : "zero"}` }, h("div", { class: "num" }, c.maintenance), h("div", { class: "sub" }, "in maintenance")))];
+  if (!m.running) out.push(h("div", { class: "panel" }, h("div", { class: "empty bad-text" }, "The monitoring poller isn't running: what is shown may be old")));
+  const row = (x, right, cls) => h("li", {},
+    h("span", {}, h("span", { class: "what" }, x.device), x.site ? h("span", { class: "dim" }, ` · ${x.site}`) : "",
+      x.maintenance ? h("span", { class: "badge" }, "maintenance") : ""),
+    h("span", { class: cls }, right));
+  const panels = [
+    h("div", { class: "panel" }, h("h2", {}, `Down (${c.down})`),
+      m.down.length ? h("ul", { class: "list" }, m.down.map((x) => row(x, `for ${ago(x.since)}`, x.maintenance ? "dim" : "why")))
+        : h("div", { class: "empty" }, "Every device answering"),
+      m.down_more ? h("div", { class: "more" }, `and ${m.down_more} more`) : ""),
+    h("div", { class: "panel" }, h("h2", {}, `Warnings (${c.warning})`),
+      m.warnings.length ? h("ul", { class: "list" }, m.warnings.map((x) => row(x, x.problem, "dim")))
+        : h("div", { class: "empty" }, "None"),
+      m.warnings_more ? h("div", { class: "more" }, `and ${m.warnings_more} more`) : ""),
+    h("div", { class: "panel" }, h("h2", {}, "Last 24 hours"),
+      m.events.length ? h("ul", { class: "list" }, m.events.map((e) => h("li", {},
+        h("span", {}, h("span", { class: "what" }, e.device), h("span", { class: "dim" }, ` · ${e.label}`)),
+        h("span", { class: e.kind === "down" && !e.maintenance ? "why" : "dim" }, hhmm(when(e.at))))))
+        : h("div", { class: "empty" }, "Nothing went down or restarted"))];
+  out.push(h("div", { class: "network" }, panels));
+  return out;
 }
 
 // ---------- page 3: sites ----------
@@ -181,7 +218,8 @@ function upgrades(d) {
 
 // ---------- drawing, rotation, refresh ----------
 
-const PAGES = [["overview", "Overview", "#page-overview", overview], ["upgrades", "Upgrades", "#page-upgrades", upgrades],
+const PAGES = [["overview", "Overview", "#page-overview", overview], ["monitoring", "Monitoring", "#page-monitoring", monitoringPage],
+  ["upgrades", "Upgrades", "#page-upgrades", upgrades],
   ["sites", "Sites", "#page-sites", sitesPage], ["network", "Network", "#page-network", networkPage]];
 
 function pagesToShow(d) {
@@ -191,6 +229,7 @@ function pagesToShow(d) {
     if (!chosen.includes(key)) return false;
     if (key === "upgrades") return d.upgrades.under_way.length || d.upgrades.coming_up.length; // nothing on it
     if (key === "network") return d.syslog || d.changes || d.circuits;
+    if (key === "monitoring") return d.monitoring && d.monitoring.monitored;
     return true;
   }).map(([, i]) => i);
   return show.length ? show : [0];

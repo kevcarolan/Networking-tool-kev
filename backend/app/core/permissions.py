@@ -10,6 +10,8 @@ the highest level everywhere and also manages users and reads the activity log.
     upgrades   none < view < dry_run < live
     circuits   none < view < manage
     syslog     none < view              device log messages (users added before it: view)
+    monitoring none < view < manage     up/down, response times; manage: what is monitored
+                                        (users added before it: view)
 """
 
 AREAS: dict[str, dict] = {
@@ -42,6 +44,11 @@ AREAS: dict[str, dict] = {
     "syslog": {"label": "Syslog", "missing": "view", "levels": {
         "none": "No access",
         "view": "Search and download the devices' log messages"}},
+    "monitoring": {"label": "Monitoring", "missing": "view", "levels": {
+        "none": "No access",
+        "view": "See which devices are up or down, response times and restarts",
+        "manage": "Also choose what is monitored and how (SNMP profiles need 'credentials' "
+                  "for Devices and credentials)"}},
 }
 
 LEVELS: dict[str, list[str]] = {a: list(d["levels"]) for a, d in AREAS.items()}
@@ -49,13 +56,13 @@ LEVELS: dict[str, list[str]] = {a: list(d["levels"]) for a, d in AREAS.items()}
 PRESETS: dict[str, dict] = {
     "viewer": {"label": "Viewer", "admin": False, "perms": {
         "inventory": "view", "backups": "view", "firmware": "view", "upgrades": "view",
-        "circuits": "view", "syslog": "view"}},
+        "circuits": "view", "syslog": "view", "monitoring": "view"}},
     "operator": {"label": "Backup operator", "admin": False, "perms": {
         "inventory": "view", "backups": "run", "firmware": "view", "upgrades": "view",
-        "circuits": "view", "syslog": "view"}},
+        "circuits": "view", "syslog": "view", "monitoring": "view"}},
     "upgrader": {"label": "Upgrader", "admin": False, "perms": {
         "inventory": "view", "backups": "configs", "firmware": "view", "upgrades": "live",
-        "circuits": "view", "syslog": "view"}},
+        "circuits": "view", "syslog": "view", "monitoring": "view"}},
     "admin": {"label": "Administrator", "admin": True, "perms": {a: lv[-1] for a, lv in LEVELS.items()}},
 }
 

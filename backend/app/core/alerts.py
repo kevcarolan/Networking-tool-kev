@@ -9,6 +9,8 @@ minute the web app's scheduler looks at the state of things and sends what is ne
 * **Upgrades:** an upgrade job that has completed, failed, rolled back or needs attention.
 * **Licence:** 30 and 7 days before it ends, and when it has ended (or the trial has).
 * **Upgrade worker:** stopped for more than 10 minutes.
+* **Monitoring:** devices that went down, came back up or restarted (not those in a
+  maintenance window or upgrade), gathered into one email per check.
 * **Syslog:** device messages at Critical or worse (the level is a setting), gathered into
   at most one email every few minutes, so a storm of messages is one email, not hundreds.
 
@@ -53,6 +55,7 @@ KEYS = ("enabled", "smtp_host", "smtp_port", "smtp_security", "smtp_user", "mail
 KINDS = {"backups": "Backups", "changes": "Config changes", "compliance": "Compliance",
          "upgrades": "Upgrades",
          "licence": "Licence", "worker": "Upgrade worker", "syslog": "Syslog",
+         "monitoring": "Devices down or up",
          "reports": "Report"}
 LAST_REPORT = PREFIX + "report_last"  # the last report slot sent
 CHANGES_LIMIT = 30  # devices listed in one email
@@ -198,7 +201,7 @@ def _sent(db: Session) -> set[str]:
 
 
 def due(db: Session, cfg: Config, now: datetime | None = None, syslog_dir=None,
-        configs_dir=None) -> list[Alert]:
+        configs_dir=None, monitor_dir=None) -> list[Alert]:
     from app.core import licence
 
     now = now or utcnow()
@@ -219,9 +222,63 @@ def due(db: Session, cfg: Config, now: datetime | None = None, syslog_dir=None,
         out += _licence(db, done)
     if cfg.wanted("worker") and "upgrades" in modules:
         out += _worker(db, now, done)
+    if monitor_dir is not None and cfg.wanted("monitoring") and "monitoring" in modules:
+        out += _monitoring(db, since, now, done, monitor_dir)
     if syslog_dir is not None and "syslog" in modules:
         out += _syslog(db, cfg, syslog_dir)
     return out
+
+
+MONITOR_KINDS = ("down", "up", "restarted")
+MONITOR_LIMIT = 50  # events listed in one email
+
+
+def _monitoring(db, since, now, done, monitor_dir) -> list[Alert]:
+    """Devices that went down, came back or restarted since the last check (at most a day
+    back). Events in a maintenance window are recorded, not sent."""
+    from app.tools.monitoring.store import MonitorStore
+
+    start = max(since, now - timedelta(hours=24)).replace(tzinfo=UTC).timestamp()
+    rows = [e for e in MonitorStore(monitor_dir).events(start, now.replace(tzinfo=UTC).timestamp() + 60,
+                                                         kinds=list(MONITOR_KINDS), limit=1000)
+            if f"mon:{e['id']}" not in done]
+    if not rows:
+        return []
+    keys = [f"mon:{e['id']}" for e in rows]
+    rows = [e for e in rows if not e["maintenance"]]
+    if not rows:
+        return [Alert(keys, "", "", kind="monitoring")]  # maintenance only: nothing to send
+    rows.sort(key=lambda e: e["ts"])
+    names = {d.id: d for d in db.scalars(select(Device))}
+    label = {"down": "DOWN", "up": "back up", "restarted": "restarted"}
+    lines = []
+    for e in rows[:MONITOR_LIMIT]:
+        d = names.get(e["device_id"])
+        who = f"{d.name} ({d.site or '-'})" if d else f"device {e['device_id']}"
+        lines.append(f"  {datetime.fromtimestamp(e['ts'], UTC):%Y-%m-%d %H:%M} UTC  {who}  "
+                     f"{label[e['kind']]}: {e['detail'][:200]}")
+    latest: dict[int, dict] = {}
+    for e in rows:
+        if e["kind"] in ("down", "up"):
+            latest[e["device_id"]] = e
+    still_down = sorted(names[i].name for i, e in latest.items() if e["kind"] == "down" and i in names)
+    back = sorted(names[i].name for i, e in latest.items() if e["kind"] == "up" and i in names)
+    restarted = sorted({names[e["device_id"]].name for e in rows
+                        if e["kind"] == "restarted" and e["device_id"] in names})
+    short = lambda xs: ", ".join(xs[:4]) + (" …" if len(xs) > 4 else "")  # noqa: E731
+    parts = []
+    if still_down:
+        parts.append(f"{len(still_down)} down: {short(still_down)}")
+    if back:
+        parts.append(f"{len(back)} back up: {short(back)}")
+    if restarted and not still_down and not back:
+        parts.append(f"{len(restarted)} restarted: {short(restarted)}")
+    elif restarted:
+        parts.append(f"{len(restarted)} restarted")
+    more = f"\n\n...and {len(rows) - MONITOR_LIMIT} more." if len(rows) > MONITOR_LIMIT else ""
+    return [Alert(keys, "Monitoring: " + "; ".join(parts), "What changed:\n\n" + "\n".join(lines)
+                  + more + "\n\nThe details and response times are on the Monitoring page.",
+                  kind="monitoring")]
 
 
 def _backups(db, cfg, now, done) -> list[Alert]:
@@ -526,7 +583,8 @@ class AlertService:
             if not (cfg.enabled and cfg.smtp_host and cfg.mail_to):
                 return []
             alerts = due(db, cfg, syslog_dir=self.settings.syslog_dir,
-                         configs_dir=self.settings.configs_dir)
+                         configs_dir=self.settings.configs_dir,
+                         monitor_dir=self.settings.monitor_dir)
         sent, error = [], ""
         for a in alerts:
             to = cfg.to(a.kind)

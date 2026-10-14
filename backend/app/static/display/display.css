@@ -92,3 +92,9 @@ main { flex: 1; padding: 1rem 1.4rem; min-height: 0; }
 .sev.ok .num { color: var(--ok); }
 .sev.zero .num { color: var(--dim); }
 .title .mark { height: 1.6em; vertical-align: -0.4em; margin-right: 0.5rem; }
+
+/* monitoring page */
+.sevs.big .num { font-size: 3.4rem; }
+.sev.info { border-color: var(--info); } .sev.info .num { color: var(--info); }
+.list .badge { margin-left: 0.5rem; font-weight: 600; }
+.bad-text { color: var(--bad); }

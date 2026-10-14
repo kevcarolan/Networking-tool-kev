@@ -50,6 +50,7 @@
         <button data-view="backups" class="active" data-perm="backups:view">Config backups</button>
         <button data-view="inventory">Inventory</button>
         <button data-view="sites">Sites</button>
+        <button data-view="monitoring" data-perm="monitoring:view" data-module="monitoring">Monitoring</button>
         <button data-view="firmware" data-perm="firmware:view|upgrades:view" data-module="firmware">Firmware</button>
         <button data-view="circuits" data-perm="circuits:view" data-module="circuits">Circuits</button>
         <button data-view="syslog" data-perm="syslog:view" data-module="syslog">Syslog</button>
@@ -102,6 +103,54 @@
             <tbody></tbody>
           </table>
           <p id="empty-devices" class="empty" hidden>No devices yet.</p>
+        </div>
+      </section>
+
+      <!-- Monitoring -->
+      <section id="view-monitoring" class="view" hidden>
+        <p id="mon-status" class="muted"></p>
+        <div id="mon-summary" class="tiles"></div>
+        <div class="toolbar">
+          <input id="mon-search" type="search" placeholder="Search name, address, site, note…">
+          <select id="mon-filter-status" aria-label="Status"><option value="">All statuses</option></select>
+          <select id="mon-filter-site" aria-label="Site"><option value="">All sites</option></select>
+          <span class="spacer"></span>
+          <button id="mon-map" data-perm="circuits:view" data-module="circuits" title="The network map, coloured by up and down">Network map</button>
+          <button id="mon-profiles" title="The SNMP communities and SNMPv3 users devices are polled with">SNMP profiles</button>
+          <button id="mon-help">Help: set up devices</button>
+        </div>
+        <div id="mon-bulk" class="toolbar bulk" hidden>
+          <b id="mon-bulk-count"></b>
+          <button class="small" data-bulk="monitored:true">Monitor</button>
+          <button class="small" data-bulk="monitored:false">Stop monitoring</button>
+          <button class="small" data-bulk="ping:true">Ping on</button>
+          <button class="small" data-bulk="ping:false">Ping off</button>
+          <button class="small" data-bulk="snmp:true">SNMP on</button>
+          <button class="small" data-bulk="snmp:false">SNMP off</button>
+          <span class="actions" data-perm="inventory:addresses">
+            <select id="mon-bulk-profile" aria-label="SNMP profile"></select>
+            <button class="small" id="mon-bulk-profile-set">Use this SNMP profile</button>
+          </span>
+          <button class="small ghost" id="mon-bulk-clear">Clear the selection</button>
+        </div>
+        <div class="table-wrap">
+          <table id="mon-table">
+            <thead><tr>
+              <th class="pick"><input type="checkbox" id="mon-all" aria-label="Select all shown"></th>
+              <th>Status</th><th>Device</th><th>Site</th><th>Address</th><th>Response</th>
+              <th>Up for</th><th>Last 7 days</th><th>Since</th><th>Note</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+          <p id="mon-empty" class="empty" hidden></p>
+        </div>
+        <h3>Last 24 hours</h3>
+        <div class="table-wrap">
+          <table id="mon-events">
+            <thead><tr><th>Time</th><th>Device</th><th>What</th><th>Detail</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <p id="mon-events-empty" class="empty" hidden>Nothing went down, came back or restarted.</p>
         </div>
       </section>
 
@@ -571,6 +620,113 @@
     <div id="site-dialog-body" class="form"></div>
   </dialog>
 
+  <!-- Monitoring: one device -->
+  <dialog id="mon-dialog" class="wide">
+    <div class="detail-head">
+      <h2 id="mon-d-title"></h2>
+      <button id="mon-d-close" class="ghost">Close</button>
+    </div>
+    <p id="mon-d-state"></p>
+    <div class="toolbar">
+      <span class="muted">Response time</span>
+      <span id="mon-d-range" class="seg">
+        <button class="small" data-hours="6">6 h</button>
+        <button class="small active" data-hours="24">24 h</button>
+        <button class="small" data-hours="168">7 days</button>
+        <button class="small" data-hours="720">30 days</button>
+        <button class="small" data-hours="8760">1 year</button>
+      </span>
+      <span class="spacer"></span>
+      <span id="mon-d-avail" class="muted"></span>
+    </div>
+    <div id="mon-d-graph" class="mon-graph" aria-label="Response time graph"></div>
+    <div class="grid2">
+      <div>
+        <h3>Device</h3>
+        <dl id="mon-d-info" class="facts"></dl>
+      </div>
+      <form id="mon-d-form" class="form" data-perm="monitoring:manage">
+        <h3>How it is monitored</h3>
+        <label class="inline"><input type="checkbox" name="monitored"> <span>Monitor this device</span></label>
+        <label class="inline"><input type="checkbox" name="ping"> <span>Ping it</span></label>
+        <label class="inline"><input type="checkbox" name="snmp"> <span>Read it with SNMP</span></label>
+        <label>SNMP profile <select name="profile_id"></select></label>
+        <p class="error" hidden></p>
+        <div class="actions"><button type="submit" class="primary">Save</button></div>
+      </form>
+    </div>
+    <h3>Events</h3>
+    <div class="table-wrap"><table id="mon-d-events">
+      <thead><tr><th>Time</th><th>What</th><th>Detail</th></tr></thead><tbody></tbody></table></div>
+  </dialog>
+
+  <!-- Monitoring: SNMP profiles -->
+  <dialog id="mon-p-dialog" class="wide">
+    <div class="detail-head">
+      <h2>SNMP profiles</h2>
+      <button id="mon-p-close" class="ghost">Close</button>
+    </div>
+    <p class="muted">The community or SNMPv3 user each device is polled with. Devices use the
+      <b>default</b> profile unless one is chosen for them. The passwords are kept encrypted and never shown again.</p>
+    <div class="table-wrap"><table id="mon-p-table">
+      <thead><tr><th>Name</th><th>Version</th><th>User / security</th><th>Devices</th><th></th></tr></thead>
+      <tbody></tbody></table></div>
+    <div class="actions" data-perm="inventory:credentials"><button id="mon-p-add" class="primary">+ Add profile</button></div>
+    <form id="mon-p-form" class="form" hidden>
+      <h3 id="mon-p-form-title">Add profile</h3>
+      <div class="grid2">
+        <label>Name <input name="name" required maxlength="100" placeholder="switches-v3"></label>
+        <label>Version <select name="version"></select></label>
+        <label data-v="2c">Community <input name="community" type="password" autocomplete="off"></label>
+        <label data-v="3">User <input name="username" maxlength="100" autocomplete="off" placeholder="netops-mon"></label>
+        <label data-v="3">Security <select name="level"></select></label>
+        <label data-v="3" data-l="auth">Authentication <select name="auth_protocol"></select></label>
+        <label data-v="3" data-l="auth">Authentication password <input name="auth_key" type="password" autocomplete="new-password"></label>
+        <label data-v="3" data-l="priv">Encryption <select name="priv_protocol"></select></label>
+        <label data-v="3" data-l="priv">Encryption password <input name="priv_key" type="password" autocomplete="new-password"></label>
+        <label>Port <input name="port" type="number" min="1" max="65535" value="161"></label>
+        <label>Wait for an answer (seconds) <input name="timeout" type="number" min="1" max="30" value="2"></label>
+        <label>Tries again <input name="retries" type="number" min="0" max="5" value="1"></label>
+        <label class="inline"><input type="checkbox" name="is_default"> <span>The default for devices without their own</span></label>
+      </div>
+      <p id="mon-p-keep" class="muted" hidden>Leave a password empty to keep the one saved.</p>
+      <p class="error" hidden></p>
+      <div class="actions">
+        <span class="test-row">
+          <select id="mon-p-test-device" aria-label="Device to test with"></select>
+          <button type="button" id="mon-p-test">Test on this device</button>
+        </span>
+        <span class="spacer"></span>
+        <button type="button" class="ghost" id="mon-p-cancel">Cancel</button>
+        <button type="submit" class="primary">Save</button>
+      </div>
+      <p id="mon-p-test-result" hidden></p>
+    </form>
+  </dialog>
+
+  <!-- Monitoring: device setup help -->
+  <dialog id="mon-help-dialog" class="wide">
+    <div class="detail-head">
+      <h2>Set up SNMP on the devices</h2>
+      <button id="mon-help-close" class="ghost">Close</button>
+    </div>
+    <div class="form">
+      <ul id="mon-help-general" class="muted"></ul>
+      <div class="grid2">
+        <label>Platform <select id="mon-help-platform"></select></label>
+        <label>This server's address (as the devices see it) <input id="mon-help-server" placeholder="10.1.1.50"></label>
+        <label>Version <select id="mon-help-mode">
+          <option value="v3">SNMPv3: user, authentication and encryption (recommended)</option>
+          <option value="v2c">SNMPv2c: read-only community (only if v3 isn't possible)</option>
+        </select></label>
+      </div>
+      <pre id="mon-help-text" class="config"></pre>
+      <p id="mon-help-notes" class="muted"></p>
+      <div class="actions"><button id="mon-help-copy">Copy</button></div>
+    </div>
+  </dialog>
+
+
   <dialog id="sl-help-dialog" class="wide">
     <div class="detail-head">
       <h2>Send syslog to this server</h2>
@@ -598,6 +754,9 @@
       <button id="cal-dialog-close" class="ghost">Close</button>
     </div>
     <div id="cal-dialog-body"></div>
+  </dialog>
+
+  <!-- Network map -->
   <dialog id="topo-dialog" class="topo-dialog">
     <div class="detail-head">
       <h2>Network map</h2>

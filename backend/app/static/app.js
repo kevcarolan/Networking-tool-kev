@@ -96,7 +96,7 @@ function can(area, level) {
 const permitted = (spec) => spec.split("|").some((p) => { const [a, l] = p.split(":"); return can(a, l); });
 // Tools the licence unlocks (app/core/licence.py MODULES); everything until the licence is read.
 const hasModule = (m) => !state.licence || state.licence.modules.includes(m);
-const VIEW_MODULE = { firmware: "firmware", circuits: "circuits", syslog: "syslog" };
+const VIEW_MODULE = { firmware: "firmware", circuits: "circuits", syslog: "syslog", monitoring: "monitoring" };
 
 /** Locked tools: greyed out in the top bar, other controls of theirs hidden. */
 function applyModules() {
@@ -158,6 +158,7 @@ async function showApp(user) {
     if (document.hidden) return;
     if (state.view === "backups") loadBackups();
     else if (state.view === "firmware" && fw.tab === "versions") loadFwVersions();
+    else if (state.view === "monitoring" && !$("#mon-dialog").open && !$("#mon-p-dialog").open) loadMonitoring();
   }, 15000);
 }
 
@@ -296,7 +297,7 @@ function switchView(view) {
   $$("#nav button").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
   if (VIEW_MODULE[view] && !hasModule(VIEW_MODULE[view])) return showLocked(view);
   $$(".view").forEach((s) => (s.hidden = s.id !== `view-${view}`));
-  state.viewLoading = ({ backups: loadBackups, inventory: loadInventory, sites: loadSites, firmware: loadFirmware, circuits: loadCircuits, syslog: loadSyslog, calendar: loadCalendar, credentials: loadCredentials,
+  state.viewLoading = ({ backups: loadBackups, inventory: loadInventory, sites: loadSites, monitoring: loadMonitoring, firmware: loadFirmware, circuits: loadCircuits, syslog: loadSyslog, calendar: loadCalendar, credentials: loadCredentials,
     audit: loadAudit, users: loadUsers, settings: loadSettings })[view]();
 }
 $$("#nav button").forEach((b) => b.addEventListener("click", () => switchView(b.dataset.view)));
@@ -1513,7 +1514,7 @@ $("#cal-add").addEventListener("click", () => calEdit());
 $("#cal-dialog-close").addEventListener("click", () => $("#cal-dialog").close());
 // ---------- topology map ----------
 
-const topo = { siteId: 0, data: null, pos: new Map(), svg: null, sel: null };
+const topo = { siteId: 0, data: null, pos: new Map(), svg: null, sel: null, mon: new Map() };
 const SVGNS = "http://www.w3.org/2000/svg";
 const TOPO_W = 150, TOPO_H = 46, TOPO_DX = 190, TOPO_DY = 130;
 
@@ -1541,13 +1542,19 @@ async function openTopology(siteId = 0) {
 
 async function loadTopology() {
   const q = new URLSearchParams({ site_id: topo.siteId, endpoints: $("#topo-endpoints").checked });
-  try { topo.data = await api(`/api/topology?${q}`); } catch (e) { return toast(e.message); }
+  try {
+    [topo.data, topo.mon] = await Promise.all([api(`/api/topology?${q}`), monStatesForMap()]);
+  } catch (e) { return toast(e.message); }
   topo.pos = new Map(Object.entries(topo.data.positions).map(([k, p]) => [k, { ...p }]));
   if (!topo.portsChosen) $("#topo-ports").checked = topo.data.edges.length <= 25; // busy maps: no port names
   topoArrange(false);
   const d = topo.data;
   const parts = [d.last_scan ? `From the network scan of ${fmtTime(d.last_scan)}.` : "No network scan yet: run one on the Circuits page."];
-  if (d.not_read.length) parts.push(`Not read yet (orange): ${d.not_read.join(", ")}.`);
+  if (d.not_read.length) parts.push(`Not read yet (orange outline): ${d.not_read.join(", ")}.`);
+  if (topo.mon.size) {
+    const down = d.nodes.filter((n) => topo.mon.get(n.id)?.status === "down").map((n) => n.name);
+    parts.push(down.length ? `DOWN now (red): ${down.join(", ")}.` : "Every monitored device on the map is answering.");
+  }
   const ends = d.nodes.reduce((n, x) => n + (x.endpoints || 0), 0);
   if (ends && !$("#topo-endpoints").checked) parts.push(`${ends} phone(s) and access point(s) not shown.`);
   if (!d.nodes.length) parts.push("No devices at this site.");
@@ -1660,8 +1667,9 @@ function topoDraw() {
       : n.kind === "unmanaged" ? "not in the inventory"
       : n.kind === "endpoint" ? "phone or access point"
       : [platformLabel(n.platform), n.endpoints ? `+${n.endpoints} phones/APs` : ""].filter(Boolean).join(" · ");
-    const g = svgEl("g", { class: `topo-node ${n.kind}${n.kind === "device" && !n.read ? " not-read" : ""}`, transform: `translate(${p.x},${p.y})` },
-      svgEl("title", {}, [n.name, n.address, n.platform, n.read_error && `Scan: ${n.read_error}`].filter(Boolean).join("\n")),
+    const m = n.id !== undefined && n.kind !== "unmanaged" && n.kind !== "endpoint" ? topo.mon.get(n.id) : null;
+    const g = svgEl("g", { class: `topo-node ${n.kind}${n.kind === "device" && !n.read ? " not-read" : ""}${m ? ` mon-${m.status}` : ""}`, transform: `translate(${p.x},${p.y})` },
+      svgEl("title", {}, [n.name, n.address, n.platform, m && `Monitoring: ${m.status_label}${m.reason ? ` (${m.reason})` : ""}`, n.read_error && `Scan: ${n.read_error}`].filter(Boolean).join("\n")),
       svgEl("rect", { width: TOPO_W, height: TOPO_H, rx: 6 }),
       svgEl("text", { x: 10, y: 19 }, n.name.length > 20 ? n.name.slice(0, 19) + "…" : n.name),
       svgEl("text", { x: 10, y: 36, class: "sub" }, sub.length > 26 ? sub.slice(0, 25) + "…" : sub));
@@ -3376,6 +3384,438 @@ async function loadSettings() {
 api("/api/setup/status")
   .then((s) => (s.needed ? showSetup() : api("/api/auth/me").then(showApp).catch(showLogin)))
   .catch(showLogin);
+
+// ---------- monitoring ----------
+
+const mon = { rows: [], counts: {}, labels: {}, picked: new Set(), profiles: null, howto: null,
+  device: null, hours: 24, editing: null };
+const MON_ORDER = ["down", "warning", "unknown", "waiting", "up", "off"];
+const MON_TILES = [["down", "Down"], ["warning", "Warning"], ["up", "Up"], ["maintenance", "In maintenance"],
+  ["unknown", "Can't check"], ["off", "Not monitored"]];
+const tsIso = (t) => (t ? new Date(t * 1000).toISOString() : null);
+
+function fmtDur(s) {
+  if (s === null || s === undefined) return "";
+  s = Math.max(0, Math.round(s));
+  if (s < 90) return `${s} s`;
+  if (s < 5400) return `${Math.round(s / 60)} min`;
+  if (s < 172800) return `${(s / 3600).toFixed(1)} h`;
+  return `${Math.round(s / 86400)} days`;
+}
+
+async function loadMonitoring() {
+  try {
+    const [st, data, ev] = await Promise.all([api("/api/monitoring/status"), api("/api/monitoring/devices"),
+      api("/api/monitoring/events?hours=24&limit=100")]);
+    mon.rows = data.devices;
+    mon.counts = data.counts;
+    mon.labels = data.labels;
+    const ids = new Set(mon.rows.map((r) => r.id));
+    mon.picked = new Set([...mon.picked].filter((i) => ids.has(i)));
+    monStatusLine(st);
+    monSummary();
+    monFilters();
+    renderMonitoring();
+    monEvents(ev.events);
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+function monStatusLine(st) {
+  const p = st.poller || {};
+  const parts = [];
+  if (st.running) {
+    parts.push(`Checking ${p.devices} device${p.devices === 1 ? "" : "s"} every ${st.interval} s`);
+    if (p.last_round) parts.push(`last check ${fmtAgo(tsIso(p.last_round))} (took ${p.round_seconds} s)`);
+    parts.push(`down after ${st.down_after} check${st.down_after === 1 ? "" : "s"} without an answer`);
+  } else {
+    parts.push("The monitoring poller isn't running (netops-monitor service): what is shown may be old");
+  }
+  if (p.licensed === false) parts.push("NOT CHECKING: Monitoring isn't in the licence");
+  if (p.ping_allowed === false) parts.push("ping isn't allowed on this server, so devices are checked with SNMP only");
+  if (!st.profiles) parts.push("no SNMP profile yet, so devices are only pinged: add one under SNMP profiles");
+  else if (!st.default_profile) parts.push("no default SNMP profile: only devices given a profile are read with SNMP");
+  if (p.last_error) parts.push(`ERROR: ${p.last_error}`);
+  $("#mon-status").textContent = parts.join(" · ");
+  $("#mon-status").classList.toggle("bad-text", !st.running || p.licensed === false || !!p.last_error);
+}
+
+function monSummary() {
+  const c = mon.counts;
+  $("#mon-summary").replaceChildren(...MON_TILES.filter(([k]) => k !== "unknown" || c.unknown).map(([key, label]) =>
+    h("button", { class: `tile mon-${key}`, onclick: () => { $("#mon-filter-status").value = key; renderMonitoring(); } },
+      h("span", { class: "num" }, c[key] ?? 0), h("span", { class: "lbl" }, label))));
+}
+
+function monFilters() {
+  const st = $("#mon-filter-status"), site = $("#mon-filter-site");
+  const keepSt = st.value, keepSite = site.value;
+  st.replaceChildren(h("option", { value: "" }, "All statuses"),
+    ...MON_ORDER.map((k) => h("option", { value: k }, mon.labels[k] || k)), h("option", { value: "maintenance" }, "In maintenance"));
+  const sites = [...new Set(mon.rows.map((r) => r.site).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  site.replaceChildren(h("option", { value: "" }, "All sites"), ...sites.map((x) => h("option", { value: x }, x)));
+  st.value = keepSt;
+  site.value = sites.includes(keepSite) ? keepSite : "";
+}
+
+function monShown() {
+  const q = $("#mon-search").value.trim().toLowerCase();
+  const st = $("#mon-filter-status").value, site = $("#mon-filter-site").value;
+  return mon.rows.filter((r) => (!st || (st === "maintenance" ? r.maintenance : r.status === st))
+    && (!site || r.site === site)
+    && (!q || [r.name, r.address, r.site, r.reason, r.sys_name].some((x) => (x || "").toLowerCase().includes(q))))
+    .sort((a, b) => MON_ORDER.indexOf(a.status) - MON_ORDER.indexOf(b.status) || a.name.localeCompare(b.name, undefined, { numeric: true }));
+}
+
+function monBadge(r) {
+  return [h("span", { class: `badge mon-${r.status}`, title: r.stale ? "From the last check before the poller stopped" : "" },
+    `${r.status_label}${r.stale ? "?" : ""}`), r.maintenance && r.monitored ? h("span", { class: "badge mon-maint", title: "In a calendar window or an upgrade: not emailed" }, "maintenance") : null];
+}
+
+function renderMonitoring() {
+  const rows = monShown();
+  const manage = can("monitoring", "manage");
+  $("#mon-all").hidden = !manage;
+  $("#mon-all").checked = rows.length > 0 && rows.every((r) => mon.picked.has(r.id));
+  const now = Date.now() / 1000;
+  $("#mon-table tbody").replaceChildren(...rows.map((r) => h("tr", { class: `mon-row ${r.status}`, onclick: () => monOpen(r.id) },
+    h("td", { class: "pick", onclick: (ev) => ev.stopPropagation() }, manage ? h("input", { type: "checkbox", "aria-label": `Select ${r.name}`,
+      checked: mon.picked.has(r.id), onchange: (ev) => { ev.target.checked ? mon.picked.add(r.id) : mon.picked.delete(r.id); monBulkBar(); } }) : null),
+    h("td", {}, ...monBadge(r).filter(Boolean)),
+    h("td", {}, h("b", {}, r.name)),
+    h("td", {}, siteLink(r.site)),
+    h("td", { class: "muted" }, r.address),
+    h("td", {}, r.rtt_ms !== null && r.rtt_ms !== undefined ? `${r.rtt_ms.toFixed(1)} ms` : "—",
+      r.loss ? h("small", { class: "muted" }, ` ${Math.round(r.loss * 100)}% lost`) : null),
+    h("td", {}, r.uptime !== null && r.uptime !== undefined ? fmtDur(r.uptime + Math.max(0, now - (r.last_poll || now))) : "—"),
+    h("td", { class: r.availability_7d !== null && r.availability_7d < 99 ? "bad-text" : "" },
+      r.availability_7d !== null && r.availability_7d !== undefined ? `${r.availability_7d}%` : "—"),
+    h("td", { title: r.since ? fmtTime(tsIso(r.since)) : "" }, r.since ? fmtAgo(tsIso(r.since)) : "—"),
+    h("td", { class: "muted note" }, r.reason || (r.profile ? "" : r.snmp ? "" : "SNMP off")))));
+  $("#mon-empty").hidden = rows.length > 0;
+  $("#mon-empty").textContent = mon.rows.length ? "No devices match these filters." : "No devices yet: add them on the Config backups or Inventory page.";
+  monBulkBar();
+}
+
+function monEvents(events) {
+  $("#mon-events tbody").replaceChildren(...events.map((e) => h("tr", { class: "link-row", onclick: () => monOpen(e.device_id) },
+    h("td", { class: "when" }, fmtTime(e.time)), h("td", {}, e.device),
+    h("td", {}, h("span", { class: `badge ev-${e.kind}` }, e.kind_label), e.maintenance ? h("span", { class: "badge mon-maint" }, "maintenance") : null),
+    h("td", { class: "muted" }, e.detail))));
+  $("#mon-events-empty").hidden = events.length > 0;
+}
+
+function monBulkBar() {
+  const n = mon.picked.size;
+  $("#mon-bulk").hidden = !n || !can("monitoring", "manage");
+  $("#mon-bulk-count").textContent = `${n} selected`;
+}
+
+async function monSetChoices(ids, body, what) {
+  try {
+    await api("/api/monitoring/devices", { method: "PUT", body: { device_ids: [...ids], ...body } });
+    toast(`${what} (${ids.length || ids.size} device${(ids.length || ids.size) === 1 ? "" : "s"}). The poller picks it up within a minute.`);
+    await loadMonitoring();
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+async function monLoadProfiles() {
+  mon.profiles = await api("/api/monitoring/profiles");
+  return mon.profiles;
+}
+
+function monProfileOptions(sel, current) {
+  const def = mon.profiles.profiles.find((p) => p.is_default);
+  sel.replaceChildren(h("option", { value: "" }, def ? `The default (${def.name})` : "The default (none set)"),
+    ...mon.profiles.profiles.map((p) => h("option", { value: String(p.id) }, `${p.name} (v${p.version})`)));
+  sel.value = current ? String(current) : "";
+}
+
+// --- one device
+
+async function monOpen(id, hours = mon.hours) {
+  mon.hours = hours;
+  let d;
+  try {
+    [d] = await Promise.all([api(`/api/monitoring/devices/${id}?hours=${hours}`), mon.profiles ? null : monLoadProfiles()]);
+  } catch (e) {
+    return toast(e.message);
+  }
+  mon.device = d;
+  $("#mon-d-title").replaceChildren(d.name, " ", ...monBadge(d).filter(Boolean));
+  const state = [d.reason, d.since && d.monitored ? `${d.status_label.toLowerCase()} since ${fmtTime(tsIso(d.since))}` : "",
+    d.last_poll ? `last check ${fmtAgo(tsIso(d.last_poll))}` : ""].filter(Boolean);
+  $("#mon-d-state").textContent = state.join(" · ");
+  $$("#mon-d-range button").forEach((b) => b.classList.toggle("active", Number(b.dataset.hours) === hours));
+  const a = d.availability;
+  const pct = (v) => (v === null || v === undefined ? "—" : `${v}%`);
+  $("#mon-d-avail").textContent = `Answered: today ${pct(a["1d"])} · 7 days ${pct(a["7d"])} · 30 days ${pct(a["30d"])} · year ${pct(a["365d"])}`;
+  monGraph(d);
+  const now = Date.now() / 1000;
+  const facts = [["Name it reports", d.sys_name], ["Description", d.sys_descr], ["Address", d.address], ["Site", d.site],
+    ["Up for", d.uptime !== null && d.uptime !== undefined ? fmtDur(d.uptime + Math.max(0, now - (d.last_poll || now))) : ""],
+    ["Last restart", d.last_restart ? fmtTime(tsIso(d.last_restart)) : ""],
+    ["SNMP profile", d.snmp ? (d.profile ? `${d.profile}${d.profile_is_default ? " (the default)" : ""}` : "none") : "SNMP off"],
+    ["Ping", d.ping ? "on" : "off"]];
+  $("#mon-d-info").replaceChildren(...facts.filter(([, v]) => v).flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)]));
+  const f = $("#mon-d-form");
+  f.monitored.checked = d.monitored;
+  f.ping.checked = d.ping;
+  f.snmp.checked = d.snmp;
+  monProfileOptions(f.profile_id, d.profile_id);
+  f.profile_id.disabled = !can("inventory", "addresses");
+  f.profile_id.title = f.profile_id.disabled ? "Choosing where SNMP secrets are sent needs the 'addresses' level" : "";
+  f.querySelector(".error").hidden = true;
+  $("#mon-d-events tbody").replaceChildren(...d.events.map((e) => h("tr", {},
+    h("td", { class: "when" }, fmtTime(e.time)),
+    h("td", {}, h("span", { class: `badge ev-${e.kind}` }, e.kind_label), e.maintenance ? h("span", { class: "badge mon-maint" }, "maintenance") : null),
+    h("td", { class: "muted" }, e.detail))));
+  if (!d.events.length) $("#mon-d-events tbody").append(h("tr", {}, h("td", { colspan: 3, class: "muted" }, "No events in the last 90 days")));
+  if (!$("#mon-dialog").open) $("#mon-dialog").showModal();
+}
+
+/** Response time over the period: the average line, the worst in a lighter band, and red
+ * marks along the bottom where the device didn't answer. */
+function monGraph(d) {
+  const W = 1000, H = 200, L = 46, B = 22, T = 10;
+  const x = (t) => L + ((t - d.since_ts) / (d.until_ts - d.since_ts)) * (W - L - 6);
+  const pts = d.graph;
+  const top = Math.max(1, ...pts.map((p) => p.rtt_max ?? p.rtt_ms ?? 0)) * 1.15;
+  const y = (v) => T + (1 - v / top) * (H - T - B);
+  const kids = [];
+  for (const f of [0, 0.5, 1]) {
+    kids.push(svgEl("line", { x1: L, x2: W - 6, y1: y(top * f), y2: y(top * f), class: "grid" }),
+      svgEl("text", { x: L - 6, y: y(top * f) + 4, "text-anchor": "end" }, `${(top * f).toFixed(top * f < 10 ? 1 : 0)} ms`));
+  }
+  const span = d.until_ts - d.since_ts;
+  for (const f of [0, 0.25, 0.5, 0.75, 1]) {
+    const t = d.since_ts + span * f;
+    const label = span > 3 * 86400 ? new Date(t * 1000).toLocaleDateString(undefined, { day: "numeric", month: "short" })
+      : new Date(t * 1000).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    kids.push(svgEl("text", { x: Math.min(W - 30, Math.max(L + 20, x(t))), y: H - 4, "text-anchor": "middle" }, label));
+  }
+  const step = pts.length > 1 ? (pts[pts.length - 1].ts - pts[0].ts) / (pts.length - 1) : span;
+  const runs = [];
+  let run = [];
+  for (const p of pts) {
+    if (p.rtt_ms === null || p.rtt_ms === undefined || (run.length && p.ts - run[run.length - 1].ts > step * 2.5)) {
+      if (run.length) runs.push(run);
+      run = [];
+    }
+    if (p.rtt_ms !== null && p.rtt_ms !== undefined) run.push(p);
+  }
+  if (run.length) runs.push(run);
+  for (const r of runs) {
+    if (r[0].rtt_max !== undefined) {
+      const band = [...r.map((p) => `${x(p.ts)},${y(p.rtt_max ?? p.rtt_ms)}`), ...[...r].reverse().map((p) => `${x(p.ts)},${y(p.rtt_ms)}`)];
+      kids.push(svgEl("polygon", { points: band.join(" "), class: "band" }));
+    }
+    kids.push(svgEl("polyline", { points: r.map((p) => `${x(p.ts)},${y(p.rtt_ms)}`).join(" "), class: "line" }));
+  }
+  const w = Math.max(2, (W - L) / Math.max(pts.length, 1));
+  for (const p of pts) {
+    if (p.ok !== null && p.ok < 1) {
+      kids.push(svgEl("rect", { x: x(p.ts) - w / 2, y: H - B - 6, width: w, height: 6, class: p.ok === 0 ? "miss all" : "miss",
+        "fill-opacity": Math.max(0.35, 1 - p.ok) }, svgEl("title", {}, `${Math.round((1 - p.ok) * 100)}% of checks unanswered`)));
+    }
+  }
+  if (!pts.length) kids.push(svgEl("text", { x: W / 2, y: H / 2, "text-anchor": "middle", class: "none" }, "No checks in this period"));
+  $("#mon-d-graph").replaceChildren(svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Response time" }, kids));
+}
+
+$("#mon-d-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target, d = mon.device;
+  const body = { device_ids: [d.id], monitored: f.monitored.checked, ping: f.ping.checked, snmp: f.snmp.checked };
+  const profile = f.profile_id.value ? Number(f.profile_id.value) : null;
+  if (can("inventory", "addresses") && profile !== (d.profile_id || null)) Object.assign(body, { set_profile: true, profile_id: profile });
+  try {
+    await api("/api/monitoring/devices", { method: "PUT", body });
+    toast("Saved. The poller picks it up within a minute.");
+    await Promise.all([monOpen(d.id), loadMonitoring()]);
+  } catch (e) {
+    f.querySelector(".error").textContent = e.message;
+    f.querySelector(".error").hidden = false;
+  }
+});
+$$("#mon-d-range button").forEach((b) => b.addEventListener("click", () => monOpen(mon.device.id, Number(b.dataset.hours))));
+$("#mon-d-close").addEventListener("click", () => $("#mon-dialog").close());
+
+// --- SNMP profiles
+
+async function monProfiles() {
+  try {
+    await monLoadProfiles();
+  } catch (e) {
+    return toast(e.message);
+  }
+  const p = mon.profiles, edit = can("inventory", "credentials");
+  const f = $("#mon-p-form");
+  if (!f.version.options.length) {
+    f.version.replaceChildren(...Object.entries(p.versions).map(([k, v]) => h("option", { value: k }, v)));
+    f.level.replaceChildren(...Object.entries(p.levels).map(([k, v]) => h("option", { value: k }, v)));
+    f.auth_protocol.replaceChildren(...p.auth.map((k) => h("option", { value: k }, k)));
+    f.priv_protocol.replaceChildren(...p.priv.map((k) => h("option", { value: k }, k + (k.endsWith("-C") ? " (Cisco)" : ""))));
+  }
+  $("#mon-p-table tbody").replaceChildren(...p.profiles.map((x) => h("tr", {},
+    h("td", {}, h("b", {}, x.name), x.is_default ? h("span", { class: "badge mon-up" }, "default") : null),
+    h("td", {}, x.version === "3" ? "v3" : "v2c"),
+    h("td", { class: "muted" }, x.version === "3" ? `${x.username} · ${p.levels[x.level]}${x.level !== "noAuthNoPriv" ? ` · ${x.auth_protocol}` : ""}${x.level === "authPriv" ? `/${x.priv_protocol}` : ""}` : "community"),
+    h("td", {}, x.devices),
+    h("td", { class: "actions" }, edit ? h("button", { class: "small", onclick: () => monProfileForm(x) }, "Edit") : null,
+      edit ? h("button", { class: "small danger", onclick: () => monProfileDelete(x) }, "Delete") : null))));
+  if (!p.profiles.length) $("#mon-p-table tbody").append(h("tr", {}, h("td", { colspan: 5, class: "muted" }, "No SNMP profiles yet. Add one with the user or community your devices are set up with (see Help: set up devices).")));
+  $("#mon-p-test-device").replaceChildren(...mon.rows.map((r) => h("option", { value: String(r.id) }, r.name)));
+  f.hidden = true;
+  if (!$("#mon-p-dialog").open) $("#mon-p-dialog").showModal();
+}
+
+function monProfileForm(x = null) {
+  const f = $("#mon-p-form");
+  mon.editing = x;
+  f.reset();
+  $("#mon-p-form-title").textContent = x ? `Change ${x.name}` : "Add profile";
+  const v = x || { version: "3", level: "authPriv", auth_protocol: "SHA", priv_protocol: "AES", port: 161, timeout: 2, retries: 1,
+    is_default: !mon.profiles.profiles.some((p) => p.is_default), username: "netops-mon" };
+  for (const k of ["name", "version", "username", "level", "auth_protocol", "priv_protocol", "port", "timeout", "retries"]) if (v[k] !== undefined) f[k].value = v[k];
+  f.is_default.checked = !!v.is_default;
+  $("#mon-p-keep").hidden = !x;
+  $("#mon-p-test-result").hidden = true;
+  f.querySelector(".error").hidden = true;
+  monProfileFields();
+  f.hidden = false;
+  f.name.focus();
+}
+
+function monProfileFields() {
+  const f = $("#mon-p-form"), v3 = f.version.value === "3", lvl = f.level.value;
+  $$("#mon-p-form [data-v]").forEach((el) => {
+    el.hidden = el.dataset.v !== (v3 ? "3" : "2c") || (el.dataset.l === "auth" && lvl === "noAuthNoPriv") || (el.dataset.l === "priv" && lvl !== "authPriv");
+  });
+}
+
+async function monProfileDelete(x) {
+  if (!confirm(`Delete the SNMP profile ${x.name}?${x.devices ? ` ${x.devices} device(s) use it: those given it go back to the default.` : ""}`)) return;
+  try {
+    await api(`/api/monitoring/profiles/${x.id}`, { method: "DELETE" });
+    await monProfiles();
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+$("#mon-p-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target, x = mon.editing;
+  const secret = (k) => (f[k].value ? f[k].value : x ? null : "");
+  const body = { name: f.name.value, version: f.version.value, username: f.username.value, level: f.level.value,
+    auth_protocol: f.auth_protocol.value, priv_protocol: f.priv_protocol.value, port: Number(f.port.value),
+    timeout: Number(f.timeout.value), retries: Number(f.retries.value), is_default: f.is_default.checked,
+    community: secret("community"), auth_key: secret("auth_key"), priv_key: secret("priv_key") };
+  try {
+    const saved = await api(x ? `/api/monitoring/profiles/${x.id}` : "/api/monitoring/profiles", { method: x ? "PUT" : "POST", body });
+    toast(`Saved ${saved.name}`);
+    await monProfiles();
+    monProfileForm({ ...saved });
+  } catch (e) {
+    f.querySelector(".error").textContent = e.message;
+    f.querySelector(".error").hidden = false;
+  }
+});
+$("#mon-p-test").addEventListener("click", async () => {
+  const out = $("#mon-p-test-result");
+  if (!mon.editing) return toast("Save the profile first, then test it");
+  out.hidden = false;
+  out.className = "muted";
+  out.textContent = "Asking the device…";
+  try {
+    const r = await api(`/api/monitoring/profiles/${mon.editing.id}/test`, { method: "POST", body: { device_id: Number($("#mon-p-test-device").value) } });
+    out.className = r.ok ? "ok-text" : "bad-text";
+    out.textContent = r.ok ? `${r.message}: ${r.sys_name || "(no name)"} · up ${fmtDur(r.uptime)} · ${r.sys_descr}` : r.message;
+  } catch (e) {
+    out.className = "bad-text";
+    out.textContent = e.message;
+  }
+});
+$("#mon-p-form").version.addEventListener("change", monProfileFields);
+$("#mon-p-form").level.addEventListener("change", monProfileFields);
+$("#mon-p-add").addEventListener("click", () => monProfileForm());
+$("#mon-p-cancel").addEventListener("click", () => { $("#mon-p-form").hidden = true; });
+$("#mon-p-close").addEventListener("click", () => $("#mon-p-dialog").close());
+$("#mon-profiles").addEventListener("click", monProfiles);
+
+// --- device setup help
+
+async function monHelp() {
+  if (!mon.howto) mon.howto = await api("/api/monitoring/howto").catch((e) => toast(e.message));
+  if (!mon.howto) return;
+  const sel = $("#mon-help-platform");
+  if (!sel.options.length) {
+    sel.replaceChildren(...mon.howto.platforms.map((p, i) => h("option", { value: i }, p.title)));
+    $("#mon-help-server").value = mon.howto.server;
+  }
+  monHelpShow();
+  $("#mon-help-dialog").showModal();
+}
+
+function monHelpShow() {
+  const hw = mon.howto;
+  const p = hw.platforms[Number($("#mon-help-platform").value) || 0];
+  const server = $("#mon-help-server").value.trim() || "<server address>";
+  const v2c = $("#mon-help-mode").value === "v2c";
+  $("#mon-help-general").replaceChildren(...hw.general.map((g) => h("li", {}, g)));
+  $("#mon-help-text").textContent = v2c ? (p.v2c ? p.v2c.replaceAll("{server}", server) : `${p.title}: use SNMPv3 (see the vendor's documentation for v2c).`)
+    : p.text.replaceAll("{server}", server);
+  $("#mon-help-notes").textContent = [p.kind === "gui" ? "In the device's web page or API." : "", v2c ? "Add these lines in configuration mode. The community is sent in clear text: keep it to the management network." : "", p.notes || ""].filter(Boolean).join(" ");
+}
+
+$("#mon-help").addEventListener("click", monHelp);
+$("#mon-help-close").addEventListener("click", () => $("#mon-help-dialog").close());
+$("#mon-help-platform").addEventListener("change", monHelpShow);
+$("#mon-help-server").addEventListener("input", monHelpShow);
+$("#mon-help-mode").addEventListener("change", monHelpShow);
+$("#mon-help-copy").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText($("#mon-help-text").textContent);
+    toast("Copied");
+  } catch {
+    toast("Select the text and copy it (the browser blocked copying)");
+  }
+});
+
+// --- the page's controls
+
+$("#mon-search").addEventListener("input", renderMonitoring);
+$("#mon-filter-status").addEventListener("change", renderMonitoring);
+$("#mon-filter-site").addEventListener("change", renderMonitoring);
+$("#mon-map").addEventListener("click", () => openTopology(0));
+$("#mon-all").addEventListener("change", (ev) => {
+  monShown().forEach((r) => (ev.target.checked ? mon.picked.add(r.id) : mon.picked.delete(r.id)));
+  renderMonitoring();
+});
+$$("#mon-bulk [data-bulk]").forEach((b) => b.addEventListener("click", () => {
+  const [key, value] = b.dataset.bulk.split(":");
+  monSetChoices(mon.picked, { [key]: value === "true" }, b.textContent);
+}));
+$("#mon-bulk-clear").addEventListener("click", () => { mon.picked.clear(); renderMonitoring(); });
+$("#mon-bulk-profile-set").addEventListener("click", () => {
+  const v = $("#mon-bulk-profile").value;
+  monSetChoices(mon.picked, { set_profile: true, profile_id: v ? Number(v) : null }, "SNMP profile chosen");
+});
+$("#mon-bulk").addEventListener("pointerenter", async () => {
+  if (!mon.profiles) await monLoadProfiles().catch(() => null);
+  if (mon.profiles && !$("#mon-bulk-profile").options.length) monProfileOptions($("#mon-bulk-profile"), null);
+});
+
+/** Up/down per device for the network map (empty when monitoring can't be seen). */
+async function monStatesForMap() {
+  if (!hasModule("monitoring") || !can("monitoring", "view")) return new Map();
+  const data = await api("/api/monitoring/devices").catch(() => null);
+  return new Map((data ? data.devices : []).filter((r) => r.monitored).map((r) => [r.id, r]));
+}
 
 // ---------- syslog ----------
 
