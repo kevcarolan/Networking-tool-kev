@@ -158,7 +158,7 @@ async function showApp(user) {
     if (document.hidden) return;
     if (state.view === "backups") loadBackups();
     else if (state.view === "firmware" && fw.tab === "versions") loadFwVersions();
-    else if (state.view === "monitoring" && !$("#mon-dialog").open && !$("#mon-p-dialog").open && !$("#mon-if-dialog").open) loadMonitoring();
+    else if (state.view === "monitoring" && !$("#mon-dialog").open && !$("#mon-p-dialog").open && !$("#mon-if-dialog").open && !$("#mk-dialog").open) loadMonitoring();
   }, 15000);
 }
 
@@ -1339,7 +1339,7 @@ function openSiteCircuits(id) {
 
 const cal = { month: null, mode: "month", site: "", items: [], kinds: {}, devices: null, siteNames: [] };
 const CAL_LEGEND = [["upgrade", "Upgrade (live)"], ["dry_run", "Upgrade (dry run)"], ["change", "Change"],
-  ["maintenance", "Maintenance"], ["outage", "Outage"], ["freeze", "Change freeze"]];
+  ["maintenance", "Maintenance"], ["outage", "Outage"], ["freeze", "Change freeze"], ["meraki", "Meraki upgrade"]];
 const utcDate = (v) => new Date(v.endsWith("Z") || v.includes("+") ? v : v + "Z");
 const dayStart = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
@@ -1430,7 +1430,7 @@ function calOpen(x) {
   const byKey = new Map(cal.items.map((i) => [i.key, i]));
   const row = (label, value) => value ? h("p", {}, h("strong", {}, `${label}: `), value) : null;
   $("#cal-dialog-title").textContent = `${x.kind_label}: ${x.title}`;
-  $("#cal-dialog-body").replaceChildren(
+  $("#cal-dialog-body").replaceChildren(...[
     row("When", `${fmtTime(x.start)} – ${fmtTime(x.end)}`),
     row("Sites", x.sites.join(", ") || "Every site"),
     row("Devices", x.devices.map((d) => d.name).join(", ")),
@@ -1439,13 +1439,13 @@ function calOpen(x) {
     x.clashes.length ? h("p", { class: "notice" }, "⚠ Clashes with: ", ...x.clashes.map((k) => byKey.get(k)).filter(Boolean)
       .flatMap((o, i) => [i ? "; " : "", h("span", { class: "link", onclick: () => calOpen(o) }, `${o.kind_label}: ${o.title} (${fmtTime(o.start)})`)])) : null,
     h("p", { class: "muted" }, `Added by ${x.created_by}${x.updated_by && x.updated_by !== x.created_by ? `, last changed by ${x.updated_by}` : ""}`),
-    can("inventory", "manage") ? h("div", { class: "dialog-actions" },
+    x.source === "event" && can("inventory", "manage") ? h("div", { class: "dialog-actions" },
       h("button", { class: "danger", onclick: async () => {
         if (!confirm(`Delete "${x.title}" from the calendar?`)) return;
         try { await api(`/api/calendar/events/${x.id}`, { method: "DELETE" }); $("#cal-dialog").close(); loadCalendar(); } catch (e) { toast(e.message); }
       } }, "Delete"),
       h("button", { title: "A new item like this one", onclick: () => calEdit(x) }, "Copy"),
-      h("button", { class: "primary", onclick: () => calEdit(x, true) }, "Edit")) : null);
+      h("button", { class: "primary", onclick: () => calEdit(x, true) }, "Edit")) : null].filter(Boolean));
   if (!$("#cal-dialog").open) $("#cal-dialog").showModal();
 }
 
@@ -3426,6 +3426,7 @@ async function loadMonitoring() {
     monEvents(ev.events);
     monPorts();
     monHardware();
+    loadMeraki();
   } catch (e) {
     toast(e.message);
   }
@@ -3820,6 +3821,131 @@ $("#mon-bulk-profile-set").addEventListener("click", () => {
 $("#mon-bulk").addEventListener("pointerenter", async () => {
   if (!mon.profiles) await monLoadProfiles().catch(() => null);
   if (mon.profiles && !$("#mon-bulk-profile").options.length) monProfileOptions($("#mon-bulk-profile"), null);
+});
+
+// --- Meraki (Dashboard API)
+
+const MK_PRODUCTS = { appliance: "MX security appliance", switch: "MS switch", wireless: "MR access point",
+  camera: "MV camera", cellularGateway: "MG cellular", sensor: "MT sensor" };
+const MK_STATUS = { online: "mon-up", alerting: "mon-warning", offline: "mon-down", dormant: "mon-off" };
+
+async function loadMeraki() {
+  const r = await api("/api/monitoring/meraki").catch(() => null);
+  mon.meraki = r;
+  $("#mk-box").hidden = !r || !r.connections.length;
+  if (!r || !r.connections.length) return;
+  const c = r.counts;
+  const errors = r.connections.filter((x) => x.error);
+  const last = Math.max(0, ...r.connections.map((x) => x.read_at || 0));
+  $("#mk-note").textContent = [`${c.online} online`, c.alerting ? `${c.alerting} alerting` : "", c.offline ? `${c.offline} offline` : "",
+    c.dormant ? `${c.dormant} dormant` : "", last ? `read ${fmtAgo(tsIso(last))}, every ${Math.round(r.interval / 60)} min` : "not read yet",
+    ...errors.map((x) => `${x.name}: ${x.error}`)].filter(Boolean).join(" · ");
+  $("#mk-note").classList.toggle("bad-text", errors.length > 0 || c.offline > 0);
+  $("#mk-table tbody").replaceChildren(...r.devices.map((d) => h("tr", {},
+    h("td", {}, h("span", { class: `badge ${MK_STATUS[d.status] || "mon-unknown"}` }, d.status_label)),
+    h("td", {}, h("b", {}, d.name), r.connections.length > 1 ? h("small", { class: "muted" }, ` ${d.org}`) : null),
+    h("td", {}, siteLink(d.network)), h("td", {}, d.model), h("td", { class: "muted" }, d.lan_ip || "—"),
+    h("td", { class: "muted" }, d.public_ip || "—"), h("td", {}, d.firmware || "—"),
+    h("td", {}, d.uplinks.map((u) => h("span", { class: `badge ${u.status === "active" ? "mon-up" : u.status === "ready" ? "mon-off" : "mon-down"}`, title: u.status }, `${u.interface} ${u.status}`))),
+    h("td", { class: "muted", title: d.last_reported || "" }, d.since ? fmtAgo(tsIso(d.since)) : "—"))));
+  const upg = r.upgrades.filter((u) => u.next_time);
+  $("#mk-upgrades-box").hidden = !upg.length;
+  $("#mk-upgrades tbody").replaceChildren(...upg.map((u) => h("tr", {},
+    h("td", {}, fmtTime(u.next_time)), h("td", {}, siteLink(u.network)), h("td", {}, MK_PRODUCTS[u.product] || u.product),
+    h("td", {}, u.current), h("td", {}, h("b", {}, u.next_version)))));
+}
+
+async function mkConnections() {
+  const r = await api("/api/monitoring/meraki").catch((e) => toast(e.message));
+  if (!r) return;
+  mon.meraki = r;
+  const f = $("#mk-form");
+  if (!f.base_url.options.length) f.base_url.replaceChildren(...Object.entries(r.bases).map(([k, v]) => h("option", { value: k }, v)));
+  $("#mk-conn-table tbody").replaceChildren(...r.connections.map((c) => h("tr", {},
+    h("td", {}, h("b", {}, c.name), c.enabled ? null : h("span", { class: "badge mon-off" }, "off")),
+    h("td", {}, `${c.org_name || ""} (${c.org_id})`), h("td", { class: "muted" }, c.base_label),
+    h("td", { class: c.error ? "bad-text" : "muted" }, c.error || (c.read_at ? `${fmtAgo(tsIso(c.read_at))}: ${c.devices} devices in ${c.networks} networks` : "not yet")),
+    h("td", { class: "actions" }, h("button", { class: "small", onclick: () => mkForm(c) }, "Edit"),
+      h("button", { class: "small danger", onclick: () => mkDelete(c) }, "Delete")))));
+  if (!r.connections.length) $("#mk-conn-table tbody").append(h("tr", {}, h("td", { colspan: 5, class: "muted" }, "No Meraki connections yet.")));
+  f.hidden = true;
+  if (!$("#mk-dialog").open) $("#mk-dialog").showModal();
+}
+
+function mkForm(c = null) {
+  const f = $("#mk-form");
+  mon.mkEditing = c;
+  f.reset();
+  $("#mk-form-title").textContent = c ? `Change ${c.name}` : "Add connection";
+  f.name.value = c ? c.name : "";
+  f.base_url.value = c ? c.base_url : Object.keys(mon.meraki.bases)[0];
+  f.org_id.value = c ? c.org_id : "";
+  f.enabled.checked = c ? c.enabled : true;
+  f.org_pick.replaceChildren(h("option", { value: "" }, c ? `${c.org_name || c.org_id}` : "Find them with the API key →"));
+  $("#mk-keep").hidden = !c;
+  $("#mk-find-result").hidden = true;
+  f.querySelector(".error").hidden = true;
+  f.hidden = false;
+  f.name.focus();
+}
+
+async function mkDelete(c) {
+  if (!confirm(`Delete the Meraki connection ${c.name}? Its devices leave the Monitoring page (inventory rows stay).`)) return;
+  try {
+    await api(`/api/monitoring/meraki/connections/${c.id}`, { method: "DELETE" });
+    await Promise.all([mkConnections(), loadMeraki()]);
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+$("#mk-find").addEventListener("click", async () => {
+  const f = $("#mk-form"), out = $("#mk-find-result");
+  out.hidden = false;
+  out.className = "muted";
+  out.textContent = "Asking the Dashboard API…";
+  try {
+    const r = await api("/api/monitoring/meraki/organizations", { method: "POST", body: {
+      base_url: f.base_url.value, api_key: f.api_key.value || null, connection_id: mon.mkEditing ? mon.mkEditing.id : null } });
+    out.className = r.ok ? "ok-text" : "bad-text";
+    out.textContent = r.message;
+    if (r.ok) {
+      f.org_pick.replaceChildren(...r.organizations.map((o) => h("option", { value: o.id, "data-name": o.name }, `${o.name} (${o.id})`)));
+      if (r.organizations.length) { f.org_id.value = r.organizations[0].id; if (!f.name.value) f.name.value = r.organizations[0].name; }
+    }
+  } catch (e) {
+    out.className = "bad-text";
+    out.textContent = e.message;
+  }
+});
+$("#mk-form").org_pick.addEventListener("change", (ev) => { if (ev.target.value) $("#mk-form").org_id.value = ev.target.value; });
+$("#mk-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target, c = mon.mkEditing;
+  const picked = f.org_pick.selectedOptions[0];
+  const body = { name: f.name.value, base_url: f.base_url.value, api_key: f.api_key.value || (c ? null : ""),
+    org_id: f.org_id.value, org_name: picked && picked.value === f.org_id.value ? picked.dataset.name || "" : (c && c.org_id === f.org_id.value ? c.org_name : ""),
+    enabled: f.enabled.checked };
+  try {
+    await api(c ? `/api/monitoring/meraki/connections/${c.id}` : "/api/monitoring/meraki/connections", { method: c ? "PUT" : "POST", body });
+    toast("Saved. It is read within a few minutes.");
+    await mkConnections();
+  } catch (e) {
+    f.querySelector(".error").textContent = e.message;
+    f.querySelector(".error").hidden = false;
+  }
+});
+$("#mk-add").addEventListener("click", () => mkForm());
+$("#mk-cancel").addEventListener("click", () => { $("#mk-form").hidden = true; });
+$("#mk-close").addEventListener("click", () => { $("#mk-dialog").close(); loadMeraki(); });
+$("#mk-connections").addEventListener("click", mkConnections);
+$("#mk-inventory").addEventListener("click", async () => {
+  try {
+    const r = await api("/api/monitoring/meraki/inventory", { method: "POST" });
+    toast(`Inventory: ${r.added} added, ${r.updated} brought up to date (of ${r.total} Meraki devices)`);
+  } catch (e) {
+    toast(e.message);
+  }
 });
 
 // --- hardware health

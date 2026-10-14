@@ -429,7 +429,21 @@ def _monitoring(db: Session, settings, devices: dict) -> tuple[dict, dict[int, s
                              "problems": sorted(h["problems"].values())[:3]})
     hardware.sort(key=lambda r: (not r["critical"], r["device"]))
     counts["hardware"] = len(hardware)
-    return {"running": running, "counts": counts, "monitored": len(states),
+    mk = store.meraki()
+    from app.tools.monitoring.models import MerakiOrg
+
+    orgs = {o.id for o in db.scalars(select(MerakiOrg))}
+    mdev = [d for d in mk["devices"] if d["org_ref"] in orgs]
+    meraki = None
+    if mdev:
+        meraki = {"counts": {s: sum(1 for d in mdev if d["status"] == s)
+                             for s in ("online", "alerting", "offline", "dormant")},
+                  "problems": [{"device": d["name"], "network": d["network"], "status": d["status"],
+                                "since": datetime.fromtimestamp(d["since"], UTC).replace(tzinfo=None)
+                                .isoformat(timespec="seconds") if d["since"] else None}
+                               for d in sorted(mdev, key=lambda d: (d["status"] != "offline", d["name"]))
+                               if d["status"] in ("offline", "alerting")][:LIST_ROWS]}
+    return {"running": running, "counts": counts, "monitored": len(states), "meraki": meraki,
             "hardware": hardware[:LIST_ROWS],
             "busiest": [{**port(r), "util": round(util(r), 3)} for r in busiest],
             "port_errors": [{**port(r), "errors": r["errors"] or 0, "discards": r["discards"] or 0}

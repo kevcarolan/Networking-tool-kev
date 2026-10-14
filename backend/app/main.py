@@ -47,7 +47,8 @@ _SECURITY_HEADERS = {
 
 def create_app(settings: Settings | None = None, fetcher=fetch_config,
                start_scheduler: bool | None = None, fw_collector=run_commands,
-               upgrade_io: DeviceIO | None = None, mailer=None, snmp_client=None) -> FastAPI:
+               upgrade_io: DeviceIO | None = None, mailer=None, snmp_client=None,
+               meraki_fetch=None) -> FastAPI:
     settings = settings or get_settings()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     init_engine(settings.database_url)
@@ -100,6 +101,7 @@ def create_app(settings: Settings | None = None, fetcher=fetch_config,
     app.state.job_service = job_service
     app.state.upgrade_io = upgrade_io
     app.state.snmp_client = snmp_client  # None: real SNMP (the profile Test button)
+    app.state.meraki_fetch = meraki_fetch  # None: real HTTPS to the Meraki Dashboard API
 
     app.add_middleware(
         SessionMiddleware, secret_key=settings.secret_key, session_cookie="netops_session",

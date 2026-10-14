@@ -14,6 +14,9 @@ Every 5 minutes it also reads, from each SNMP device:
 It is read-only. It only asks (ICMP echo, SNMP GET) and never changes anything on a device.
 There is no SNMP SET and no trap receiver: the devices' own messages go to the **Syslog** page.
 
+**Cisco Meraki** devices are managed from the Meraki cloud, so they are read through the
+Meraki Dashboard API instead (see [Cisco Meraki](#cisco-meraki) below).
+
 
 ## What the statuses mean
 
@@ -183,6 +186,66 @@ Only in `netops.env`: `NETOPS_MONITOR_WORKERS` (50), the number of devices check
 * **The one exception:** the only thing that asks a device from the web app itself is a
   profile's **Test** button, and only for someone allowed to manage SNMP profiles.
 
+## Cisco Meraki
+
+Meraki MX, MS, MR, MV and MG devices are run from the Meraki dashboard in the cloud. The
+server reads them through the **Meraki Dashboard API** every 5 minutes and shows them in a
+**Meraki** section of the Monitoring page:
+
+* every device with its status (**online**, **alerting**, **offline**, **dormant**), network,
+  model, LAN and public address, firmware and when the status last changed;
+* the MX **uplinks** (WAN 1, WAN 2, cellular) and whether each is active, ready or failed;
+* **firmware upgrades scheduled** in the dashboard, also shown on the **Calendar** as
+  "Meraki upgrade" (read-only: change them in the Meraki dashboard).
+
+A device going offline, alerting or coming back is an event: it is emailed with the
+**Monitoring** alerts, and the wall display has a Meraki panel (names and statuses only).
+**Add to the inventory** adds every Meraki device to the inventory, or brings its row up to
+date, matched by serial number.
+
+It is **read-only**: only GET requests are sent. Nothing in the Meraki dashboard is changed.
+
+### Setting it up
+
+1. **In the Meraki dashboard**, make a read-only API user: *Organization › Administrators*,
+   add an administrator (for example `netops-api@yourcompany.example`) with **Read-only**
+   organisation access.
+2. Make sure API access is on: *Organization › API & webhooks* (on older dashboards
+   *Organization › Settings › Dashboard API access*).
+3. Sign in as that administrator, open *My profile › API keys* and **generate an API key**.
+   Copy it: Meraki shows it only once.
+4. **Let this server reach the Dashboard API**: outbound HTTPS (443) to the addresses in
+   *Help › Firewall info* in the Meraki dashboard, or through your HTTPS proxy (add
+   `https_proxy=http://proxy.example:3128` to `/etc/netops/netops.env`, then
+   `sudo systemctl restart netops netops-monitor`). See
+   [security-hardening.md](security-hardening.md) §5. DNS must resolve the API address.
+5. **Here**: Monitoring › **Meraki** › *+ Add connection*. Give it a name, choose the region
+   (Global is `api.meraki.com`; Canada, China and US government have their own), paste the
+   key, press **Find organisations** and pick the organisation. Save.
+
+Within 5 minutes the devices appear. Add one connection per organisation.
+
+| Setting | Default | |
+|---|---|---|
+| Meraki: read every (seconds) | 300 | Settings › Site and defaults, or `NETOPS_MONITOR_MERAKI_SECONDS`. Scheduled upgrades are read once an hour |
+
+**Rate limits.** Meraki allows about 10 API requests a second per organisation, shared by
+everything that uses the API. A read takes 4 requests plus one per network once an hour, and
+"too many requests" answers are waited out and retried.
+
+**Air-gapped sites** can't use it: the Dashboard API is on the internet.
+
+### Meraki troubleshooting
+
+| What you see | Look at |
+|---|---|
+| "The API key was refused" | The key was mistyped or revoked, or API access is off for the organisation |
+| "The API key may not read this organisation" | The administrator the key belongs to has no access to that organisation |
+| "Not found: check the organisation ID" | Use **Find organisations** to pick it |
+| "Can't reach the Dashboard API" | The firewall (`MERAKI_HOSTS`), the proxy (`https_proxy` in `netops.env`) or DNS. `journalctl -k \| grep nft-out-drop` shows a blocked attempt |
+| A device is **alerting** | Meraki's own reason is in the Meraki dashboard (for example a failed uplink, a port error or a VPN problem) |
+| A device is **dormant** | Meraki hasn't heard from it for a long time (unplugged, or never installed) |
+
 ## Permissions
 
 The **Monitoring** area on the Users page:
@@ -196,6 +259,10 @@ credentials*:
 
 * **credentials** to add, change or delete them;
 * **addresses** to choose a device's profile.
+
+Meraki connections hold an API key, so they also need **credentials** (to add, change,
+delete or test them). Monitoring **view** shows the Meraki devices. **Add to the inventory**
+needs inventory **manage**.
 
 ## Licence
 

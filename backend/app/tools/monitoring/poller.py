@@ -41,6 +41,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.tools.monitoring import health as hw
 from app.tools.monitoring import ifaces
+from app.tools.monitoring import meraki as mk
 from app.tools.monitoring import ping as pinging
 from app.tools.monitoring.snmp import (SYS_DESCR, SYS_NAME, SYS_OBJECT_ID, SYS_UPTIME, SYSTEM,
                                        SnmpClient, SnmpError, SnmpTarget)
@@ -146,7 +147,7 @@ def load_jobs(db: Session, cipher) -> list[Job]:
 
 class Poller:
     def __init__(self, settings: Settings, store: MonitorStore, cipher=None, snmp=None,
-                 pinger=pinging.ping, clock=time.time):
+                 pinger=pinging.ping, clock=time.time, meraki_fetch=None):
         self.settings = settings
         self.store = store
         self.cipher = cipher
@@ -159,6 +160,10 @@ class Poller:
         self.if_prev: dict[int, dict[int, dict]] = {}  # device -> ifIndex -> last counters
         self.if_errors: dict[int, str] = {}  # why a device's interfaces couldn't be read
         self.health: dict[int, dict] = {}  # device -> the last health read (store.health)
+        self.meraki_fetch = meraki_fetch  # None: real HTTPS (tests and the demo pass their own)
+        self.meraki_orgs: list[dict] = []
+        self.meraki_last: dict[int, float] = {}
+        self.meraki_prev: dict[int, dict[str, dict]] = {}  # org -> serial -> last device row
         self.ping_allowed = True
         self.licensed = True
         self.started = clock()
@@ -436,6 +441,73 @@ class Poller:
         self.store.forget_interfaces(snmp)
         self.if_prev = {k: v for k, v in self.if_prev.items() if k in snmp}
         self.health = {k: v for k, v in self.health.items() if k in snmp}
+        self.meraki_orgs = self._load_meraki() if self.licensed else []
+        self.store.forget_meraki({o["id"] for o in self.meraki_orgs})
+
+    def _load_meraki(self) -> list[dict]:
+        from app.core.db import session_scope
+        from app.tools.monitoring.models import MerakiOrg
+
+        out = []
+        with session_scope() as db:
+            for o in db.scalars(select(MerakiOrg).where(MerakiOrg.enabled.is_(True))):
+                try:
+                    key = self.cipher.decrypt(o.api_key_enc) if o.api_key_enc else ""
+                except Exception:  # noqa: BLE001 - the credential key was replaced
+                    key = ""
+                out.append({"id": o.id, "name": o.name, "base": o.base_url, "org_id": o.org_id, "key": key})
+        return out
+
+    def sync_meraki(self, now: float | None = None) -> int:
+        """Read every Meraki organisation that is due (blocking: run it in an executor).
+        Returns the organisations read."""
+        now = self.clock() if now is None else now
+        done = 0
+        for org in self.meraki_orgs:
+            if now - self.meraki_last.get(org["id"], 0) < max(self.settings.monitor_meraki_seconds, 60) - 5:
+                continue
+            self.meraki_last[org["id"]] = now
+            state = self.store.meraki()["state"].get(org["id"]) or {}
+            upgrades_due = now - (state.get("upgrades_ts") or 0) >= mk.UPGRADES_EVERY
+            try:
+                if not org["key"]:
+                    raise mk.MerakiError("Can't read the API key: enter it again")
+                client = mk.MerakiClient(org["base"], org["key"], fetch=self.meraki_fetch)
+                snap = client.snapshot(org["org_id"], upgrades=upgrades_due)
+            except mk.MerakiError as exc:
+                log.warning("Meraki %s: %s", org["name"], exc)
+                self.store.save_meraki(org["id"], None, None, {"ts": now, "error": str(exc),
+                                                                 "networks": state.get("networks"),
+                                                                 "devices": state.get("devices"),
+                                                                 "upgrades_ts": state.get("upgrades_ts")}, [])
+                continue
+            if org["id"] not in self.meraki_prev:
+                self.meraki_prev[org["id"]] = {d["serial"]: d for d in self.store.meraki()["devices"]
+                                               if d["org_ref"] == org["id"]}
+            before = self.meraki_prev[org["id"]]
+            events = []
+            for d in snap["devices"]:
+                old = before.get(d["serial"])
+                d["ts"] = now
+                d["since"] = old["since"] if old and old.get("status") == d["status"] and old.get("since") else now
+                if old is None and d["status"] != "online":
+                    d["since"] = min(now, mk.reported_at(d["last_reported"]) or now)  # first read: since it last reported
+                if old is None or old.get("status") == d["status"]:
+                    continue
+                kind = {"offline": "meraki_offline", "alerting": "meraki_alerting"}.get(
+                    d["status"], "meraki_online" if d["status"] == "online" else "")
+                if kind:
+                    events.append({"ts": now, "serial": d["serial"], "name": d["name"], "network": d["network"],
+                                   "kind": kind, "detail": f"{d['model']} in {d['network'] or '-'}: "
+                                                          f"{old.get('status')} → {d['status']}"})
+            self.meraki_prev[org["id"]] = {d["serial"]: d for d in snap["devices"]}
+            self.store.save_meraki(org["id"], snap["devices"], snap["upgrades"], {
+                "ts": now, "error": "", "networks": snap["networks"], "devices": len(snap["devices"]),
+                "upgrades_ts": now if upgrades_due else state.get("upgrades_ts")}, events)
+            for e in events:
+                log.info("Meraki %s: %s %s", e["name"], e["kind"], e["detail"])
+            done += 1
+        return done
 
     def prune(self) -> None:
         gone = self.store.prune(self.settings.monitor_keep_days)
@@ -456,6 +528,7 @@ class Poller:
                 "interface_interval": self.settings.monitor_interface_seconds,
                 "interface_errors": {str(k): v for k, v in self.if_errors.items()},
                 "health_interval": self.settings.monitor_health_seconds,
+                "meraki_orgs": len(self.meraki_orgs),
                 "last_error": self.last_error}
 
     # --- the service --------------------------------------------------------------------------
@@ -477,6 +550,8 @@ class Poller:
                 if now >= next_round:
                     next_round = now + max(self.settings.monitor_poll_seconds, 10)
                     await self.run_round()
+                    if self.meraki_orgs:
+                        await loop.run_in_executor(None, self.sync_meraki)
                 self.last_error = ""
             except Exception as exc:  # noqa: BLE001 - keep polling
                 log.exception("Monitoring round failed")

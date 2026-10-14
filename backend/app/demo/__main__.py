@@ -26,6 +26,7 @@ from fastapi.testclient import TestClient
 from app.core import licence
 from app.core.config import REPO_ROOT, Settings
 from app.demo import seed
+from app.demo import meraki as demo_meraki
 from app.demo import monitor as demo_monitor
 from app.demo import syslog as demo_syslog
 from app.main import create_app
@@ -47,7 +48,8 @@ def build(data: Path, port: int, net=None, scheduler: bool = True) -> tuple:
     settings = settings_for(data, port)
     net = net or seed.build_network()
     app = create_app(settings, fetcher=seed.fetcher, fw_collector=net.show, upgrade_io=net,
-                     start_scheduler=scheduler, snmp_client=demo_monitor.sim_for(net))
+                     start_scheduler=scheduler, snmp_client=demo_monitor.sim_for(net),
+                     meraki_fetch=demo_meraki.FakeDashboard())
     app.state.demo = True
     svc = app.state.job_service
     svc.sleep, svc.monotonic = net.sleep, net.monotonic
@@ -80,10 +82,12 @@ def first_run(app, net) -> dict | None:
             app.state.backup_service.run(device_id)
             app.state.firmware_service.check(device_id)
         app.state.circuit_scan.scan("demo")
-        poller = demo_monitor.build(app.state.settings, app.state.snmp_client, app.state.cipher)
+        poller = demo_monitor.build(app.state.settings, app.state.snmp_client, app.state.cipher,
+                                    meraki_fetch=app.state.meraki_fetch)
         demo_monitor.history(poller)  # three days of checks for the graphs
         poller.housekeeping()
         asyncio.run(poller.run_round())  # the page has today's state straight away
+        poller.sync_meraki()  # the made-up Meraki stores
         poller.store.close()
     return info
 
@@ -118,7 +122,8 @@ def main(argv=None) -> None:
     app, net, worker = build(args.data, args.port, net)
     threading.Thread(target=worker.run_forever, name="demo-worker", daemon=True).start()
     demo_syslog.start(app.state.settings, threading.Event())  # history, then a trickle
-    demo_monitor.start(app.state.settings, app.state.snmp_client, app.state.cipher)  # simulated
+    demo_monitor.start(app.state.settings, app.state.snmp_client, app.state.cipher,  # simulated
+                       meraki_fetch=app.state.meraki_fetch)
 
     url = f"http://127.0.0.1:{args.port}"
     print(f"\n  Demo running on {url}  (sign in as {seed.ADMIN_USER} / {seed.ADMIN_PASSWORD})")

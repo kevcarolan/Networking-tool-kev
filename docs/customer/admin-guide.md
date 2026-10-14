@@ -355,6 +355,22 @@ way mark their devices *maintenance*: what happens to them is recorded, not emai
 
 Statuses, sizing and troubleshooting: [monitoring.md](../monitoring.md).
 
+**Cisco Meraki** devices are read from the Meraki cloud through the Dashboard API, not with
+ping and SNMP:
+
+1. In the Meraki dashboard, add a **read-only** organisation administrator, check that API
+   access is on (*Organization › API & webhooks*), sign in as that administrator and
+   generate an **API key** (*My profile › API keys*).
+2. Let the server reach the Dashboard API over HTTPS (443): the addresses in *Help ›
+   Firewall info* in the Meraki dashboard (`MERAKI_HOSTS` in the server's firewall), or your
+   proxy (`https_proxy=` in `/etc/netops/netops.env`). Not possible on an air-gapped site.
+3. Monitoring › **Meraki** › **+ Add connection**: a name, the region, the key, **Find
+   organisations**, pick one, **Save**. The devices appear within 5 minutes.
+4. **Add to the inventory** (inventory *manage*) adds them to the inventory by serial number.
+
+Meraki connections need *credentials* for Devices and credentials; anyone with Monitoring
+*view* sees the devices. Details: [monitoring.md](../monitoring.md#cisco-meraki).
+
 ## 6b. Syslog from the devices
 
 The server receives the devices' syslog on UDP and TCP 514 (the `netops-syslog` service)

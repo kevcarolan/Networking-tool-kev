@@ -218,6 +218,11 @@ minute with ping and SNMP; the server only asks, it never changes anything.
 * **Network map:** the devices coloured green (up), orange (warning) and red (down). The
   lines are coloured by load: orange from 50%, red from 80%. Click a line for the traffic at
   both ends.
+* **Meraki** (if your admin connected it): every Meraki device with its status from the
+  Meraki dashboard (**online**, **alerting**, **offline**, **dormant**), its network, model,
+  addresses and firmware, and each MX's internet uplinks. Firmware upgrades scheduled in
+  Meraki are listed under it and on the **Calendar** ("Meraki upgrade"; change them in the
+  Meraki dashboard). **Add to the inventory** puts the Meraki devices in the inventory.
 * With *manage*: switch monitoring, ping or SNMP off for a device (its window, or tick
   several and use the bar above the list). **SNMP profiles** and **Help: set up devices**
   (the SNMP config for each platform) are for admins; see [monitoring.md](../monitoring.md).

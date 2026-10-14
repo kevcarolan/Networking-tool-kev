@@ -74,6 +74,33 @@ CREATE TABLE IF NOT EXISTS iface_state (
     PRIMARY KEY (device_id, if_index)
 );
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS meraki_devices (
+    serial TEXT PRIMARY KEY,
+    org_ref INTEGER NOT NULL,      -- mon_meraki.id
+    name TEXT NOT NULL DEFAULT '', model TEXT NOT NULL DEFAULT '',
+    product_type TEXT NOT NULL DEFAULT '', network_id TEXT NOT NULL DEFAULT '',
+    network TEXT NOT NULL DEFAULT '', mac TEXT NOT NULL DEFAULT '',
+    lan_ip TEXT NOT NULL DEFAULT '', public_ip TEXT NOT NULL DEFAULT '',
+    firmware TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'unknown',
+    since REAL,                    -- in this status since
+    last_reported TEXT NOT NULL DEFAULT '', tags TEXT NOT NULL DEFAULT '',
+    address TEXT NOT NULL DEFAULT '', uplinks TEXT NOT NULL DEFAULT '[]', ts REAL
+);
+CREATE TABLE IF NOT EXISTS meraki_upgrades (
+    org_ref INTEGER NOT NULL, network_id TEXT NOT NULL, network TEXT NOT NULL DEFAULT '',
+    product TEXT NOT NULL, current TEXT NOT NULL DEFAULT '', next_version TEXT NOT NULL DEFAULT '',
+    next_time TEXT NOT NULL DEFAULT '', ts REAL, PRIMARY KEY (network_id, product)
+);
+CREATE TABLE IF NOT EXISTS meraki_state (
+    org_ref INTEGER PRIMARY KEY, ts REAL, error TEXT NOT NULL DEFAULT '',
+    networks INTEGER, devices INTEGER, upgrades_ts REAL
+);
+CREATE TABLE IF NOT EXISTS meraki_events (
+    id INTEGER PRIMARY KEY, ts REAL NOT NULL, org_ref INTEGER NOT NULL, serial TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT '', network TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL,
+    detail TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS meraki_events_ts ON meraki_events (ts);
 CREATE TABLE IF NOT EXISTS health_state (
     device_id INTEGER PRIMARY KEY,
     ts REAL,                       -- read at
@@ -233,6 +260,54 @@ class MonitorStore:
                 with dcon:
                     dcon.executemany("INSERT INTO hx (ts, device_id, key, value) VALUES (?,?,?,?)",
                                      [(t, device_id, k, v) for t, k, v in part])
+
+    MERAKI_COLUMNS = ("serial", "org_ref", "name", "model", "product_type", "network_id", "network",
+                      "mac", "lan_ip", "public_ip", "firmware", "status", "since", "last_reported",
+                      "tags", "address", "uplinks", "ts")
+
+    def save_meraki(self, org_ref: int, devices: list[dict] | None, upgrades: list[dict] | None,
+                    state: dict, events: list[dict]) -> None:
+        """One organisation's read: its devices (replacing what was there), its scheduled
+        upgrades (when read), how the read went, and the status changes."""
+        with self._lock:
+            con = self._writer()
+            with con:
+                if devices is not None:
+                    con.execute("DELETE FROM meraki_devices WHERE org_ref = ?", (org_ref,))
+                    con.executemany(
+                        f"INSERT OR REPLACE INTO meraki_devices ({', '.join(self.MERAKI_COLUMNS)}) "
+                        f"VALUES ({', '.join('?' * len(self.MERAKI_COLUMNS))})",
+                        [tuple(json.dumps(d.get(c) or []) if c == "uplinks" else
+                               org_ref if c == "org_ref" else d.get(c) for c in self.MERAKI_COLUMNS)
+                         for d in devices])
+                if upgrades is not None:
+                    con.execute("DELETE FROM meraki_upgrades WHERE org_ref = ?", (org_ref,))
+                    con.executemany(
+                        "INSERT OR REPLACE INTO meraki_upgrades (org_ref, network_id, network, product, "
+                        "current, next_version, next_time, ts) VALUES (?,?,?,?,?,?,?,?)",
+                        [(org_ref, u["network_id"], u["network"], u["product"], u["current"],
+                          u["next_version"], u["next_time"], state.get("ts")) for u in upgrades])
+                con.execute(
+                    "INSERT OR REPLACE INTO meraki_state (org_ref, ts, error, networks, devices, upgrades_ts) "
+                    "VALUES (?,?,?,?,?,?)", (org_ref, state.get("ts"), state.get("error", ""),
+                                             state.get("networks"), state.get("devices"),
+                                             state.get("upgrades_ts")))
+                con.executemany(
+                    "INSERT INTO meraki_events (ts, org_ref, serial, name, network, kind, detail) "
+                    "VALUES (?,?,?,?,?,?,?)",
+                    [(e["ts"], org_ref, e["serial"], e["name"], e["network"], e["kind"], e["detail"])
+                     for e in events])
+
+    def forget_meraki(self, keep: set[int]) -> None:
+        """Drop what was read for organisations that were removed or switched off."""
+        with self._lock:
+            con = self._writer()
+            have = {r[0] for r in con.execute("SELECT org_ref FROM meraki_state")} | \
+                {r[0] for r in con.execute("SELECT DISTINCT org_ref FROM meraki_devices")}
+            if gone := have - keep:
+                with con:
+                    for table in ("meraki_devices", "meraki_upgrades", "meraki_state"):
+                        con.executemany(f"DELETE FROM {table} WHERE org_ref = ?", [(g,) for g in gone])
 
     def forget_interfaces(self, keep: set[int]) -> None:
         """Drop the interfaces of devices no longer read with SNMP."""
@@ -412,6 +487,7 @@ class MonitorStore:
                                         dt.time(), dt.UTC).timestamp()
             with con:
                 con.execute("DELETE FROM events WHERE ts < ?", (limit,))
+                con.execute("DELETE FROM meraki_events WHERE ts < ?", (limit,))
                 con.execute("DELETE FROM daily WHERE day < ?",
                             ((today - dt.timedelta(days=EVENTS_KEPT_DAYS)).isoformat(),))
         return gone
@@ -549,6 +625,31 @@ class MonitorStore:
         for r in rows:
             r.pop("counters", None)
         return rows
+
+    def _query(self, sql: str, args=()) -> list[dict]:
+        con = self._read("state.db")
+        if con is None:
+            return []
+        try:
+            return [dict(r) for r in con.execute(sql, args)]
+        except sqlite3.Error:
+            return []
+        finally:
+            con.close()
+
+    def meraki(self) -> dict:
+        """Every Meraki organisation's devices, scheduled upgrades and last read."""
+        devices = self._query("SELECT * FROM meraki_devices ORDER BY network, name")
+        for d in devices:
+            d["uplinks"] = json.loads(d["uplinks"] or "[]")
+        return {"devices": devices,
+                "upgrades": self._query("SELECT * FROM meraki_upgrades ORDER BY next_time, network"),
+                "state": {r["org_ref"]: r for r in self._query("SELECT * FROM meraki_state")}}
+
+    def meraki_events(self, since: float, until: float, limit: int = 200) -> list[dict]:
+        """Newest first."""
+        return self._query("SELECT * FROM meraki_events WHERE ts >= ? AND ts < ? ORDER BY ts DESC, id DESC "
+                           "LIMIT ?", (since, until, limit))
 
     def health(self, device_id: int | None = None) -> dict | None:
         """One device's health as last read (or None), or with no device: every device's,

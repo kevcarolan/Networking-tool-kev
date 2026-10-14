@@ -224,6 +224,7 @@ def due(db: Session, cfg: Config, now: datetime | None = None, syslog_dir=None,
         out += _worker(db, now, done)
     if monitor_dir is not None and cfg.wanted("monitoring") and "monitoring" in modules:
         out += _monitoring(db, since, now, done, monitor_dir)
+        out += _meraki(since, now, done, monitor_dir)
     if syslog_dir is not None and "syslog" in modules:
         out += _syslog(db, cfg, syslog_dir)
     return out
@@ -231,6 +232,33 @@ def due(db: Session, cfg: Config, now: datetime | None = None, syslog_dir=None,
 
 MONITOR_KINDS = ("down", "up", "restarted", "port_down", "port_up", "health_problem", "health_ok")
 MONITOR_LIMIT = 50  # events listed in one email
+
+
+def _meraki(since, now, done, monitor_dir) -> list[Alert]:
+    """Meraki devices that went offline, alerting or back online (Dashboard API)."""
+    from app.tools.monitoring.store import MonitorStore
+
+    start = max(since, now - timedelta(hours=24)).replace(tzinfo=UTC).timestamp()
+    rows = [e for e in MonitorStore(monitor_dir).meraki_events(start, now.replace(tzinfo=UTC).timestamp() + 60,
+                                                                limit=500)
+            if f"mk:{e['id']}" not in done]
+    if not rows:
+        return []
+    rows.sort(key=lambda e: e["ts"])
+    label = {"meraki_offline": "OFFLINE", "meraki_alerting": "ALERTING", "meraki_online": "back online"}
+    lines = [f"  {datetime.fromtimestamp(e['ts'], UTC):%Y-%m-%d %H:%M} UTC  {e['name']} ({e['network'] or '-'})  "
+             f"{label.get(e['kind'], e['kind'])}: {e['detail'][:200]}" for e in rows[:MONITOR_LIMIT]]
+    latest = {}
+    for e in rows:
+        latest[e["serial"]] = e
+    bad = sorted(e["name"] for e in latest.values() if e["kind"] != "meraki_online")
+    good = sorted(e["name"] for e in latest.values() if e["kind"] == "meraki_online")
+    short = lambda xs: ", ".join(xs[:4]) + (" …" if len(xs) > 4 else "")  # noqa: E731
+    parts = ([f"{len(bad)} offline or alerting: {short(bad)}"] if bad else []) + \
+        ([f"{len(good)} back online: {short(good)}"] if good else [])
+    return [Alert([f"mk:{e['id']}" for e in rows], "Meraki: " + "; ".join(parts),
+                  "From the Meraki Dashboard API:\n\n" + "\n".join(lines) +
+                  "\n\nThe details are on the Monitoring page (Meraki).", kind="monitoring")]
 
 
 def _monitoring(db, since, now, done, monitor_dir) -> list[Alert]:

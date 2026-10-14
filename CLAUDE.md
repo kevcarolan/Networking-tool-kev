@@ -156,6 +156,12 @@ remote); never sync the two automatically.
   Suggested SNMP configs per platform are in `howto.py`: add one for every new platform (a
   test checks). Calendar windows and upgrades under way mark devices "maintenance" (events
   kept, not emailed). The wall display shows names and statuses only, never reasons.
+  Cisco Meraki (`meraki.py`): the poller reads each `mon_meraki` organisation through the
+  Dashboard API (GET only, read-only key encrypted like credentials, only to `meraki.BASES`,
+  redirects only within Meraki's domain) into `meraki_*` tables in `state.db`; the only
+  internet connection the product makes, optional (firewall `MERAKI_HOSTS` or `https_proxy`).
+  Injectable (`Poller(meraki_fetch=)`, `create_app(meraki_fetch=)`); tests and the demo use
+  `app/demo/meraki.py` (`FakeDashboard`). Connections need `inventory:credentials`.
 * Inventory (`tools/inventory/`): table `assets`, one row per thing; a row with `device_id`
   is managed and every device gets one (`fields.sync_devices`, which also links an existing
   row by name or address). Built-in columns are `fields.STANDARD` (page, import and export

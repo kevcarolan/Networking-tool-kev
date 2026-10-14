@@ -117,6 +117,7 @@
           <span class="spacer"></span>
           <button id="mon-map" data-perm="circuits:view" data-module="circuits" title="The network map, coloured by up and down">Network map</button>
           <button id="mon-profiles" title="The SNMP communities and SNMPv3 users devices are polled with">SNMP profiles</button>
+          <button id="mk-connections" data-perm="inventory:credentials" title="Meraki organisations read through the Dashboard API">Meraki</button>
           <button id="mon-help">Help: set up devices</button>
         </div>
         <div id="mon-bulk" class="toolbar bulk" hidden>
@@ -143,6 +144,23 @@
             <tbody></tbody>
           </table>
           <p id="mon-empty" class="empty" hidden></p>
+        </div>
+        <div id="mk-box" hidden>
+          <div class="toolbar">
+            <h3>Meraki</h3>
+            <span id="mk-note" class="muted"></span>
+            <span class="spacer"></span>
+            <button id="mk-inventory" data-perm="inventory:manage" title="Add the Meraki devices to the inventory, or bring their rows up to date">Add to the inventory</button>
+          </div>
+          <div class="table-wrap"><table id="mk-table">
+            <thead><tr><th>Status</th><th>Device</th><th>Network</th><th>Model</th><th>LAN IP</th><th>Public IP</th><th>Firmware</th><th>Uplinks</th><th>Since</th></tr></thead>
+            <tbody></tbody></table></div>
+          <div id="mk-upgrades-box" hidden>
+            <h3>Firmware upgrades scheduled in Meraki</h3>
+            <div class="table-wrap"><table id="mk-upgrades">
+              <thead><tr><th>When</th><th>Network</th><th>Product</th><th>Now</th><th>To</th></tr></thead>
+              <tbody></tbody></table></div>
+          </div>
         </div>
         <div id="mon-hw" hidden>
           <h3>Hardware problems</h3>
@@ -737,6 +755,44 @@
     <div id="mon-if-graph" class="mon-graph" aria-label="Traffic graph"></div>
     <div id="mon-if-errors" class="mon-graph small" aria-label="Errors and discards graph"></div>
     <p id="mon-if-note" class="muted"></p>
+  </dialog>
+
+  <!-- Monitoring: Meraki connections -->
+  <dialog id="mk-dialog" class="wide">
+    <div class="detail-head">
+      <h2>Meraki connections</h2>
+      <button id="mk-close" class="ghost">Close</button>
+    </div>
+    <p class="muted">Each connection reads one Meraki organisation through the Dashboard API: its devices,
+      their status, MX uplinks and scheduled firmware upgrades. Use a <b>read-only</b> API key (an
+      organisation admin with read-only access, then <i>Organization › API &amp; webhooks</i> in the Meraki
+      dashboard). The key is kept encrypted and never shown again. This server needs outbound HTTPS to the
+      Dashboard API.</p>
+    <div class="table-wrap"><table id="mk-conn-table">
+      <thead><tr><th>Name</th><th>Organisation</th><th>Region</th><th>Last read</th><th></th></tr></thead>
+      <tbody></tbody></table></div>
+    <div class="actions"><button id="mk-add" class="primary">+ Add connection</button></div>
+    <form id="mk-form" class="form" hidden>
+      <h3 id="mk-form-title">Add connection</h3>
+      <div class="grid2">
+        <label>Name <input name="name" required maxlength="100" placeholder="Retail stores"></label>
+        <label>Dashboard API <select name="base_url"></select></label>
+        <label>API key <input name="api_key" type="password" autocomplete="off" maxlength="200"></label>
+        <label>Organisation
+          <span class="test-row"><select name="org_pick"></select><button type="button" id="mk-find">Find organisations</button></span>
+        </label>
+        <label>Organisation ID <input name="org_id" required maxlength="50" pattern="[A-Za-z0-9_-]+"></label>
+        <label class="inline"><input type="checkbox" name="enabled" checked> <span>Read it</span></label>
+      </div>
+      <p id="mk-keep" class="muted" hidden>Leave the API key empty to keep the one saved.</p>
+      <p id="mk-find-result" hidden></p>
+      <p class="error" hidden></p>
+      <div class="actions">
+        <span class="spacer"></span>
+        <button type="button" class="ghost" id="mk-cancel">Cancel</button>
+        <button type="submit" class="primary">Save</button>
+      </div>
+    </form>
   </dialog>
 
   <!-- Monitoring: SNMP profiles -->

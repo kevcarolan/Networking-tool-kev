@@ -330,13 +330,14 @@ def sim_for(net, clock=time.time) -> SimMonitor:
     return sim
 
 
-def build(settings, sim: SimMonitor, cipher, clock=time.time):
-    """The demo's poller: the simulated network answers instead of real ping and SNMP."""
+def build(settings, sim: SimMonitor, cipher, clock=time.time, meraki_fetch=None):
+    """The demo's poller: the simulated network answers instead of real ping and SNMP (and
+    a pretend Dashboard API, ``app.demo.meraki``, instead of Meraki's)."""
     from app.tools.monitoring.poller import Poller
     from app.tools.monitoring.store import MonitorStore
 
     return Poller(settings, MonitorStore(settings.monitor_dir), cipher, snmp=sim,
-                  pinger=sim.ping, clock=clock)
+                  pinger=sim.ping, clock=clock, meraki_fetch=meraki_fetch)
 
 
 def history(poller, now: float | None = None) -> None:
@@ -465,11 +466,11 @@ def history(poller, now: float | None = None) -> None:
     poller.health = {}
 
 
-def start(settings, sim: SimMonitor, cipher) -> None:
+def start(settings, sim: SimMonitor, cipher, meraki_fetch=None) -> None:
     """Run the demo's poller in a thread of its own (its own event loop)."""
     import asyncio
     import threading
 
-    poller = build(settings, sim, cipher)
+    poller = build(settings, sim, cipher, meraki_fetch=meraki_fetch)
     threading.Thread(target=lambda: asyncio.run(poller.serve()), name="demo-monitor",
                      daemon=True).start()

@@ -240,6 +240,10 @@ def seed(client, settings, net) -> dict:
         "name": "switches-v3", "version": "3", "username": "netops-mon", "level": "authPriv",
         "auth_protocol": "SHA", "auth_key": "demo-auth-pass", "priv_protocol": "AES",
         "priv_key": "demo-priv-pass", "is_default": True}))
+    from app.demo import meraki as demo_meraki
+    _ok(client.post("/api/monitoring/meraki/connections", json={  # answered by app.demo.meraki
+        "name": demo_meraki.ORG["name"], "api_key": demo_meraki.KEY, "org_id": demo_meraki.ORG["id"],
+        "org_name": demo_meraki.ORG["name"]}))
     screen = _ok(client.post("/api/displays", json={"name": "Demo wall"})).json()
     return {"display_key": screen["key"], "ids": ids}
 

@@ -546,6 +546,179 @@ def test_profile(profile_id: int, body: TestIn, request: Request, db: Session = 
             "uptime": uptime / 100 if isinstance(uptime, int) else None}
 
 
+# --- Meraki (Dashboard API) ------------------------------------------------------------------
+
+def _meraki_out(o, state: dict | None) -> dict:
+    from app.tools.monitoring import meraki as mk
+
+    st = state or {}
+    return {"id": o.id, "name": o.name, "base_url": o.base_url,
+            "base_label": mk.BASES.get(o.base_url, o.base_url), "org_id": o.org_id,
+            "org_name": o.org_name, "enabled": o.enabled, "has_key": bool(o.api_key_enc),
+            "updated_at": o.updated_at, "updated_by": o.updated_by, "read_at": st.get("ts"),
+            "error": st.get("error", ""), "devices": st.get("devices"), "networks": st.get("networks")}
+
+
+@router.get("/meraki")
+def meraki(request: Request, db: Session = Depends(get_db), _: User = Depends(VIEW)):
+    """The Meraki organisations, their devices and status, and scheduled firmware upgrades."""
+    from app.tools.monitoring import meraki as mk
+    from app.tools.monitoring.models import MerakiOrg
+
+    data = store_of(request).meraki()
+    orgs = list(db.scalars(select(MerakiOrg).order_by(MerakiOrg.name)))
+    names = {o.id: o.name for o in orgs}
+    devices = [{**d, "org": names.get(d["org_ref"], ""),
+                "status_label": mk.STATUSES.get(d["status"], d["status"].capitalize())}
+               for d in data["devices"] if d["org_ref"] in names]
+    counts = {k: 0 for k in mk.STATUSES}
+    for d in devices:
+        counts[d["status"]] = counts.get(d["status"], 0) + 1
+    order = {"offline": 0, "alerting": 1, "online": 3, "dormant": 4}
+    devices.sort(key=lambda d: (order.get(d["status"], 2), d["network"], d["name"]))
+    return {"connections": [_meraki_out(o, data["state"].get(o.id)) for o in orgs],
+            "devices": devices, "counts": counts, "bases": mk.BASES,
+            "upgrades": [u for u in data["upgrades"] if u["org_ref"] in names],
+            "interval": request.app.state.settings.monitor_meraki_seconds}
+
+
+class MerakiIn(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    base_url: str = "https://api.meraki.com/api/v1"
+    api_key: str | None = Field(default=None, max_length=200)  # None on change = keep
+    org_id: str = Field(min_length=1, max_length=50, pattern=r"^[A-Za-z0-9_-]+$")
+    org_name: str = Field(default="", max_length=200)
+    enabled: bool = True
+
+
+def _apply_meraki(o, body: MerakiIn, cipher, user: User) -> None:
+    from app.tools.monitoring import meraki as mk
+
+    if body.base_url not in mk.BASES:
+        raise HTTPException(422, "Choose one of the Dashboard API addresses")
+    if body.api_key is not None and not body.api_key.strip() or (not o.api_key_enc and not body.api_key):
+        raise HTTPException(422, "Enter the API key")
+    o.name, o.base_url, o.org_id = body.name.strip(), body.base_url, body.org_id.strip()
+    o.org_name, o.enabled, o.updated_by = body.org_name.strip(), body.enabled, user.username
+    if body.api_key:
+        o.api_key_enc = cipher.encrypt(body.api_key.strip())
+
+
+@router.post("/meraki/connections", status_code=201)
+def add_meraki(body: MerakiIn, request: Request, db: Session = Depends(get_db),
+               user: User = Depends(PROFILES)):
+    from app.tools.monitoring.models import MerakiOrg
+
+    o = MerakiOrg()
+    _apply_meraki(o, body, request.app.state.cipher, user)
+    db.add(o)
+    try:
+        db.flush()
+    except IntegrityError:
+        raise HTTPException(409, "A Meraki connection with that name already exists") from None
+    audit(db, user.username, "monitoring.meraki_add", f"{o.name}: organisation {o.org_id} at {o.base_url}")
+    return _meraki_out(o, None)
+
+
+def _get_meraki(db: Session, conn_id: int):
+    from app.tools.monitoring.models import MerakiOrg
+
+    o = db.get(MerakiOrg, conn_id)
+    if o is None:
+        raise HTTPException(404, "Meraki connection not found")
+    return o
+
+
+@router.put("/meraki/connections/{conn_id}")
+def change_meraki(conn_id: int, body: MerakiIn, request: Request, db: Session = Depends(get_db),
+                  user: User = Depends(PROFILES)):
+    o = _get_meraki(db, conn_id)
+    _apply_meraki(o, body, request.app.state.cipher, user)
+    try:
+        db.flush()
+    except IntegrityError:
+        raise HTTPException(409, "A Meraki connection with that name already exists") from None
+    audit(db, user.username, "monitoring.meraki_change",
+          f"{o.name}: organisation {o.org_id}, {'on' if o.enabled else 'off'}"
+          f"{', new API key' if body.api_key else ''}")
+    return _meraki_out(o, None)
+
+
+@router.delete("/meraki/connections/{conn_id}")
+def delete_meraki(conn_id: int, db: Session = Depends(get_db), user: User = Depends(PROFILES)):
+    o = _get_meraki(db, conn_id)
+    db.delete(o)
+    audit(db, user.username, "monitoring.meraki_delete", o.name)
+    return {"ok": True}
+
+
+class MerakiOrgsIn(BaseModel):
+    base_url: str = "https://api.meraki.com/api/v1"
+    api_key: str | None = Field(default=None, max_length=200)
+    connection_id: int | None = None  # use that connection's saved key
+
+
+@router.post("/meraki/organizations")
+def meraki_organizations(body: MerakiOrgsIn, request: Request, db: Session = Depends(get_db),
+                         user: User = Depends(PROFILES)):
+    """The organisations an API key can read (the connection form's Test button)."""
+    from app.tools.monitoring import meraki as mk
+
+    key = (body.api_key or "").strip()
+    base = body.base_url
+    if not key and body.connection_id:
+        o = _get_meraki(db, body.connection_id)
+        base = body.base_url or o.base_url
+        try:
+            key = request.app.state.cipher.decrypt(o.api_key_enc)
+        except Exception:  # noqa: BLE001
+            raise HTTPException(422, "Can't read the saved API key: enter it again") from None
+    if not key:
+        raise HTTPException(422, "Enter the API key")
+    try:
+        orgs = mk.MerakiClient(base, key, fetch=request.app.state.meraki_fetch).organizations()
+    except mk.MerakiError as exc:
+        audit(db, user.username, "monitoring.meraki_test", f"{base}: failed: {exc}")
+        return {"ok": False, "message": str(exc), "organizations": []}
+    audit(db, user.username, "monitoring.meraki_test", f"{base}: {len(orgs)} organisation(s)")
+    return {"ok": True, "message": f"The key reads {len(orgs)} organisation(s)", "organizations": orgs}
+
+
+@router.post("/meraki/inventory")
+def meraki_to_inventory(request: Request, db: Session = Depends(get_db),
+                        user: User = Depends(require("inventory", "manage"))):
+    """Add the Meraki devices to the inventory, or bring their rows up to date (by serial
+    number). Only the columns Meraki knows are written; the rest are left as they are."""
+    from app.tools.inventory.models import Asset
+    from app.tools.monitoring import meraki as mk
+    from app.tools.monitoring.models import MerakiOrg
+
+    orgs = {o.id for o in db.scalars(select(MerakiOrg))}
+    devices = [d for d in store_of(request).meraki()["devices"] if d["org_ref"] in orgs and d["serial"]]
+    existing = {a.serial.upper(): a for a in db.scalars(select(Asset).where(Asset.serial != ""))}
+    added = updated = 0
+    for d in devices:
+        a = existing.get(d["serial"].upper())
+        values = {"name": d["name"][:200], "type": mk.PRODUCT_TYPES.get(d["product_type"], "other"),
+                  "manufacturer": "Cisco Meraki", "model": d["model"][:100], "serial": d["serial"][:100],
+                  "version": d["firmware"][:100], "mgmt_ip": d["lan_ip"][:255], "mac": d["mac"][:50],
+                  "site": d["network"][:100]}
+        if a is None:
+            db.add(Asset(**values, status="in service"))
+            added += 1
+        else:
+            changed = False
+            for k, v in values.items():
+                if k == "name" and a.device_id:
+                    continue  # a managed device keeps its own name
+                if v and getattr(a, k) != v:
+                    setattr(a, k, v)
+                    changed = True
+            updated += changed
+    audit(db, user.username, "monitoring.meraki_inventory", f"{added} added, {updated} brought up to date")
+    return {"added": added, "updated": updated, "total": len(devices)}
+
+
 @router.get("/howto")
 def setup_help(request: Request, _: User = Depends(VIEW)):
     """Suggested SNMP configs per platform; ``{server}`` is this server's address."""

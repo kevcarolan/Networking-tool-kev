@@ -138,6 +138,7 @@ class Settings(BaseSettings):
     monitor_health_seconds: int = 300  # Settings page: read CPU, memory, sensors this often
     monitor_cpu_warn: int = 85  # Settings page: CPU % at or over which a device is a warning
     monitor_mem_warn: int = 90  # Settings page: memory % used at or over which it is a warning
+    monitor_meraki_seconds: int = 300  # Settings page: read the Meraki Dashboard API this often
 
     def record_env(self) -> frozenset[str]:
         """The settings given in netops.env or the environment (not defaults)."""

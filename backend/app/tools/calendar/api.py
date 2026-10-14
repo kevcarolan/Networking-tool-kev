@@ -10,7 +10,7 @@ upgrade jobs; they are changed on the Upgrade jobs page, not here.
 import json
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -102,7 +102,39 @@ def _clashes(items: list[dict]) -> None:
                 b["clashes"].append(a["key"])
 
 
-def items(db: Session, user: User, start: datetime, end: datetime, site: str = "") -> list[dict]:
+MERAKI_WINDOW = timedelta(hours=2)  # how long a Meraki upgrade is shown as taking
+
+
+def _meraki(db: Session, start: datetime, end: datetime, sites: _Sites, monitor_dir) -> list[dict]:
+    """Firmware upgrades scheduled in the Meraki dashboard (read by the monitoring poller)."""
+    from app.tools.monitoring.models import MerakiOrg
+    from app.tools.monitoring.store import MonitorStore
+
+    orgs = {o.id for o in db.scalars(select(MerakiOrg))}
+    out = []
+    for u in MonitorStore(monitor_dir).meraki()["upgrades"]:
+        if u["org_ref"] not in orgs or not u["next_time"]:
+            continue
+        try:
+            when = datetime.fromisoformat(u["next_time"].replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            continue
+        if not (when < end and when + MERAKI_WINDOW > start):
+            continue
+        product = {"appliance": "MX", "switch": "MS", "wireless": "MR", "camera": "MV",
+                   "cellularGateway": "MG", "sensor": "MT"}.get(u["product"], u["product"])
+        out.append({"key": f"m:{u['network_id']}:{u['product']}", "source": "meraki",
+                    "id": None, "kind": "meraki", "kind_label": "Meraki upgrade",
+                    "title": f"{u['network']} {product} → {u['next_version'] or 'new firmware'}",
+                    "start": when, "end": when + MERAKI_WINDOW,
+                    "sites": [sites.name(u["network"])] if u["network"] else [], "devices": [],
+                    "change_ref": "", "notes": f"Scheduled in the Meraki dashboard (now {u['current']}). "
+                                               "Change it there.", "created_by": "Meraki"})
+    return out
+
+
+def items(db: Session, user: User, start: datetime, end: datetime, site: str = "",
+          monitor_dir=None) -> list[dict]:
     from app.core import licence
 
     sites = _Sites(db)
@@ -114,6 +146,9 @@ def items(db: Session, user: User, start: datetime, end: datetime, site: str = "
     perms = pm.normalise(user.perms)
     if pm.at_least(perms, "upgrades", "view") and licence.has_module("upgrades", db):
         out += _jobs(db, start, end, sites, devices)
+    if monitor_dir is not None and pm.at_least(perms, "monitoring", "view") and \
+            licence.has_module("monitoring", db):
+        out += _meraki(db, start, end, sites, monitor_dir)
     _clashes(out)
     if site:
         wanted = sites.name(site).lower()
@@ -131,11 +166,12 @@ def _range(start: datetime | None, end: datetime | None) -> tuple[datetime, date
 
 
 @router.get("")
-def list_calendar(start: datetime | None = None, end: datetime | None = None,
+def list_calendar(request: Request, start: datetime | None = None, end: datetime | None = None,
                   site: str = Query("", max_length=100), db: Session = Depends(get_db),
                   user: User = Depends(current_user)):
     s, e = _range(start, end)
-    return {"start": s, "end": e, "items": items(db, user, s, e, site), "kinds": KINDS}
+    return {"start": s, "end": e, "kinds": KINDS,
+            "items": items(db, user, s, e, site, request.app.state.settings.monitor_dir)}
 
 
 class EventIn(BaseModel):
@@ -224,7 +260,7 @@ def _fold(line: str) -> str:
 
 
 @router.get("/export.ics")
-def export_ics(start: datetime | None = None, end: datetime | None = None,
+def export_ics(request: Request, start: datetime | None = None, end: datetime | None = None,
                site: str = Query("", max_length=100), db: Session = Depends(get_db),
                user: User = Depends(current_user)):
     """The calendar as a file Outlook, Google or Apple Calendar can import."""
@@ -232,7 +268,7 @@ def export_ics(start: datetime | None = None, end: datetime | None = None,
     stamp = utcnow().strftime("%Y%m%dT%H%M%SZ")
     lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//network operations//calendar//EN",
              "CALSCALE:GREGORIAN", "METHOD:PUBLISH"]
-    for it in items(db, user, s, e, site):
+    for it in items(db, user, s, e, site, request.app.state.settings.monitor_dir):
         desc = [it["kind_label"]]
         if it["change_ref"]:
             desc.append(f"Change: {it['change_ref']}")
