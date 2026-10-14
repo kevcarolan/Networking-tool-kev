@@ -10,8 +10,11 @@ A device is:
   user, an access list), or it doesn't answer ping but SNMP works, or it missed a poll;
 * **down** when neither ping nor SNMP has answered for ``monitor_down_after`` polls in a row.
 
-It also notes restarts (the SNMP uptime went back to near zero) and when SNMP stops or
-starts working. Each change is an **event**; the web app's alerts email them. A device in
+Every ``monitor_interface_seconds`` (5 minutes) it also reads each SNMP device's interfaces
+(ifaces.py): status, speed, traffic, errors and discards, kept for the graphs.
+
+It also notes restarts (the SNMP uptime went back to near zero), when SNMP stops or
+starts working, and when a port with a description (or a port-channel) goes down or up. Each change is an **event**; the web app's alerts email them. A device in
 a calendar window (change, maintenance, outage) or with an upgrade under way is marked
 **maintenance**: its events are kept but not emailed.
 
@@ -32,6 +35,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
+from app.tools.monitoring import ifaces
 from app.tools.monitoring import ping as pinging
 from app.tools.monitoring.snmp import (SYS_DESCR, SYS_NAME, SYS_OBJECT_ID, SYS_UPTIME, SYSTEM,
                                        SnmpClient, SnmpError, SnmpTarget)
@@ -146,6 +150,8 @@ class Poller:
         self.jobs: list[Job] = []
         self.prev: dict[int, dict] = store.states()  # carries on after a restart
         self.first_fail: dict[int, float] = {}
+        self.if_prev: dict[int, dict[int, dict]] = {}  # device -> ifIndex -> last counters
+        self.if_errors: dict[int, str] = {}  # why a device's interfaces couldn't be read
         self.ping_allowed = True
         self.licensed = True
         self.started = clock()
@@ -258,7 +264,53 @@ class Poller:
             "last_restart": last_restart, "maintenance": int(job.maintenance),
         }
         sample = (now, job.device_id, result.rtt_ms if pinged else None, answered)
-        return state, events, sample
+        interfaces = None
+        if snmp_ok and self._interfaces_due(job.device_id, now):
+            interfaces = await self.poll_interfaces(job, now)
+        return state, events, sample, interfaces
+
+    def _interfaces_due(self, device_id: int, now: float) -> bool:
+        if device_id not in self.if_prev:
+            self.if_prev[device_id] = self.store.counters(device_id)  # after a restart
+        last = max((c.get("ts") or 0 for c in self.if_prev[device_id].values()), default=0)
+        return now - last >= max(self.settings.monitor_interface_seconds, 30) - 5
+
+    async def poll_interfaces(self, job: Job, now: float) -> tuple[list, list, list] | None:
+        """Read the interface table; returns (rows, samples, events) or None if it failed."""
+        columns = {}
+        try:
+            for key, oid in ifaces.COLUMNS.items():
+                columns[key] = await self.snmp.walk(job.snmp, oid)
+        except SnmpError as exc:
+            self.if_errors[job.device_id] = str(exc)
+            return None
+        self.if_errors.pop(job.device_id, None)
+        old = self.if_prev.get(job.device_id) or {}
+        rows, samples, events, keep = [], [], [], {}
+        for i in ifaces.from_walks(columns):
+            before = old.get(i.index)
+            r = ifaces.rates(i, before, now - (before or {}).get("ts", now))
+            same = before is not None and before.get("oper") == i.oper
+            since = before.get("since") if same and before.get("since") else now
+            counters = {**i.counters, "hc": i.hc}
+            rows.append({"device_id": job.device_id, "if_index": i.index, "name": i.name,
+                         "descr": i.descr, "alias": i.alias, "type": i.type, "admin": i.admin,
+                         "oper": i.oper, "speed": i.speed, "since": since, "ts": now,
+                         "counters": counters, **r})
+            keep[i.index] = {**counters, "oper": i.oper, "since": since, "ts": now}
+            if i.graphed and (r["in_bps"] is not None or r["out_bps"] is not None):
+                samples.append((now, i.index, r["in_bps"], r["out_bps"], r["errors"], r["discards"]))
+            if before is not None and i.watched and i.admin == 1 and before.get("oper") != i.oper:
+                what = f"{i.label}{f' ({i.alias})' if i.alias else ''}"
+                if before.get("oper") == 1:
+                    events.append({"ts": now, "device_id": job.device_id, "kind": "port_down",
+                                   "detail": f"{what} went {ifaces.OPER.get(i.oper, 'down')}",
+                                   "maintenance": job.maintenance})
+                elif i.oper == 1:
+                    events.append({"ts": now, "device_id": job.device_id, "kind": "port_up",
+                                   "detail": f"{what} is up again", "maintenance": job.maintenance})
+        self.if_prev[job.device_id] = keep
+        return rows, samples, events
 
     # --- a round of every device ---------------------------------------------------------------
 
@@ -280,8 +332,15 @@ class Poller:
         states = [r[0] for r in results]
         events = [e for r in results for e in r[1]]
         samples = [r[2] for r in results if r[0]["status"] != UNKNOWN]
-        await asyncio.get_running_loop().run_in_executor(
-            None, self.store.save, states, events, samples)
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self.store.save, states, events, samples)
+        for r in results:
+            if r[3] is not None:
+                rows, if_samples, if_events = r[3]
+                await loop.run_in_executor(None, self.store.save_interfaces, r[0]["device_id"],
+                                           rows, if_samples, if_events)
+                events += if_events
+        await loop.run_in_executor(None, self.store.rollup, self.clock())
         for s in states:
             self.prev[s["device_id"]] = s
         for e in events:
@@ -308,11 +367,17 @@ class Poller:
         keep = {j.device_id for j in self.jobs}
         self.store.forget(keep)
         self.prev = {k: v for k, v in self.prev.items() if k in keep}
+        snmp = {j.device_id for j in self.jobs if j.snmp is not None}
+        self.store.forget_interfaces(snmp)
+        self.if_prev = {k: v for k, v in self.if_prev.items() if k in snmp}
 
     def prune(self) -> None:
         gone = self.store.prune(self.settings.monitor_keep_days)
         if gone:
             log.info("Deleted monitoring days %s", ", ".join(d.isoformat() for d in gone))
+        files = self.store.prune_interfaces(self.settings.monitor_interface_keep_days)
+        if files:
+            log.info("Deleted interface history %s", ", ".join(files))
 
     def status(self) -> dict:
         counts: dict[str, int] = {}
@@ -322,6 +387,8 @@ class Poller:
                 "last_round": self.last_round or None, "round_seconds": self.round_seconds,
                 "interval": self.settings.monitor_poll_seconds, "devices": len(self.jobs),
                 "counts": counts, "ping_allowed": self.ping_allowed, "licensed": self.licensed,
+                "interface_interval": self.settings.monitor_interface_seconds,
+                "interface_errors": {str(k): v for k, v in self.if_errors.items()},
                 "last_error": self.last_error}
 
     # --- the service --------------------------------------------------------------------------

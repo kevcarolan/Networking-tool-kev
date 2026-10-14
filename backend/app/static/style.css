@@ -550,3 +550,35 @@ dl.facts dd { margin: 0; overflow-wrap: anywhere; }
 .topo-node.mon-up rect { stroke: var(--ok); stroke-width: 2; }
 .topo-node.mon-warning rect { stroke: var(--warn); stroke-width: 2.5; }
 .topo-node.mon-down rect { stroke: var(--fail); stroke-width: 3; fill: var(--fail-bg); }
+
+/* monitoring: interfaces */
+tr.link-row { cursor: pointer; }
+.mon-ports { margin-bottom: 8px; }
+.mon-ports h3 { margin: 8px 0; }
+.load { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.load .bar { display: inline-block; width: 60px; height: 8px; border-radius: 4px; background: var(--idle-bg); overflow: hidden; }
+.load .fill { display: block; height: 100%; width: 0; background: var(--ok); }
+.load.mid .fill { background: var(--warn); }
+.load.hi .fill { background: var(--fail); }
+.load.hi { color: var(--fail); font-weight: 600; }
+#mon-d-ifaces-box .toolbar h3 { margin: 0; }
+.mon-graph.small { margin-top: -4px; }
+.mon-graph .line.in { stroke: var(--accent); }
+.mon-graph .line.out { stroke: var(--ok); }
+.mon-graph .line.err { stroke: var(--fail); }
+.mon-graph .line.disc { stroke: var(--warn); }
+.mon-graph .peak { stroke-width: 3; stroke-opacity: 0.18; }
+.mon-graph .peak.in { stroke: var(--accent); }
+.mon-graph .peak.out { stroke: var(--ok); }
+.mon-graph .limit { stroke: var(--fail); stroke-dasharray: 6 4; stroke-width: 1; }
+.mon-graph text.key { fill: var(--muted); }
+.legend { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 12px; }
+.legend .sw { display: inline-block; width: 14px; height: 3px; border-radius: 2px; }
+.legend .sw.in { background: var(--accent); }
+.legend .sw.out { background: var(--ok); }
+.legend .sw.peak { background: var(--accent); opacity: 0.25; height: 8px; }
+.topo-edge.load-ok .vis { stroke: var(--ok); }
+.topo-edge.load-mid .vis { stroke: var(--warn); stroke-width: 3; }
+.topo-edge.load-hi .vis { stroke: var(--fail); stroke-width: 4; }
+#mon-d-ifaces td, #mon-busiest td, #mon-errors td { white-space: nowrap; }
+#mon-d-ifaces td:nth-child(2) { white-space: normal; min-width: 160px; }

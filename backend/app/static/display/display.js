@@ -129,6 +129,16 @@ function monitoringPage(d) {
         h("span", {}, h("span", { class: "what" }, e.device), h("span", { class: "dim" }, ` · ${e.label}`)),
         h("span", { class: e.kind === "down" && !e.maintenance ? "why" : "dim" }, hhmm(when(e.at))))))
         : h("div", { class: "empty" }, "Nothing went down or restarted"))];
+  if (m.busiest.length || m.port_errors.length) {
+    panels.push(h("div", { class: "panel" }, h("h2", {}, "Busiest ports"),
+      h("ul", { class: "list" }, m.busiest.map((p) => h("li", {},
+        h("span", {}, h("span", { class: "what" }, p.device), h("span", { class: "dim" }, ` · ${p.port}`)),
+        h("span", { class: p.util >= 0.8 ? "why" : p.util >= 0.5 ? "warn-text" : "dim" }, `${Math.round(p.util * 100)}%`)))),
+      m.port_errors.length ? h("h2", { class: "sub-head" }, "Errors and discards") : "",
+      m.port_errors.length ? h("ul", { class: "list" }, m.port_errors.map((p) => h("li", {},
+        h("span", {}, h("span", { class: "what" }, p.device), h("span", { class: "dim" }, ` · ${p.port}`)),
+        h("span", { class: p.errors ? "why" : "warn-text" }, [p.errors ? `${Math.round(p.errors)} errors` : "", p.discards ? `${Math.round(p.discards)} discards` : ""].filter(Boolean).join(" · ") + "/min")))) : ""));
+  }
   out.push(h("div", { class: "network" }, panels));
   return out;
 }

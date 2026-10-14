@@ -97,6 +97,10 @@ OPTIONS = (
            int, 1, 10, help="2 means a device is down after about two minutes of silence"),
     Option("monitor_keep_days", "Monitoring: keep every check for (days)", int, 7, 400,
            help="For the graphs. Daily totals (availability) are kept for a year"),
+    Option("monitor_interface_seconds", "Monitoring: read the interfaces every (seconds)", int,
+           60, 3600, help="Traffic, errors and status of every port, with SNMP; 300 is usual"),
+    Option("monitor_interface_keep_days", "Monitoring: keep every interface reading for (days)",
+           int, 2, 35, help="After that, hourly averages and peaks are kept for 13 months"),
     Option("upgrade_backup_max_age_hours", "Take a fresh backup before an upgrade if older than (hours)",
            int, 1, 720),
 )

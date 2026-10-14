@@ -12,8 +12,10 @@ while, and it comes back with a new uptime). On top of that, per device:
 
 import math
 import random
+import re
 import time
 
+from app.tools.monitoring import ifaces as ifm
 from app.tools.monitoring.ping import PingResult
 from app.tools.monitoring.snmp import SYS_DESCR, SYS_NAME, SYS_OBJECT_ID, SYS_UPTIME, SnmpError
 
@@ -45,6 +47,7 @@ class SimMonitor:
         self.snmp_error: dict[str, str] = {}
         self.rtt: dict[str, float] = {}
         self.boot: dict[str, float] = {}
+        self.no_interfaces: set[str] = set()  # answers the system values only
         self._reloads: dict[str, int] = {}
         self._was_up: dict[str, bool] = {}
         self._rand = random.Random(seed)
@@ -90,7 +93,125 @@ class SimMonitor:
 
     async def walk(self, target, oid: str, max_rows: int = 20000) -> list:
         await self.get(target, [SYS_NAME])
-        return []
+        name, dev = self._device(target.address)
+        if name in self.no_interfaces:
+            return []
+        key = next((k for k, v in ifm.COLUMNS.items() if v == oid), None)
+        if key is None:
+            return []
+        t = self.clock()
+        return [(f"{oid}.{p.index}", p.value(key, t))
+                for p in ports_of(name, getattr(dev, "platform", ""))][:max_rows]
+
+
+# --- the simulated interfaces --------------------------------------------------------------
+
+DAY = 86400
+PEAK_HOUR = 14  # UTC: the busiest time of the working day
+HOT = {("hq-core1", "Ethernet1/48"): 0.55, ("bs-sw1", "port1.0.1"): 0.45}  # busy links: average load
+ERRORS = {("hq-acc-sw3", "GigabitEthernet1/0/12"): 0.3}  # CRC errors a second (a bad cable)
+DISCARDS = {("wh-sw1", "ethernet1/1/52"): 2.5}  # discards a second (a congested uplink)
+ACCESS = {  # (how to name an access port, how many)
+    "cisco_ios": ("GigabitEthernet1/0/{}", 24), "cisco_nxos": ("Ethernet1/{}", 12),
+    "arista_eos": ("Ethernet{}", 16), "aruba_osswitch": ("{}", 24), "mikrotik_routeros": ("ether{}", 6),
+    "allied_awplus": ("port1.0.{}", 24), "dell_os10": ("ethernet1/1/{}", 24),
+    "cisco_asa": ("GigabitEthernet0/{}", 4), "juniper_junos": ("ge-0/0/{}", 4),
+}
+SHORT = (("TenGigabitEthernet", "Te"), ("GigabitEthernet", "Gi"))
+
+
+def _speed(port: str, platform: str) -> int:
+    p = port.lower()
+    if re.search(r"(49|50)/1$", p) or p.startswith(("xe-", "sfp")) or (platform == "aruba_osswitch" and p in ("49", "50", "51", "52")):
+        return 10_000_000_000 if not re.search(r"(49|50)/1$", p) else 100_000_000_000
+    if platform in ("cisco_nxos",) and p.startswith("ethernet"):
+        return 10_000_000_000
+    if platform == "dell_os10":
+        return 25_000_000_000
+    if platform == "allied_awplus" and p in ("port1.0.27", "port1.0.28"):
+        return 10_000_000_000
+    return 1_000_000_000
+
+
+def _platform_of(name: str) -> str:
+    from app.demo import seed
+
+    return next((d.platform for d in seed.DEVICES if d.name == name), "")
+
+
+class SimPort:
+    def __init__(self, index, device, port, platform, kind, alias, rand, peer=None):
+        self.index, self.device, self.port, self.kind, self.alias = index, device, port, kind, alias
+        self.descr = port
+        self.name = port
+        if platform == "cisco_ios":
+            for long, short in SHORT:
+                self.name = self.name.replace(long, short)
+        self.type = {"vlan": 53, "loopback": 24}.get(kind, 6)
+        self.speed = 0 if kind in ("vlan", "loopback") else _speed(port, platform)
+        self.up = kind in ("link", "vlan", "loopback") or rand.random() < 0.65 or \
+            (device, port) in ERRORS or (device, port) in DISCARDS
+        if kind == "link":  # the same load at both ends, as much as the slower port takes
+            n, rp = peer
+            pair = random.Random("|".join(sorted([f"{device} {port}", f"{n} {rp}"])))
+            load = HOT.get((device, port)) or HOT.get((n, rp)) or 0.04 + 0.25 * pair.random()
+            self.avg = min(self.speed, _speed(rp, _platform_of(n) or platform)) * load
+        else:
+            self.avg = (2 + 28 * rand.random()) * 1e6 if self.up and kind == "access" else 0.0
+        self.amp = self.avg * (0.6 if (device, port) in HOT else 0.8)
+        self.ratio = 0.3 + 0.9 * rand.random()  # out against in
+        self.err = ERRORS.get((device, port), 0.0)
+        self.disc = DISCARDS.get((device, port), 0.0)
+        self.phase = math.pi / 2 - 2 * math.pi * PEAK_HOUR / 24
+
+    def bps(self, t: float, noise: float = 1.0) -> float:
+        if not self.up or not self.avg:
+            return 0.0
+        return max(0.0, (self.avg + self.amp * math.sin(2 * math.pi * t / DAY + self.phase)) * noise)
+
+    def octets(self, t: float, ratio: float = 1.0) -> int:
+        """The byte counter at time t: the integral of the traffic (never goes backwards)."""
+        if not self.up or not self.avg:
+            return 123456
+        k = DAY / (2 * math.pi)
+        bits = self.avg * t - self.amp * k * math.cos(2 * math.pi * t / DAY + self.phase) + self.amp * k
+        return int(bits * ratio / 8) % 2**64
+
+    def value(self, key: str, t: float):
+        v = {"descr": self.descr, "name": self.name, "alias": self.alias, "type": self.type,
+             "speed": min(self.speed, 2**32 - 1), "high_speed": self.speed // 1_000_000,
+             "admin": 1, "oper": 1 if self.up else 2,
+             "hc_in": self.octets(t), "hc_out": self.octets(t, self.ratio),
+             "in_err": int(self.err * t) % 2**32, "out_err": 0, "in_disc": 0,
+             "out_disc": int(self.disc * t) % 2**32}
+        if key in ("in", "out"):
+            return v[f"hc_{key}"] % 2**32
+        return v.get(key)
+
+
+_PORTS: dict[str, list[SimPort]] = {}
+
+
+def ports_of(name: str, platform: str) -> list[SimPort]:
+    """The demo device's interfaces: its links on the demo map, access ports, a VLAN."""
+    if name not in _PORTS:
+        from app.demo import topology
+
+        rand = random.Random(sum(ord(c) * (i + 3) for i, c in enumerate(name)))
+        links = [(lp, f"to {n} {rp}", (n, rp)) for lp, n, rp in topology.neighbours_of(name)
+                 if n not in ("hq-ap-01", "ap-bn-01", "wh-ap-01") and not n.startswith("SEP")]
+        used = {lp for lp, _, _ in links}
+        pattern, count = ACCESS.get(platform, ("port{}", 8))
+        first = 2 if platform in ("mikrotik_routeros", "allied_awplus", "cisco_asa", "dell_os10") else 1
+        access = [pattern.format(n) for n in range(first, first + count)]
+        ports = [(p, "link", a, peer) for p, a, peer in links]
+        ports += [(p, "access", "", None) for p in access if p not in used]
+        if platform in ("cisco_ios", "cisco_nxos", "arista_eos"):
+            ports.append(("Vlan10", "vlan", "management", None))
+        ports.append(("Loopback0" if platform.startswith("cisco") else "lo0", "loopback", "", None))
+        _PORTS[name] = [SimPort(i, name, p, platform, kind, alias, rand, peer)
+                        for i, (p, kind, alias, peer) in enumerate(ports, 1)]
+    return _PORTS[name]
 
 
 # --- the demo's story ---------------------------------------------------------------------
@@ -171,6 +292,34 @@ def history(poller, now: float | None = None) -> None:
     for i in range(0, len(samples), 20000):
         poller.store.save(states if i == 0 else [], events if i == 0 else [], samples[i:i + 20000])
     poller.prev = poller.store.states()
+    # interfaces: a reading every five minutes, and the counters as of five minutes ago, so
+    # the first live reading already has rates
+    from app.tools.monitoring import ifaces as ifm
+
+    platform = {d.name: d.platform for d in seed.DEVICES}
+    t0 = now - 300
+    for name, device_id in ids.items():
+        if name in DOWN or name in SNMP_ERROR:
+            continue  # never read: down, or SNMP not set up
+        ports = ports_of(name, platform.get(name, ""))
+        isamples = []
+        t = start - start % 300
+        while t < t0:
+            for p in ports:
+                if p.up and p.avg and p.type != ifm.LOOPBACK:
+                    in_bps = round(p.bps(t, 0.9 + 0.2 * rand.random()), 1)
+                    isamples.append((t, p.index, in_bps, round(in_bps * p.ratio, 1),
+                                     round(p.err * 60, 2), round(p.disc * 60, 2)))
+            t += 300
+        rows = [{"device_id": device_id, "if_index": p.index, "name": p.name, "descr": p.descr,
+                 "alias": p.alias, "type": p.type, "admin": 1, "oper": 1 if p.up else 2,
+                 "speed": p.speed, "since": start, "ts": t0,
+                 "counters": {"in": p.value("hc_in", t0), "out": p.value("hc_out", t0),
+                              "in_err": p.value("in_err", t0), "out_err": 0, "in_disc": 0,
+                              "out_disc": p.value("out_disc", t0), "hc": True}} for p in ports]
+        poller.store.save_interfaces(device_id, rows, isamples)
+    poller.store.rollup(now, back_hours=HISTORY_DAYS * 24 + 2)
+    poller.if_prev = {}
 
 
 def start(settings, sim: SimMonitor, cipher) -> None:

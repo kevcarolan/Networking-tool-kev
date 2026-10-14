@@ -133,6 +133,8 @@ class Settings(BaseSettings):
     monitor_down_after: int = 2  # Settings page: polls in a row without an answer = down
     monitor_keep_days: int = 35  # Settings page: every poll kept this long (daily totals: a year)
     monitor_workers: int = 50  # devices polled at the same time
+    monitor_interface_seconds: int = 300  # Settings page: read the interfaces this often
+    monitor_interface_keep_days: int = 7  # Settings page: every interface read kept this long
 
     def record_env(self) -> frozenset[str]:
         """The settings given in netops.env or the environment (not defaults)."""

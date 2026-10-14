@@ -144,6 +144,21 @@
           </table>
           <p id="mon-empty" class="empty" hidden></p>
         </div>
+        <div id="mon-ports" class="grid2 mon-ports" hidden>
+          <div>
+            <h3>Busiest ports now</h3>
+            <div class="table-wrap"><table id="mon-busiest">
+              <thead><tr><th>Device</th><th>Port</th><th>Load</th><th>In</th><th>Out</th></tr></thead>
+              <tbody></tbody></table></div>
+          </div>
+          <div>
+            <h3>Ports with errors or discards</h3>
+            <div class="table-wrap"><table id="mon-errors">
+              <thead><tr><th>Device</th><th>Port</th><th>Errors a min</th><th>Discards a min</th></tr></thead>
+              <tbody></tbody></table>
+              <p id="mon-errors-empty" class="empty" hidden>No errors or discards on any port.</p></div>
+          </div>
+        </div>
         <h3>Last 24 hours</h3>
         <div class="table-wrap">
           <table id="mon-events">
@@ -655,9 +670,51 @@
         <div class="actions"><button type="submit" class="primary">Save</button></div>
       </form>
     </div>
+    <div id="mon-d-ifaces-box">
+      <div class="toolbar">
+        <h3>Interfaces</h3>
+        <span id="mon-d-ifaces-note" class="muted"></span>
+        <span class="spacer"></span>
+        <select id="mon-d-ifaces-sort" aria-label="Order">
+          <option value="index">In port order</option>
+          <option value="load">Busiest first</option>
+          <option value="errors">Errors first</option>
+          <option value="down">Down first</option>
+        </select>
+        <label class="check"><input type="checkbox" id="mon-d-ifaces-all"> Switched-off ports too</label>
+      </div>
+      <div class="table-wrap"><table id="mon-d-ifaces">
+        <thead><tr><th>Port</th><th>Description</th><th>Status</th><th>Speed</th><th>Load</th><th>In</th><th>Out</th><th>Errors a min</th><th>Discards a min</th><th>Since</th></tr></thead>
+        <tbody></tbody></table>
+        <p id="mon-d-ifaces-empty" class="empty" hidden></p></div>
+    </div>
     <h3>Events</h3>
     <div class="table-wrap"><table id="mon-d-events">
       <thead><tr><th>Time</th><th>What</th><th>Detail</th></tr></thead><tbody></tbody></table></div>
+  </dialog>
+
+  <!-- Monitoring: one interface -->
+  <dialog id="mon-if-dialog" class="wide">
+    <div class="detail-head">
+      <h2 id="mon-if-title"></h2>
+      <button id="mon-if-close" class="ghost">Close</button>
+    </div>
+    <p id="mon-if-state" class="muted"></p>
+    <div class="toolbar">
+      <span class="muted">Traffic</span>
+      <span id="mon-if-range" class="seg">
+        <button class="small" data-hours="6">6 h</button>
+        <button class="small active" data-hours="24">24 h</button>
+        <button class="small" data-hours="168">7 days</button>
+        <button class="small" data-hours="720">30 days</button>
+        <button class="small" data-hours="8760">1 year</button>
+      </span>
+      <span class="spacer"></span>
+      <span class="legend"><i class="sw in"></i> in <i class="sw out"></i> out <i class="sw peak"></i> peaks</span>
+    </div>
+    <div id="mon-if-graph" class="mon-graph" aria-label="Traffic graph"></div>
+    <div id="mon-if-errors" class="mon-graph small" aria-label="Errors and discards graph"></div>
+    <p id="mon-if-note" class="muted"></p>
   </dialog>
 
   <!-- Monitoring: SNMP profiles -->

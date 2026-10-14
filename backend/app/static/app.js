@@ -158,7 +158,7 @@ async function showApp(user) {
     if (document.hidden) return;
     if (state.view === "backups") loadBackups();
     else if (state.view === "firmware" && fw.tab === "versions") loadFwVersions();
-    else if (state.view === "monitoring" && !$("#mon-dialog").open && !$("#mon-p-dialog").open) loadMonitoring();
+    else if (state.view === "monitoring" && !$("#mon-dialog").open && !$("#mon-p-dialog").open && !$("#mon-if-dialog").open) loadMonitoring();
   }, 15000);
 }
 
@@ -1514,7 +1514,7 @@ $("#cal-add").addEventListener("click", () => calEdit());
 $("#cal-dialog-close").addEventListener("click", () => $("#cal-dialog").close());
 // ---------- topology map ----------
 
-const topo = { siteId: 0, data: null, pos: new Map(), svg: null, sel: null, mon: new Map() };
+const topo = { siteId: 0, data: null, pos: new Map(), svg: null, sel: null, mon: new Map(), load: new Map() };
 const SVGNS = "http://www.w3.org/2000/svg";
 const TOPO_W = 150, TOPO_H = 46, TOPO_DX = 190, TOPO_DY = 130;
 
@@ -1544,6 +1544,7 @@ async function loadTopology() {
   const q = new URLSearchParams({ site_id: topo.siteId, endpoints: $("#topo-endpoints").checked });
   try {
     [topo.data, topo.mon] = await Promise.all([api(`/api/topology?${q}`), monStatesForMap()]);
+    topo.load = await monLinkLoad(topo.data);
   } catch (e) { return toast(e.message); }
   topo.pos = new Map(Object.entries(topo.data.positions).map(([k, p]) => [k, { ...p }]));
   if (!topo.portsChosen) $("#topo-ports").checked = topo.data.edges.length <= 25; // busy maps: no port names
@@ -1555,6 +1556,7 @@ async function loadTopology() {
     const down = d.nodes.filter((n) => topo.mon.get(n.id)?.status === "down").map((n) => n.name);
     parts.push(down.length ? `DOWN now (red): ${down.join(", ")}.` : "Every monitored device on the map is answering.");
   }
+  if (topo.load.size) parts.push("Lines show the busier end's load: orange from 50%, red from 80%.");
   const ends = d.nodes.reduce((n, x) => n + (x.endpoints || 0), 0);
   if (ends && !$("#topo-endpoints").checked) parts.push(`${ends} phone(s) and access point(s) not shown.`);
   if (!d.nodes.length) parts.push("No devices at this site.");
@@ -1634,8 +1636,12 @@ function topoDraw() {
   const width = Math.max(600, ...pts.map((p) => p.x + TOPO_W + 40));
   const height = Math.max(300, ...pts.map((p) => p.y + TOPO_H + 40));
   const centre = (k) => { const p = topo.pos.get(k); return [p.x + TOPO_W / 2, p.y + TOPO_H / 2]; };
+  const portLoad = (node, port) => { const n = byKey.get(node); return n && n.id !== undefined ? topo.load.get(`${n.id}|${port}`) : null; };
   const edgeEls = edges.map((e) => {
-    const g = svgEl("g", { class: `topo-edge${e.links.length > 1 ? " multi" : ""}` });
+    const ends = e.links.flatMap((l) => [portLoad(e.a, l.a_port), portLoad(e.b, l.b_port)]).filter(Boolean);
+    const util = ends.length && ends.some((p) => p.util !== null) ? Math.max(...ends.map((p) => p.util ?? 0)) : null;
+    const loadCls = util === null ? "" : util >= 0.8 ? " load-hi" : util >= 0.5 ? " load-mid" : " load-ok";
+    const g = svgEl("g", { class: `topo-edge${e.links.length > 1 ? " multi" : ""}${loadCls}` });
     const vis = svgEl("line", { class: "vis" }), hit = svgEl("line", { class: "hit" });
     const label = svgEl("text", { "text-anchor": "middle" });
     const portA = svgEl("text", { "text-anchor": "middle", class: "port" }), portB = svgEl("text", { "text-anchor": "middle", class: "port" });
@@ -1643,7 +1649,7 @@ function topoDraw() {
       const [x1, y1] = centre(e.a), [x2, y2] = centre(e.b);
       for (const l of [vis, hit]) { l.setAttribute("x1", x1); l.setAttribute("y1", y1); l.setAttribute("x2", x2); l.setAttribute("y2", y2); }
       label.setAttribute("x", (x1 + x2) / 2); label.setAttribute("y", (y1 + y2) / 2 - 4);
-      label.textContent = e.links.length > 1 ? `×${e.links.length}` : "";
+      label.textContent = [e.links.length > 1 ? `×${e.links.length}` : "", util !== null ? `${Math.round(util * 100)}%` : ""].filter(Boolean).join(" ");
       const at = (t) => [x1 + (x2 - x1) * t, y1 + (y2 - y1) * t];
       const one = e.links.length === 1;
       const [ax, ay] = at(0.3), [bx, by] = at(0.7);
@@ -1655,7 +1661,8 @@ function topoDraw() {
       $$("#topo-wrap .topo-edge.sel").forEach((x) => x.classList.remove("sel"));
       g.classList.add("sel");
       const a = byKey.get(e.a).name, b = byKey.get(e.b).name;
-      $("#topo-info").textContent = `${a} ↔ ${b}: ` + e.links.map((l) => `${a} ${l.a_port || "?"} — ${b} ${l.b_port || "?"}`).join(" · ");
+      const loadOf = (node, port) => { const p = portLoad(node, port); return p && p.util !== null ? ` (${Math.round(p.util * 100)}%: in ${fmtBps(p.in_bps)}, out ${fmtBps(p.out_bps)}${p.errors ? `, ${p.errors} errors/min` : ""})` : ""; };
+      $("#topo-info").textContent = `${a} ↔ ${b}: ` + e.links.map((l) => `${a} ${l.a_port || "?"}${loadOf(e.a, l.a_port)} — ${b} ${l.b_port || "?"}${loadOf(e.b, l.b_port)}`).join(" · ");
     };
     hit.addEventListener("click", select);
     g.append(vis, hit, label, portA, portB);
@@ -3417,6 +3424,7 @@ async function loadMonitoring() {
     monFilters();
     renderMonitoring();
     monEvents(ev.events);
+    monPorts();
   } catch (e) {
     toast(e.message);
   }
@@ -3575,6 +3583,7 @@ async function monOpen(id, hours = mon.hours) {
     h("td", { class: "muted" }, e.detail))));
   if (!d.events.length) $("#mon-d-events tbody").append(h("tr", {}, h("td", { colspan: 3, class: "muted" }, "No events in the last 90 days")));
   if (!$("#mon-dialog").open) $("#mon-dialog").showModal();
+  await monInterfaces(d);
 }
 
 /** Response time over the period: the average line, the worst in a lighter band, and red
@@ -3809,6 +3818,192 @@ $("#mon-bulk").addEventListener("pointerenter", async () => {
   if (!mon.profiles) await monLoadProfiles().catch(() => null);
   if (mon.profiles && !$("#mon-bulk-profile").options.length) monProfileOptions($("#mon-bulk-profile"), null);
 });
+
+// --- interfaces
+
+function fmtBps(v) {
+  if (v === null || v === undefined) return "—";
+  if (v >= 1e9) return `${(v / 1e9).toFixed(v >= 1e10 ? 0 : 2)} Gb/s`;
+  if (v >= 1e6) return `${(v / 1e6).toFixed(v >= 1e8 ? 0 : 1)} Mb/s`;
+  if (v >= 1e3) return `${(v / 1e3).toFixed(0)} kb/s`;
+  return `${Math.round(v)} b/s`;
+}
+
+function fmtSpeed(v) {
+  if (!v) return "—";
+  return v >= 1e9 ? `${v / 1e9} G` : `${v / 1e6} M`;
+}
+
+function loadBar(u) {
+  if (u === null || u === undefined) return h("span", { class: "muted" }, "—");
+  const pct = Math.round(u * 100);
+  return h("span", { class: `load ${u >= 0.8 ? "hi" : u >= 0.5 ? "mid" : ""}`, title: `${(u * 100).toFixed(1)}% of the port's speed (the busier direction)` },
+    h("span", { class: "bar" }, h("span", { class: "fill", "data-w": pct })), ` ${pct}%`);
+}
+
+/** Bar widths are set from data-w after rendering (the page's CSP forbids style attributes). */
+function sizeBars(root) {
+  root.querySelectorAll("[data-w]").forEach((el) => { el.style.width = `${el.dataset.w}%`; });
+}
+
+const errCell = (v) => h("td", { class: v ? "bad-text" : "muted" }, v ? (v < 10 ? v.toFixed(1) : Math.round(v)) : "0");
+
+async function monInterfaces(d) {
+  const box = $("#mon-d-ifaces-box");
+  box.hidden = !d.snmp;
+  if (!d.snmp) return;
+  let r;
+  try {
+    r = await api(`/api/monitoring/devices/${d.id}/interfaces`);
+  } catch (e) {
+    return toast(e.message);
+  }
+  mon.ifaces = { device: d, ...r };
+  monRenderInterfaces();
+}
+
+function monRenderInterfaces() {
+  const r = mon.ifaces, all = $("#mon-d-ifaces-all").checked, sort = $("#mon-d-ifaces-sort").value;
+  let rows = r.interfaces.filter((i) => all || i.admin_up);
+  const by = { load: (a, b) => (b.util ?? -1) - (a.util ?? -1),
+    errors: (a, b) => ((b.errors || 0) * 10 + (b.discards || 0)) - ((a.errors || 0) * 10 + (a.discards || 0)),
+    down: (a, b) => (a.oper === 1) - (b.oper === 1) || b.watched - a.watched,
+    index: (a, b) => a.if_index - b.if_index }[sort];
+  rows = [...rows].sort(by);
+  const up = r.interfaces.filter((i) => i.admin_up && i.oper === 1).length, admin = r.interfaces.filter((i) => i.admin_up).length;
+  $("#mon-d-ifaces-note").textContent = r.error ? `Can't read the interfaces: ${r.error}`
+    : r.read_at ? `${up} of ${admin} up · read ${fmtAgo(tsIso(r.read_at))}, every ${Math.round(r.interval / 60)} min` : "Not read yet";
+  $("#mon-d-ifaces-note").classList.toggle("bad-text", !!r.error);
+  $("#mon-d-ifaces tbody").replaceChildren(...rows.map((i) => h("tr", { class: i.graphed ? "link-row" : "", onclick: () => i.graphed && monOpenIface(r.device.id, i.if_index) },
+    h("td", {}, h("b", {}, i.name || i.descr)),
+    h("td", { class: "muted" }, i.alias || (i.name && i.descr !== i.name ? i.descr : "")),
+    h("td", {}, h("span", { class: `badge ${!i.admin_up ? "mon-off" : i.oper === 1 ? "mon-up" : i.watched ? "mon-down" : "mon-unknown"}` },
+      !i.admin_up ? "switched off" : i.oper_label)),
+    h("td", {}, fmtSpeed(i.speed)),
+    h("td", {}, loadBar(i.util)),
+    h("td", {}, fmtBps(i.in_bps)), h("td", {}, fmtBps(i.out_bps)),
+    errCell(i.errors), errCell(i.discards),
+    h("td", { class: "muted", title: i.since ? fmtTime(tsIso(i.since)) : "" }, i.since ? fmtAgo(tsIso(i.since)) : "—"))));
+  sizeBars($("#mon-d-ifaces"));
+  $("#mon-d-ifaces-empty").hidden = rows.length > 0;
+  $("#mon-d-ifaces-empty").textContent = r.interfaces.length ? "Every port is switched off (tick 'Switched-off ports too')." : "No interfaces read yet (they are read every few minutes with SNMP).";
+}
+
+$("#mon-d-ifaces-all").addEventListener("change", monRenderInterfaces);
+$("#mon-d-ifaces-sort").addEventListener("change", monRenderInterfaces);
+
+async function monOpenIface(deviceId, ifIndex, hours = mon.ifHours || 24) {
+  mon.ifHours = hours;
+  let r;
+  try {
+    r = await api(`/api/monitoring/devices/${deviceId}/interfaces/${ifIndex}?hours=${hours}`);
+  } catch (e) {
+    return toast(e.message);
+  }
+  mon.iface = { deviceId, ifIndex };
+  const i = r.interface;
+  $("#mon-if-title").textContent = `${r.device} ${i.name || i.descr}`;
+  $("#mon-if-state").textContent = [i.alias, `${i.oper_label}${i.since ? ` since ${fmtTime(tsIso(i.since))}` : ""}`, i.speed ? `${fmtSpeed(i.speed)}b/s` : "",
+    i.util !== null ? `now ${Math.round(i.util * 100)}% (in ${fmtBps(i.in_bps)}, out ${fmtBps(i.out_bps)})` : ""].filter(Boolean).join(" · ");
+  $$("#mon-if-range button").forEach((b) => b.classList.toggle("active", Number(b.dataset.hours) === hours));
+  monTrafficGraph(r, i.speed);
+  monErrorGraph(r);
+  $("#mon-if-note").textContent = r.detail ? "Every reading (averaged into the width of the graph)." : "Hourly averages, with the peak of each hour as the band.";
+  if (!$("#mon-if-dialog").open) $("#mon-if-dialog").showModal();
+}
+
+function monAxis(r, W, H, L, B, top, unit) {
+  const x = (t) => L + ((t - r.since_ts) / (r.until_ts - r.since_ts)) * (W - L - 6);
+  const y = (v) => 10 + (1 - v / top) * (H - 10 - B);
+  const kids = [];
+  for (const f of [0, 0.5, 1]) {
+    kids.push(svgEl("line", { x1: L, x2: W - 6, y1: y(top * f), y2: y(top * f), class: "grid" }),
+      svgEl("text", { x: L - 6, y: y(top * f) + 4, "text-anchor": "end" }, unit(top * f)));
+  }
+  const span = r.until_ts - r.since_ts;
+  for (const f of [0, 0.25, 0.5, 0.75, 1]) {
+    const t = r.since_ts + span * f;
+    kids.push(svgEl("text", { x: Math.min(W - 30, Math.max(L + 20, x(t))), y: H - 4, "text-anchor": "middle" },
+      span > 3 * 86400 ? new Date(t * 1000).toLocaleDateString(undefined, { day: "numeric", month: "short" })
+        : new Date(t * 1000).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })));
+  }
+  return { x, y, kids };
+}
+
+function monLine(pts, key, x, y, cls) {
+  const runs = [];
+  let run = [];
+  const step = pts.length > 1 ? (pts[pts.length - 1].ts - pts[0].ts) / (pts.length - 1) : 0;
+  for (const p of pts) {
+    if (p[key] === null || p[key] === undefined || (run.length && p.ts - run[run.length - 1].ts > step * 2.5)) {
+      if (run.length) runs.push(run);
+      run = [];
+    }
+    if (p[key] !== null && p[key] !== undefined) run.push(p);
+  }
+  if (run.length) runs.push(run);
+  return runs.map((r) => svgEl("polyline", { points: r.map((p) => `${x(p.ts)},${y(p[key])}`).join(" "), class: cls }));
+}
+
+function monTrafficGraph(r, speed) {
+  const W = 1000, H = 220, L = 70, B = 22, pts = r.graph;
+  const peak = Math.max(1, ...pts.flatMap((p) => [p.in_max ?? p.in_bps ?? 0, p.out_max ?? p.out_bps ?? 0]));
+  const top = peak * 1.15;
+  const { x, y, kids } = monAxis(r, W, H, L, B, top, fmtBps);
+  if (speed && speed <= top) kids.push(svgEl("line", { x1: L, x2: W - 6, y1: y(speed), y2: y(speed), class: "limit" }));
+  for (const [avg, max] of [["in_bps", "in_max"], ["out_bps", "out_max"]]) {
+    const band = pts.filter((p) => p[max] !== null && p[max] !== undefined && p[max] > (p[avg] ?? 0));
+    for (const p of band) kids.push(svgEl("line", { x1: x(p.ts), x2: x(p.ts), y1: y(p[max]), y2: y(p[avg] ?? 0), class: `peak ${avg === "in_bps" ? "in" : "out"}` }));
+  }
+  kids.push(...monLine(pts, "in_bps", x, y, "line in"), ...monLine(pts, "out_bps", x, y, "line out"));
+  if (!pts.length) kids.push(svgEl("text", { x: W / 2, y: H / 2, "text-anchor": "middle", class: "none" }, "No readings in this period"));
+  $("#mon-if-graph").replaceChildren(svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Traffic in and out" }, kids));
+}
+
+function monErrorGraph(r) {
+  const pts = r.graph;
+  const any = pts.some((p) => p.errors || p.discards);
+  $("#mon-if-errors").hidden = !any;
+  if (!any) return;
+  const W = 1000, H = 110, L = 70, B = 22;
+  const top = Math.max(1, ...pts.flatMap((p) => [p.errors || 0, p.discards || 0])) * 1.15;
+  const { x, y, kids } = monAxis(r, W, H, L, B, top, (v) => `${v.toFixed(v < 10 ? 1 : 0)}/min`);
+  kids.push(...monLine(pts, "errors", x, y, "line err"), ...monLine(pts, "discards", x, y, "line disc"),
+    svgEl("text", { x: W - 10, y: 22, "text-anchor": "end", class: "key" }, "errors (red) and discards (orange) a minute"));
+  $("#mon-if-errors").replaceChildren(svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Errors and discards" }, kids));
+}
+
+$$("#mon-if-range button").forEach((b) => b.addEventListener("click", () => monOpenIface(mon.iface.deviceId, mon.iface.ifIndex, Number(b.dataset.hours))));
+$("#mon-if-close").addEventListener("click", () => $("#mon-if-dialog").close());
+
+async function monPorts() {
+  const r = await api("/api/monitoring/ports").catch(() => null);
+  $("#mon-ports").hidden = !r || (!r.busiest.length && !r.errors.length);
+  if (!r) return;
+  const port = (i) => h("td", {}, h("b", {}, i.name || i.descr), i.alias ? h("small", { class: "muted" }, ` ${i.alias}`) : null);
+  $("#mon-busiest tbody").replaceChildren(...r.busiest.map((i) => h("tr", { class: "link-row", onclick: () => monOpenIface(i.device_id, i.if_index) },
+    h("td", {}, i.device), port(i), h("td", {}, loadBar(i.util)), h("td", {}, fmtBps(i.in_bps)), h("td", {}, fmtBps(i.out_bps)))));
+  $("#mon-errors tbody").replaceChildren(...r.errors.map((i) => h("tr", { class: "link-row", onclick: () => monOpenIface(i.device_id, i.if_index) },
+    h("td", {}, i.device), port(i), errCell(i.errors), errCell(i.discards))));
+  $("#mon-errors-empty").hidden = r.errors.length > 0;
+  sizeBars($("#mon-ports"));
+}
+
+/** Traffic on the ports at both ends of each line on the network map. */
+async function monLinkLoad(data) {
+  if (!hasModule("monitoring") || !can("monitoring", "view")) return new Map();
+  const ids = new Map(data.nodes.filter((n) => n.id !== undefined && (n.kind === "device" || n.kind === "other_site")).map((n) => [n.key, n.id]));
+  const ports = [];
+  for (const e of data.edges) {
+    for (const l of e.links) {
+      if (ids.has(e.a) && l.a_port) ports.push({ device_id: ids.get(e.a), port: l.a_port });
+      if (ids.has(e.b) && l.b_port) ports.push({ device_id: ids.get(e.b), port: l.b_port });
+    }
+  }
+  if (!ports.length) return new Map();
+  const r = await api("/api/monitoring/link-load", { method: "POST", body: { ports } }).catch(() => null);
+  return new Map((r ? r.ports : []).map((p) => [`${p.device_id}|${p.port}`, p]));
+}
 
 /** Up/down per device for the network map (empty when monitoring can't be seen). */
 async function monStatesForMap() {
