@@ -3397,8 +3397,8 @@ api("/api/setup/status")
 const mon = { rows: [], counts: {}, labels: {}, picked: new Set(), profiles: null, howto: null,
   device: null, hours: 24, editing: null };
 const MON_ORDER = ["down", "warning", "unknown", "waiting", "up", "off"];
-const MON_TILES = [["down", "Down"], ["warning", "Warning"], ["up", "Up"], ["maintenance", "In maintenance"],
-  ["unknown", "Can't check"], ["off", "Not monitored"]];
+const MON_TILES = [["down", "Down"], ["warning", "Warning"], ["up", "Up"], ["hardware", "Hardware problems"],
+  ["maintenance", "In maintenance"], ["unknown", "Can't check"], ["off", "Not monitored"]];
 const tsIso = (t) => (t ? new Date(t * 1000).toISOString() : null);
 
 function fmtDur(s) {
@@ -3425,6 +3425,7 @@ async function loadMonitoring() {
     renderMonitoring();
     monEvents(ev.events);
     monPorts();
+    monHardware();
   } catch (e) {
     toast(e.message);
   }
@@ -3460,7 +3461,8 @@ function monFilters() {
   const st = $("#mon-filter-status"), site = $("#mon-filter-site");
   const keepSt = st.value, keepSite = site.value;
   st.replaceChildren(h("option", { value: "" }, "All statuses"),
-    ...MON_ORDER.map((k) => h("option", { value: k }, mon.labels[k] || k)), h("option", { value: "maintenance" }, "In maintenance"));
+    ...MON_ORDER.map((k) => h("option", { value: k }, mon.labels[k] || k)), h("option", { value: "maintenance" }, "In maintenance"),
+    h("option", { value: "hardware" }, "Hardware problems"));
   const sites = [...new Set(mon.rows.map((r) => r.site).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   site.replaceChildren(h("option", { value: "" }, "All sites"), ...sites.map((x) => h("option", { value: x }, x)));
   st.value = keepSt;
@@ -3470,9 +3472,9 @@ function monFilters() {
 function monShown() {
   const q = $("#mon-search").value.trim().toLowerCase();
   const st = $("#mon-filter-status").value, site = $("#mon-filter-site").value;
-  return mon.rows.filter((r) => (!st || (st === "maintenance" ? r.maintenance : r.status === st))
+  return mon.rows.filter((r) => (!st || (st === "maintenance" ? r.maintenance : st === "hardware" ? r.hardware_problems.length : r.status === st))
     && (!site || r.site === site)
-    && (!q || [r.name, r.address, r.site, r.reason, r.sys_name].some((x) => (x || "").toLowerCase().includes(q))))
+    && (!q || [r.name, r.address, r.site, r.reason, r.sys_name, ...r.hardware_problems].some((x) => (x || "").toLowerCase().includes(q))))
     .sort((a, b) => MON_ORDER.indexOf(a.status) - MON_ORDER.indexOf(b.status) || a.name.localeCompare(b.name, undefined, { numeric: true }));
 }
 
@@ -3497,6 +3499,7 @@ function renderMonitoring() {
     h("td", {}, r.rtt_ms !== null && r.rtt_ms !== undefined ? `${r.rtt_ms.toFixed(1)} ms` : "—",
       r.loss ? h("small", { class: "muted" }, ` ${Math.round(r.loss * 100)}% lost`) : null),
     h("td", {}, r.uptime !== null && r.uptime !== undefined ? fmtDur(r.uptime + Math.max(0, now - (r.last_poll || now))) : "—"),
+    cpuMemCell(r),
     h("td", { class: r.availability_7d !== null && r.availability_7d < 99 ? "bad-text" : "" },
       r.availability_7d !== null && r.availability_7d !== undefined ? `${r.availability_7d}%` : "—"),
     h("td", { title: r.since ? fmtTime(tsIso(r.since)) : "" }, r.since ? fmtAgo(tsIso(r.since)) : "—"),
@@ -3583,7 +3586,7 @@ async function monOpen(id, hours = mon.hours) {
     h("td", { class: "muted" }, e.detail))));
   if (!d.events.length) $("#mon-d-events tbody").append(h("tr", {}, h("td", { colspan: 3, class: "muted" }, "No events in the last 90 days")));
   if (!$("#mon-dialog").open) $("#mon-dialog").showModal();
-  await monInterfaces(d);
+  await Promise.all([monHealth(d), monInterfaces(d)]);
 }
 
 /** Response time over the period: the average line, the worst in a lighter band, and red
@@ -3818,6 +3821,84 @@ $("#mon-bulk").addEventListener("pointerenter", async () => {
   if (!mon.profiles) await monLoadProfiles().catch(() => null);
   if (mon.profiles && !$("#mon-bulk-profile").options.length) monProfileOptions($("#mon-bulk-profile"), null);
 });
+
+// --- hardware health
+
+const HW_STATUS = { ok: ["mon-up", "OK"], warning: ["mon-warning", "warning"], critical: ["mon-down", "failed"],
+  absent: ["mon-off", "not present"], unknown: ["mon-unknown", "unknown"] };
+
+function cpuMemCell(r) {
+  if (r.cpu === null && r.memory === null) return h("td", { class: "muted" }, "—");
+  const pct = (v) => (v === null || v === undefined ? "—" : `${Math.round(v)}%`);
+  return h("td", {}, h("span", { class: r.hardware_problems.length ? "bad-text" : "" }, `${pct(r.cpu)} · ${pct(r.memory)}`),
+    r.hardware_problems.length ? h("span", { class: "badge mon-down", title: r.hardware_problems.join("\n") },
+      ` ${r.hardware_problems.length} hardware`) : null);
+}
+
+function gauge(label, value, warn) {
+  if (value === null || value === undefined) return null;
+  const u = value / 100;
+  return h("div", { class: "gauge" }, h("span", { class: "g-label" }, label),
+    h("span", { class: `load ${value >= warn ? "hi" : value >= warn * 0.8 ? "mid" : ""}` },
+      h("span", { class: "bar wide" }, h("span", { class: "fill", "data-w": Math.round(u * 100) })), ` ${Math.round(value)}%`),
+    h("span", { class: "muted" }, ` warn at ${warn}%`));
+}
+
+async function monHealth(d) {
+  const box = $("#mon-d-health-box");
+  box.hidden = !d.snmp;
+  if (!d.snmp) return;
+  let r;
+  try {
+    r = await api(`/api/monitoring/devices/${d.id}/health?hours=${mon.hours}`);
+  } catch (e) {
+    return toast(e.message);
+  }
+  const first = (kind) => r.readings.find((x) => x.kind === kind && x.value !== null);
+  const cpus = r.readings.filter((x) => x.kind === "cpu" && x.value !== null);
+  $("#mon-d-gauges").replaceChildren(...[
+    cpus.length ? gauge("CPU", Math.max(...cpus.map((x) => x.value)), r.cpu_warn) : null,
+    first("memory") ? gauge("Memory", first("memory").value, r.mem_warn) : null].filter(Boolean));
+  sizeBars($("#mon-d-gauges"));
+  const parts = r.readings.filter((x) => x.kind !== "cpu" && x.kind !== "memory");
+  $("#mon-d-health tbody").replaceChildren(...parts.map((x) => {
+    const [cls, label] = HW_STATUS[x.status] || HW_STATUS.unknown;
+    const reading = x.value === null || x.value === undefined ? "" : x.kind === "temperature" ? `${x.value} °C` : x.kind === "fan" ? `${Math.round(x.value)} rpm` : x.value;
+    return h("tr", {}, h("td", {}, x.kind_label), h("td", {}, x.name), h("td", {}, reading),
+      h("td", {}, h("span", { class: `badge ${cls}` }, label)));
+  }));
+  $("#mon-d-health-empty").hidden = parts.length > 0;
+  $("#mon-d-health-empty").textContent = r.read_at ? "The device gives no temperatures, fans or power supplies over SNMP." : "Not read yet (every few minutes, with SNMP).";
+  const mibs = [...new Set(r.readings.map((x) => x.source).filter(Boolean))];
+  const src = mibs.length ? `from ${mibs.join(", ")}` : "";
+  $("#mon-d-health-note").textContent = r.error ? `Can't read it: ${r.error}` : [
+    r.problems.length ? `${r.problems.length} problem${r.problems.length > 1 ? "s" : ""}: ${r.problems.join("; ")}` : r.read_at ? "No problems" : "",
+    r.read_at ? `${fmtAgo(tsIso(r.read_at))}, every ${Math.round(r.interval / 60)} min` : "", src].filter(Boolean).join(" · ");
+  $("#mon-d-health-note").classList.toggle("bad-text", !!r.problems.length || !!r.error);
+  monHealthGraph(r);
+}
+
+function monHealthGraph(r) {
+  const W = 520, H = 170, L = 40, B = 22;
+  const series = [["cpu", "line in", "CPU"], ["memory", "line out", "memory"]].filter(([k]) => (r.graph[k] || []).length);
+  $("#mon-d-health-graph").hidden = !series.length;
+  if (!series.length) return;
+  const { x, y, kids } = monAxis(r, W, H, L, B, 100, (v) => `${Math.round(v)}%`);
+  kids.push(svgEl("line", { x1: L, x2: W - 6, y1: y(r.cpu_warn), y2: y(r.cpu_warn), class: "limit" }));
+  for (const [key, cls] of series) kids.push(...monLine(r.graph[key], "value", x, y, cls));
+  kids.push(svgEl("text", { x: W - 10, y: 22, "text-anchor": "end", class: "key" }, `${series.map((s) => s[2]).join(" (blue) and ")}${series.length > 1 ? " (green)" : ""}, %`));
+  $("#mon-d-health-graph").replaceChildren(svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "CPU and memory" }, kids));
+}
+
+async function monHardware() {
+  const r = await api("/api/monitoring/hardware").catch(() => null);
+  $("#mon-hw").hidden = !r || !r.devices.length;
+  if (!r) return;
+  $("#mon-hw-table tbody").replaceChildren(...r.devices.map((d) => h("tr", { class: "link-row", onclick: () => monOpen(d.device_id) },
+    h("td", {}, h("b", {}, d.device)), h("td", {}, siteLink(d.site)),
+    h("td", { class: d.status === "critical" ? "bad-text" : "" }, d.problems.join("; ")),
+    h("td", { class: "muted" }, fmtAgo(tsIso(d.read_at))))));
+}
 
 // --- interfaces
 

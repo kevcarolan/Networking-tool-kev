@@ -135,6 +135,9 @@ class Settings(BaseSettings):
     monitor_workers: int = 50  # devices polled at the same time
     monitor_interface_seconds: int = 300  # Settings page: read the interfaces this often
     monitor_interface_keep_days: int = 7  # Settings page: every interface read kept this long
+    monitor_health_seconds: int = 300  # Settings page: read CPU, memory, sensors this often
+    monitor_cpu_warn: int = 85  # Settings page: CPU % at or over which a device is a warning
+    monitor_mem_warn: int = 90  # Settings page: memory % used at or over which it is a warning
 
     def record_env(self) -> frozenset[str]:
         """The settings given in netops.env or the environment (not defaults)."""

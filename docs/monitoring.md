@@ -6,20 +6,21 @@ The server checks every device in the inventory once a minute:
 * **ping** (ICMP echo), for the response time;
 * **SNMP** (v2c or v3), for the device's name, description and uptime.
 
-Every 5 minutes it also reads each SNMP device's **interfaces**: status, speed, traffic in
-and out, errors and discards.
+Every 5 minutes it also reads, from each SNMP device:
+
+* its **interfaces**: status, speed, traffic in and out, errors and discards;
+* its **hardware health**: CPU, memory, temperatures, fans and power supplies.
 
 It is read-only. It only asks (ICMP echo, SNMP GET) and never changes anything on a device.
 There is no SNMP SET and no trap receiver: the devices' own messages go to the **Syslog** page.
 
-Health readings (CPU, memory, temperature, fans, power supplies) come in a later release.
 
 ## What the statuses mean
 
 | Status | Meaning |
 |---|---|
 | **Up** | It answers |
-| **Warning** | It answers, but something needs a look: SNMP fails (wrong community or user, an access list), it doesn't answer ping but SNMP works, or it missed a check (*1 of 2 before it counts as down*) |
+| **Warning** | It answers, but something needs a look: SNMP fails (wrong community or user, an access list), it doesn't answer ping but SNMP works, it missed a check (*1 of 2 before it counts as down*), or it has a **hardware problem** (below) |
 | **Down** | No answer to ping or SNMP for 2 checks in a row (about two minutes; *Settings › Site and defaults*) |
 | **Can't check** | Nothing to check it with: ping is off and it has no SNMP profile |
 | **Not monitored** | Switched off for this device, or the device is disabled in the inventory |
@@ -30,11 +31,55 @@ The poller also notes these events:
 * when a device went **down** and came back **up**, and for how long;
 * when it **restarted** (its SNMP uptime went back near zero);
 * when SNMP **stopped** or **started** answering;
+* when a **hardware problem** started or cleared (below);
 * when a **port went down** or came back. This is only for ports with a description set on
   the device (as uplinks and links usually have) and port-channels. Ports without a
   description, usually access ports, come and go all day and aren't events.
 
 The page shows the last 24 hours. Each device's window shows its last 90 days.
+
+## Hardware health
+
+Every 5 minutes each SNMP device is asked for its CPU, memory, temperatures, fans and power
+supplies. A **hardware problem** makes the device a warning, is an event, and is emailed to
+whoever gets *Devices down or up*:
+
+* a fan or power supply the device reports as failed or in warning;
+* a temperature the device reports as high or critical. The device decides this with its
+  own thresholds. A temperature the device gives no status for is shown, not judged;
+* CPU at or over 85%, or memory used at or over 90% (*Settings › Site and defaults*). Most
+  devices give the 5-minute average CPU, so one short spike isn't a problem.
+
+A power supply that isn't fitted ("not present") isn't a problem.
+
+**Where the readings come from.** Each platform has readers for its vendor's own MIBs. Every
+device is then also asked the standard MIBs: HOST-RESOURCES-MIB for CPU and memory, and
+ENTITY-SENSOR-MIB for temperatures and fans. The first read tries them all and remembers
+which answered; later reads ask only those, and every reader is tried again once a day. A
+reader that gets nothing back adds nothing: it never makes a device look down.
+
+| Platform | Readers |
+|---|---|
+| Cisco IOS / IOS-XE | CISCO-PROCESS-MIB (CPU, memory), CISCO-MEMORY-POOL-MIB, CISCO-ENVMON-MIB (temperatures, fans, power supplies with their state), CISCO-ENTITY-SENSOR-MIB, CISCO-ENTITY-FRU-CONTROL-MIB |
+| Cisco NX-OS, IOS-XR | CISCO-PROCESS-MIB, CISCO-ENTITY-SENSOR-MIB, CISCO-ENTITY-FRU-CONTROL-MIB (power supplies, fan trays) |
+| Cisco ASA, FTD | CISCO-PROCESS-MIB, CISCO-MEMORY-POOL-MIB, CISCO-ENTITY-SENSOR-MIB |
+| Cisco small business | CISCOSB CPU, then the standard MIBs |
+| Juniper Junos | JUNIPER-MIB jnxOperatingTable (routing engine CPU, memory and temperature; every fan and power supply's state; board temperatures) |
+| Fortinet FortiGate | FORTINET-FORTIGATE-MIB (CPU, memory, hardware sensors with their alarm) |
+| HPE ArubaOS-Switch | HP STATISTICS-MIB (CPU), NETSWITCH-MIB (memory), HP-ICF-CHASSIS sensors (fans, power, over-temperature) |
+| HPE Aruba Mobility Controller | WLSX-SYSTEMEXT-MIB (processor load, memory) |
+| Extreme EXOS | EXTREME-SYSTEM-MIB and EXTREME-SOFTWARE-MONITOR-MIB (CPU, memory, temperature, fans, power supplies) |
+| Huawei VRP | HUAWEI-ENTITY-EXTENT-MIB (CPU, memory and temperature per board, fans) |
+| MikroTik RouterOS | MIKROTIK-MIB gauges (temperatures, fan speeds), then the standard MIBs |
+| Check Point | CHECKPOINT-MIB (CPU, memory), UCD-SNMP-MIB |
+| Ubiquiti EdgeOS | UCD-SNMP-MIB (memory), then the standard MIBs |
+| Arista, Palo Alto, Aruba AOS-CX, Dell OS10, AlliedWare Plus | The standard MIBs |
+
+The readers were written from the vendors' MIB documentation. Confirm each platform on a
+real device before relying on it, the same way as the upgrade drivers: open the device's
+window and check that the CPU, memory and parts listed match the device's own `show`
+commands (for example `show environment`, `show processes cpu`). The note above the table
+says which MIBs answered.
 
 ## Setting it up
 
@@ -70,7 +115,11 @@ Every change appears within a minute.
   * what it says about itself, and its events.
 
   People with *manage* can switch it, its ping or its SNMP off here, or choose its profile.
-* **A device's interfaces:** under the graph in the device window, every port as last read:
+* **A device's health:** in the device window, CPU and memory as bars (with the threshold),
+  their graph over the same period as the response time, and every temperature, fan and
+  power supply with its reading and status. The **Hardware problems** list under the
+  device list shows every device with one; the tile counts them.
+* **A device's interfaces:** under the health in the device window, every port as last read:
   its description, status (and since when), speed, how full it is (the busier direction),
   traffic in and out, and errors and discards a minute. You can sort it busiest first, errors
   first or down first, and choose to show switched-off ports too. Click a port for its
@@ -99,7 +148,10 @@ On *Settings › Site and defaults*:
 | Down after this many checks without an answer | 2 | 1 to 10 |
 | Keep every check for (days) | 35 | For the graphs. The daily totals (availability) are kept for a year |
 | Read the interfaces every (seconds) | 300 | 60 to 3600 |
-| Keep every interface reading for (days) | 7 | 2 to 35. After that, the average and peak of each hour are kept for 13 months |
+| Keep every interface reading for (days) | 7 | 2 to 35. After that, the average and peak of each hour are kept for 13 months. Health readings follow the same rule |
+| Read hardware health every (seconds) | 300 | 60 to 3600 |
+| Warn at CPU (%) | 85 | |
+| Warn at memory used (%) | 90 | |
 
 Only in `netops.env`: `NETOPS_MONITOR_WORKERS` (50), the number of devices checked at the same time.
 
@@ -160,6 +212,8 @@ list their modules and so don't include it; the trial does.
 | **Warning: wrong SNMPv3 authentication / encryption password** | The profile's passwords or protocols don't match the device. Cisco's AES-192/256 are "AES-192-C"/"AES-256-C" in the profile |
 | **Warning: the device doesn't know this SNMPv3 user** | The user isn't set up on the device, or was lost in a reload (some platforms don't save SNMPv3 users in the startup config) |
 | **Warning: no reply to ping, but SNMP answers** | A firewall that drops ping: switch ping off for that device |
+| A device shows no health readings, or only some | The SNMP view must include the vendor's MIBs and ENTITY-MIB (the configs in the help allow everything read-only). Some platforms give temperatures or power supplies only on some models or releases |
+| A temperature looks wrong | Each sensor is as the device reports it (some report in tenths, which are converted); compare with `show environment` and tell support which sensor |
 | A device has no interfaces, or "Can't read the interfaces" | The SNMP view must include IF-MIB (the configs in the help allow everything read-only). Very large tables (thousands of VLAN interfaces) take a while: 1,000 interfaces per device are read, physical ones first |
 | A port's traffic looks too low or jumps | 32-bit counters wrapping on a fast port: check that the device answers ifXTable (SNMPv2c or v3, not v1). On Cisco, `snmp-server ifindex persist` keeps port numbers the same after a reload |
 | "ping isn't allowed on this server" | `sysctl net.ipv4.ping_group_range` must include the netops group (`0 2147483647`, `deploy/hardening/sysctl-netops.conf`) |

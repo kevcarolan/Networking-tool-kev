@@ -6,12 +6,12 @@ of every working session.
 **Now:** NetCairn (named 2026-10-14; it started as a clean copy of NetOps Tools): config
 backups and compliance, firmware and upgrade jobs for every platform, circuits with live
 locations, syslog, device monitoring (ping and SNMP: up/down, response times, restarts,
-interfaces and traffic, map lines by load),
+interfaces and traffic, map lines by load, hardware health),
 inventory, sites, racks and the network map, the calendar, search, alerts, reports, the wall
 display, users with two-factor sign-in, licences and the installers.
 **Next:** the owner's to-do list below: test in the demo, lab tests on real devices, the full
-install test on Ubuntu, then clearing the name and the licence terms; monitoring phase 3
-(health) when the owner asks.
+install test on Ubuntu, then clearing the name and the licence terms; Meraki through its
+API next on the list.
 
 ## Roadmap
 
@@ -58,7 +58,10 @@ install test on Ubuntu, then clearing the name and the licence terms; monitoring
 - [x] Network map (topology) per site and for every site, from the CDP/LLDP neighbours kept at each network scan; drag and save layout, download as SVG ([circuits.md](circuits.md#network-map-topology))
 - [x] Monitoring phase 1: ping and SNMP (v2c, v3) every minute from its own service (`netops-monitor`); up, warning, down, restarts and SNMP trouble as events; response-time graphs and availability; SNMP profiles with a Test button; per-platform SNMP configs (Help: set up devices); map colours, wall display page, email alerts, calendar windows as maintenance ([monitoring.md](monitoring.md))
 - [x] Monitoring phase 2: interfaces (status, speed, traffic, errors, discards) read every 5 minutes with SNMP; each reading kept 7 days, hourly average and peak 13 months; traffic graphs per port; busiest ports and ports with errors (page and wall); map lines coloured by load; described ports going down or up as events and alerts ([monitoring.md](monitoring.md))
-- [ ] Monitoring phase 3 (after phase 2): health per vendor (CPU, memory, temperature, fans, power supplies), confirmed in the lab like the upgrade drivers
+- [x] Monitoring phase 3: hardware health per vendor (CPU, memory, temperatures, fans, power supplies) from each vendor's MIBs and the standard ones, readers remembered per device; problems make a warning, an event and an alert; device window, list column, Hardware problems tile and list, wall display ([monitoring.md](monitoring.md#hardware-health)). Readers from vendor MIB docs: confirm each platform in the lab
+- [ ] Meraki through the Dashboard API (owner, 2026-10-14): inventory (serial, model, MAC, LAN IP, firmware), device and uplink status, loss and latency into monitoring, the map and alerts; firmware versions in the report (Meraki runs its own upgrades); the event log; an encrypted read-only API key; needs outbound HTTPS to the Meraki cloud (not for air-gapped sites). Syslog from MX/MS/MR can already come to the Syslog page
+- [ ] Later: Schneider EcoStruxure Building Operation (EBO), likely through EBO Web Services (EWS); the owner is to come back to it. Today: monitor its servers and automation servers with ping/SNMP as devices
+- [ ] Idea: UPSs with network cards (APC/Schneider PowerNet-MIB): on battery, battery health, load and runtime, as part of health
 - [ ] Main and standby server: two VMs (one DC or across a campus), one active at a time with the database and configs copied to the standby and a shared address; only the active one polls, receives syslog and runs jobs; the licence covers the pair
 - [ ] Later: site collectors for cloud or many-site use (owner, 2026-10-14: "sounds better"): a small collector at each site does the polling, syslog, backups and upgrades locally and keeps that site's device passwords (encrypted so the centre can't read them); it connects out over HTTPS (its own certificate) to a central server with the global view, users, inventory, reports and alerts; jobs wait at the centre for the collector to fetch; images copied to collectors overnight and pushed locally in the window; keeps working while the link is down. One central install per customer
 - [ ] Later: one overview of several servers (the display feed is the starting point); several customers on one server kept as an idea
@@ -150,6 +153,8 @@ install test on Ubuntu, then clearing the name and the licence terms; monitoring
 | 2026-10-14 | SNMP profiles are secrets like device credentials: managed with *credentials*, a device's profile chosen with *addresses*; Monitoring permission area none/view/manage (view for users made before it) | Same rule as credential profiles: who decides where a secret goes |
 | 2026-10-14 | Calendar windows (change, maintenance, outage) and upgrade jobs under way mark devices "maintenance": events kept, not emailed | No alerts for planned work |
 | 2026-10-14 | Interfaces: read every 5 minutes (64-bit counters where there are any); every reading kept 7 days in a file per day, then the hourly average and peak for 13 months in a file per month; whole files deleted, like syslog. Port events only for ports with a description, and port-channels | Graphs for a year without the store growing without limit; access ports going up and down all day would drown the real events |
+| 2026-10-14 | Hardware health: each platform's vendor MIB readers, then HOST-RESOURCES and ENTITY-SENSOR for everyone; the readers that answered are remembered and all retried daily; the device's own status decides for fans, power supplies and temperatures, the Settings thresholds for CPU and memory; a problem makes the device a warning (not down) | Works across vendors without per-device setup; no false alarms from guessed temperature limits |
+| 2026-10-14 | Meraki through its Dashboard API, on the to-do list; Schneider EBO later | The owner: Meraki looks after itself but its data belongs in the overall view |
 | 2026-10-14 | Cloud or many-site design: per-site collectors connecting out to a central server (like PRTG remote probes), one central install per customer, after phase 2 and the main/standby pair | Device passwords stay at the site, no way into the sites from the centre, no VPN mesh, images staged locally |
 | 2026-10-12 | Sites are a list of their own (table `sites`); items and devices keep a Site text, matched to a site's name or code; renaming a site rewrites that text | The owner: a site list cross-referenced with the inventory, without changing how devices and backups store their site |
 
@@ -160,7 +165,8 @@ install test on Ubuntu, then clearing the name and the licence terms; monitoring
    now the Monitoring page (a switch down, a router with SNMP not set up, a firewall that
    drops ping; graphs, SNMP profiles and their Test button, Help: set up devices, the map
    colours, the wall display's Monitoring page; interfaces in a device's window, a port's
-   traffic graph, the busiest ports and errors, the map's lines coloured by load), the site layout and rack elevations,
+   traffic graph, the busiest ports and errors, the map's lines coloured by load; hardware
+   health: hq-core2's failed power supply, wh-sw3's stopped fan, dc1-leaf2's high CPU), the site layout and rack elevations,
    compliance, the port view, the report and the wall display pages too ([try-it.md](try-it.md)); and an upgrade job's pre-checks on an
    Arista, Juniper or NX-OS demo device, which now show the health checks; the search box.
 2. Full install test on Ubuntu ([install-online.md](install-online.md)), after the demo.
@@ -248,3 +254,4 @@ install test on Ubuntu, then clearing the name and the licence terms; monitoring
 | 2026-10-14 | Networking-tool-kev | Named NetCairn: default product name, demo, deploy labels, README and install guide; cairn logo (mark, light and dark logos) as the browser icon and on the sign-in page, top bar and wall display; other names checked on the web (NetKeel, Netquay, Linkhaven, Portlight…) |
 | 2026-10-14 | Networking-tool-kev | Monitoring phase 1 (migration 0015_monitoring): SNMP v2c/v3 client (pysnmp) and ping sockets, `netops-monitor` service with its own store (state, events, daily totals, a file per day), up/warning/down with "down after N checks", restarts from the uptime, maintenance from the calendar and upgrades; Monitoring page (tiles, list, device window with graphs and availability, bulk on/off and profile), SNMP profiles with Test, per-platform SNMP configs for 22 platforms, map colours, wall display page and site counts, "Devices down or up" alerts, Settings options, licence module and permission area; firewall UDP 161, sysctl, installer; demo with history; fixed the calendar dialog's missing end tag that hid the network map |
 | 2026-10-14 | Networking-tool-kev | Monitoring phase 2: interfaces read with SNMP (IF-MIB, 64-bit counters first; wrap and reset handling), rates and load, a file per day of readings and per month of hourly average/peak; device window's interface table, a port's traffic and errors graphs, busiest ports and ports with errors on the page and the wall, map lines coloured by load; described ports going down or up as events and alerts; demo ports with daily traffic, a busy link, a port with errors and one with discards |
+| 2026-10-14 | Networking-tool-kev | Monitoring phase 3: hardware health (health.py) with readers for Cisco (process, memory pool, envmon, entity sensor, FRU), Juniper, Fortinet, HPE ArubaOS-Switch, Aruba controllers, Extreme, Huawei, MikroTik, Check Point and the standard HOST-RESOURCES/ENTITY-SENSOR/UCD MIBs; problems as warnings, events and alerts; CPU/memory and temperature history with the interface files; device window health, list column, Hardware problems tile and list, wall display panel; demo faults (power supply, fan, CPU). Answered: Meraki API (to-do), Schneider EBO (later), site collectors |

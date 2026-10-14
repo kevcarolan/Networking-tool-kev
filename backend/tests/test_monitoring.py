@@ -497,3 +497,101 @@ def test_old_interface_files_are_deleted(tmp_path):
     (tmp_path / "ifh-2024-01.db").write_bytes(b"")
     gone = store.prune_interfaces(7, today=dt.date(2026, 3, 1))
     assert gone == ["ifd-2026-01-01.db", "ifh-2024-01.db"]
+
+
+# --- hardware health (phase 3) ------------------------------------------------------------------
+
+def test_every_platform_has_health_readers():
+    from app.tools.monitoring import health as hw
+
+    assert set(PLATFORMS) <= set(hw.PLATFORM_PROBES), set(PLATFORMS) - set(hw.PLATFORM_PROBES)
+    assert all(p in hw.PROBES for names in hw.PLATFORM_PROBES.values() for p in names)
+    assert hw.probes_for("arista_eos") == hw.GENERIC  # the standard MIBs
+    assert hw.probes_for("cisco_ios")[-3:] == hw.GENERIC  # after Cisco's own
+
+
+@pytest.mark.parametrize("platform, fault, expected", [
+    ("cisco_ios", "psu2", "Switch 1 - Power Supply B failed"),
+    ("cisco_nxos", "psu2", "PowerSupply-2 failed"),
+    ("juniper_junos", "fan2", "Fan Tray 1 Fan 0 failed"),
+    ("aruba_osswitch", "psu2", "Power Supply Sensor failed"),
+    ("arista_eos", "fan2", "Fan 2/1 failed"),
+    ("mikrotik_routeros", "fan2", "fan2-speed failed"),
+    ("cisco_ios", "temp", "Temperature Switch 1 - Inlet Temp Sensor critical (62 °C)"),
+])
+def test_health_readers_per_platform(platform, fault, expected):
+    from app.tools.monitoring import health as hw
+
+    clock = Clock(1_800_000_000.0)
+    net = SimpleNamespace(devices={"dev": SimpleNamespace(up=True, platform=platform, version="1")})
+    sim = SimMonitor(net, {"dev": "10.9.9.9"}, clock=clock)
+    target = SnmpTarget("10.9.9.9")
+    readings, sources = asyncio.run(hw.read(sim, target, platform))
+    hw.judge(readings, 85, 90)
+    kinds = {r.kind for r in readings}
+    assert {"cpu", "memory"} <= kinds and sources and not hw.problems(readings)
+    sim.faults["dev"] = {fault}
+    readings, _ = asyncio.run(hw.read(sim, target, platform, sources))
+    assert expected in hw.problems(hw.judge(readings, 85, 90)).values()
+
+
+def test_entity_sensor_scale_and_precision():
+    from app.tools.monitoring import health as hw
+
+    class Fake:
+        rows = {"1.3.6.1.2.1.99.1.1.1.1": [("1.3.6.1.2.1.99.1.1.1.1.5", 8)],
+                "1.3.6.1.2.1.99.1.1.1.2": [("1.3.6.1.2.1.99.1.1.1.2.5", 9)],
+                "1.3.6.1.2.1.99.1.1.1.3": [("1.3.6.1.2.1.99.1.1.1.3.5", 1)],
+                "1.3.6.1.2.1.99.1.1.1.4": [("1.3.6.1.2.1.99.1.1.1.4.5", 415)],
+                "1.3.6.1.2.1.99.1.1.1.5": [("1.3.6.1.2.1.99.1.1.1.5.5", 1)],
+                hw.ENT_NAME: [(f"{hw.ENT_NAME}.5", "Inlet")]}
+
+        async def walk(self, t, oid, max_rows=0):
+            return self.rows.get(oid, [])
+
+    (r,) = asyncio.run(hw.entity_sensor(Fake(), None))
+    assert (r.kind, r.name, r.value, r.status) == ("temperature", "Inlet", 41.5, "ok")
+
+
+def test_hardware_problems_make_a_warning_an_event_and_an_alert(setup):
+    s = setup
+    s.settings.monitor_health_seconds = 300
+    _round(s)  # the first read finds the readers that answer
+    h = s.poller.store.health(s.ids["sw1"])
+    assert h["sources"][:2] == ["cisco_cpu", "cisco_envmon"] and not h["problems"]
+    rows = {r["name"]: r for r in s.admin.get("/api/monitoring/devices").json()["devices"]}
+    assert rows["sw1"]["cpu"] is not None and rows["sw1"]["memory"] is not None
+    s.sim.faults["sw1"] = {"psu2"}
+    _round(s, 60)
+    assert _state(s, "sw1")["status"] == "up"  # not read again yet
+    _round(s, 300)
+    st = _state(s, "sw1")
+    assert st["status"] == "warning" and "Power Supply B failed" in st["reason"]
+    assert _events(s, "sw1")[-1] == ("health_problem", "Switch 1 - Power Supply B failed")
+    data = s.admin.get("/api/monitoring/devices").json()
+    assert data["counts"]["hardware"] == 1
+    hw_list = s.admin.get("/api/monitoring/hardware").json()["devices"]
+    assert hw_list[0]["device"] == "sw1" and hw_list[0]["status"] == "critical"
+    d = s.admin.get(f"/api/monitoring/devices/{s.ids['sw1']}/health", params={"hours": 1}).json()
+    assert {r["kind"] for r in d["readings"]} >= {"cpu", "memory", "temperature", "fan", "psu"}
+    assert d["graph"]["cpu"] and d["problems"] == ["Switch 1 - Power Supply B failed"]
+    s.sim.cpu["sw2"] = 97
+    _round(s, 300)
+    assert "CPU 97%" in _state(s, "sw2")["reason"]
+    s.sim.faults["sw1"] = set()
+    _round(s, 300)
+    assert _state(s, "sw1")["status"] == "up"
+    assert _events(s, "sw1")[-1] == ("health_ok", "Back to normal: Switch 1 - Power Supply B failed")
+
+
+def test_wall_lists_hardware_problems(setup):
+    s = setup
+    _round(s)
+    s.sim.faults["sw3"] = {"fan2"}
+    _round(s, 300)
+    key = s.admin.post("/api/displays", json={"name": "NOC"}).json()["key"]
+    m = s.admin.get("/api/display/data", headers={"Authorization": f"Bearer {key}"}).json()["monitoring"]
+    assert m["counts"]["hardware"] == 1
+    assert m["hardware"] == [{"device": "sw3", "site": "Branch", "critical": True,
+                              "problems": ["Switch 1 - FAN 2 failed"]}]
+    assert "10.0.0." not in str(m)

@@ -101,6 +101,11 @@ OPTIONS = (
            60, 3600, help="Traffic, errors and status of every port, with SNMP; 300 is usual"),
     Option("monitor_interface_keep_days", "Monitoring: keep every interface reading for (days)",
            int, 2, 35, help="After that, hourly averages and peaks are kept for 13 months"),
+    Option("monitor_health_seconds", "Monitoring: read hardware health every (seconds)", int,
+           60, 3600, help="CPU, memory, temperatures, fans and power supplies, with SNMP"),
+    Option("monitor_cpu_warn", "Monitoring: warn at CPU (%)", int, 1, 100,
+           help="Most devices give the 5-minute average"),
+    Option("monitor_mem_warn", "Monitoring: warn at memory used (%)", int, 1, 100),
     Option("upgrade_backup_max_age_hours", "Take a fresh backup before an upgrade if older than (hours)",
            int, 1, 720),
 )

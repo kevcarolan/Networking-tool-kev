@@ -582,3 +582,12 @@ tr.link-row { cursor: pointer; }
 .topo-edge.load-hi .vis { stroke: var(--fail); stroke-width: 4; }
 #mon-d-ifaces td, #mon-busiest td, #mon-errors td { white-space: nowrap; }
 #mon-d-ifaces td:nth-child(2) { white-space: normal; min-width: 160px; }
+
+/* monitoring: hardware health */
+.tile.mon-hardware .num { color: var(--fail); }
+.mon-health { align-items: start; margin-bottom: 8px; }
+.gauges { display: grid; gap: 8px; margin-bottom: 8px; }
+.gauge { display: flex; align-items: center; gap: 8px; }
+.gauge .g-label { width: 64px; color: var(--muted); }
+.load .bar.wide { width: 180px; }
+#mon-d-health-box .toolbar h3 { margin: 0; }

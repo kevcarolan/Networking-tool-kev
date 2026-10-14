@@ -11,7 +11,11 @@ A device is:
 * **down** when neither ping nor SNMP has answered for ``monitor_down_after`` polls in a row.
 
 Every ``monitor_interface_seconds`` (5 minutes) it also reads each SNMP device's interfaces
-(ifaces.py): status, speed, traffic, errors and discards, kept for the graphs.
+(ifaces.py): status, speed, traffic, errors and discards, kept for the graphs. Every
+``monitor_health_seconds`` (5 minutes) it reads its hardware health (health.py): CPU,
+memory, temperatures, fans and power supplies. A device that answers but has a hardware
+problem (a failed fan or power supply, a temperature alarm, CPU or memory over the
+thresholds) is a **warning**, and each problem starting or clearing is an event.
 
 It also notes restarts (the SNMP uptime went back to near zero), when SNMP stops or
 starts working, and when a port with a description (or a port-channel) goes down or up. Each change is an **event**; the web app's alerts email them. A device in
@@ -35,6 +39,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
+from app.tools.monitoring import health as hw
 from app.tools.monitoring import ifaces
 from app.tools.monitoring import ping as pinging
 from app.tools.monitoring.snmp import (SYS_DESCR, SYS_NAME, SYS_OBJECT_ID, SYS_UPTIME, SYSTEM,
@@ -59,6 +64,7 @@ class Job:
     snmp: SnmpTarget | None
     snmp_note: str = ""  # why SNMP isn't used, when it isn't
     maintenance: bool = False
+    platform: str = ""
 
 
 def target_for(profile, address: str, cipher) -> SnmpTarget:
@@ -134,7 +140,7 @@ def load_jobs(db: Session, cipher) -> list[Job]:
         if not use_ping and snmp is None:
             note = note or "Ping and SNMP are both off"
         jobs.append(Job(d.id, d.name, d.address.strip(), d.site, use_ping, snmp, note,
-                        d.id in in_maintenance))
+                        d.id in in_maintenance, d.platform))
     return jobs
 
 
@@ -152,6 +158,7 @@ class Poller:
         self.first_fail: dict[int, float] = {}
         self.if_prev: dict[int, dict[int, dict]] = {}  # device -> ifIndex -> last counters
         self.if_errors: dict[int, str] = {}  # why a device's interfaces couldn't be read
+        self.health: dict[int, dict] = {}  # device -> the last health read (store.health)
         self.ping_allowed = True
         self.licensed = True
         self.started = clock()
@@ -181,6 +188,10 @@ class Poller:
                 snmp_ok = True
             except SnmpError as exc:
                 snmp_ok, snmp_error = False, str(exc)
+        health_read = None
+        if snmp_ok and self._health_due(job.device_id, now):
+            health_read = await self.poll_health(job, now)
+        problems = (self.health.get(job.device_id) or {}).get("problems") or {} if snmp_ok else {}
         pinged = result is not None
         answered = bool((pinged and result.ok) or snmp_ok)
         polled = pinged or snmp_ok is not None
@@ -203,6 +214,8 @@ class Poller:
                 reason = job.snmp_note
             elif pinged and result.loss > 0:
                 reason = f"{result.sent - result.received} of {result.sent} pings lost"
+            if status == UP and problems:
+                status, reason = WARNING, "Hardware: " + "; ".join(sorted(problems.values()))
         elif fails >= down_after or prev.get("status") == DOWN:
             status = DOWN
             reason = "No answer to ping or SNMP" if pinged and job.snmp else \
@@ -233,6 +246,10 @@ class Poller:
                 event("snmp_failed", snmp_error)
             elif prev.get("snmp_ok") == 0 and snmp_ok:
                 event("snmp_ok", "SNMP answers again")
+
+        if health_read is not None:
+            for e in health_read[2]:
+                event(e["kind"], e["detail"])
 
         uptime = values.get(SYS_UPTIME)
         uptime = uptime / 100 if isinstance(uptime, int) else None
@@ -267,7 +284,53 @@ class Poller:
         interfaces = None
         if snmp_ok and self._interfaces_due(job.device_id, now):
             interfaces = await self.poll_interfaces(job, now)
-        return state, events, sample, interfaces
+        return state, events, sample, interfaces, health_read
+
+    def _health_due(self, device_id: int, now: float) -> bool:
+        if device_id not in self.health:
+            self.health[device_id] = self.store.health(device_id) or {}
+        last = (self.health[device_id] or {}).get("ts") or 0
+        return now - last >= max(self.settings.monitor_health_seconds, 30) - 5
+
+    async def poll_health(self, job: Job, now: float) -> tuple[dict, list, list] | None:
+        """Read CPU, memory, temperatures, fans and power supplies; returns (the record to
+        keep, samples for the graphs, events) or None if the device stopped answering."""
+        old = self.health.get(job.device_id) or {}
+        known = old.get("sources") or None
+        if known and now - (old.get("discovered") or 0) > 86400:
+            known = None  # once a day, try every reader again (new modules, a new release)
+        try:
+            readings, sources = await hw.read(self.snmp, job.snmp, job.platform, known)
+        except SnmpError as exc:
+            self.health[job.device_id] = {**old, "error": str(exc)}
+            return None
+        if known and not readings:  # the readers that answered before found nothing: start again
+            readings, sources = await hw.read(self.snmp, job.snmp, job.platform)
+        hw.judge(readings, self.settings.monitor_cpu_warn, self.settings.monitor_mem_warn)
+        problems = hw.problems(readings)
+        before = old.get("problems") or {}
+        events = []
+        if old.get("ts"):  # not the first read: what started and what cleared
+            for key, text in problems.items():
+                if key not in before:
+                    events.append({"kind": "health_problem", "detail": text})
+            for key, text in before.items():
+                if key not in problems:
+                    events.append({"kind": "health_ok", "detail": f"Back to normal: {text}"})
+        record = {"device_id": job.device_id, "ts": now, "status": hw.worst(readings),
+                  "readings": [r.as_dict() for r in readings], "problems": problems,
+                  "sources": sources, "discovered": now if not known else old.get("discovered"),
+                  "error": ""}
+        self.health[job.device_id] = record
+        samples = []
+        for kind in ("cpu", "memory"):
+            vals = [r.value for r in readings if r.kind == kind and r.value is not None]
+            if vals:
+                samples.append((now, kind, max(vals)))
+        temps = [r for r in readings if r.kind == "temperature" and r.value is not None]
+        for r in sorted(temps, key=lambda r: -r.value)[:8]:
+            samples.append((now, f"t:{r.name}"[:100], r.value))
+        return record, samples, events
 
     def _interfaces_due(self, device_id: int, now: float) -> bool:
         if device_id not in self.if_prev:
@@ -340,6 +403,8 @@ class Poller:
                 await loop.run_in_executor(None, self.store.save_interfaces, r[0]["device_id"],
                                            rows, if_samples, if_events)
                 events += if_events
+            if r[4] is not None:
+                await loop.run_in_executor(None, self.store.save_health, r[4][0], r[4][1])
         await loop.run_in_executor(None, self.store.rollup, self.clock())
         for s in states:
             self.prev[s["device_id"]] = s
@@ -370,6 +435,7 @@ class Poller:
         snmp = {j.device_id for j in self.jobs if j.snmp is not None}
         self.store.forget_interfaces(snmp)
         self.if_prev = {k: v for k, v in self.if_prev.items() if k in snmp}
+        self.health = {k: v for k, v in self.health.items() if k in snmp}
 
     def prune(self) -> None:
         gone = self.store.prune(self.settings.monitor_keep_days)
@@ -389,6 +455,7 @@ class Poller:
                 "counts": counts, "ping_allowed": self.ping_allowed, "licensed": self.licensed,
                 "interface_interval": self.settings.monitor_interface_seconds,
                 "interface_errors": {str(k): v for k, v in self.if_errors.items()},
+                "health_interval": self.settings.monitor_health_seconds,
                 "last_error": self.last_error}
 
     # --- the service --------------------------------------------------------------------------

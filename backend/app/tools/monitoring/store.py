@@ -74,6 +74,16 @@ CREATE TABLE IF NOT EXISTS iface_state (
     PRIMARY KEY (device_id, if_index)
 );
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS health_state (
+    device_id INTEGER PRIMARY KEY,
+    ts REAL,                       -- read at
+    status TEXT NOT NULL DEFAULT 'unknown',  -- ok, warning, critical, unknown
+    readings TEXT NOT NULL DEFAULT '[]',     -- JSON: kind, name, value, status, source
+    problems TEXT NOT NULL DEFAULT '{}',     -- JSON: key -> text
+    sources TEXT NOT NULL DEFAULT '[]',      -- the readers that answered
+    discovered REAL,               -- when every reader was last tried
+    error TEXT NOT NULL DEFAULT ''
+);
 CREATE TABLE IF NOT EXISTS daily (
     device_id INTEGER NOT NULL,
     day TEXT NOT NULL,             -- YYYY-MM-DD (UTC)
@@ -100,6 +110,10 @@ CREATE TABLE IF NOT EXISTS i (
     in_bps REAL, out_bps REAL, errors REAL, discards REAL
 );
 CREATE INDEX IF NOT EXISTS i_port ON i (device_id, if_index, ts);
+CREATE TABLE IF NOT EXISTS hx (
+    ts REAL NOT NULL, device_id INTEGER NOT NULL, key TEXT NOT NULL, value REAL
+);
+CREATE INDEX IF NOT EXISTS hx_dev ON hx (device_id, ts);
 """
 _IF_HOUR_SCHEMA = """
 CREATE TABLE IF NOT EXISTS h (
@@ -107,6 +121,10 @@ CREATE TABLE IF NOT EXISTS h (
     in_avg REAL, out_avg REAL, in_max REAL, out_max REAL, errors REAL, discards REAL
 );
 CREATE INDEX IF NOT EXISTS h_port ON h (device_id, if_index, ts);
+CREATE TABLE IF NOT EXISTS hh (
+    ts REAL NOT NULL, device_id INTEGER NOT NULL, key TEXT NOT NULL, avg REAL, max REAL
+);
+CREATE INDEX IF NOT EXISTS hh_dev ON hh (device_id, ts);
 """
 IFACE_COLUMNS = ("device_id", "if_index", "name", "descr", "alias", "type", "admin", "oper",
                  "speed", "since", "ts", "in_bps", "out_bps", "in_util", "out_util", "errors",
@@ -195,6 +213,27 @@ class MonitorStore:
                         "INSERT INTO i (ts, device_id, if_index, in_bps, out_bps, errors, discards) "
                         "VALUES (?,?,?,?,?,?,?)", [(t, device_id, *rest) for t, *rest in part])
 
+    def save_health(self, record: dict, samples: list[tuple]) -> None:
+        """One device's health now, and (ts, key, value) samples for the graphs."""
+        device_id = record["device_id"]
+        with self._lock:
+            con = self._writer()
+            with con:
+                con.execute(
+                    "INSERT OR REPLACE INTO health_state (device_id, ts, status, readings, problems, "
+                    "sources, discovered, error) VALUES (?,?,?,?,?,?,?,?)",
+                    (device_id, record["ts"], record["status"], json.dumps(record["readings"]),
+                     json.dumps(record["problems"]), json.dumps(record["sources"]),
+                     record.get("discovered"), record.get("error", "")))
+            by_day: dict[str, list[tuple]] = {}
+            for row in samples:
+                by_day.setdefault(f"ifd-{day_of(row[0]).isoformat()}.db", []).append(row)
+            for name, part in by_day.items():
+                dcon = self._file_writer(name, _IF_DAY_SCHEMA)
+                with dcon:
+                    dcon.executemany("INSERT INTO hx (ts, device_id, key, value) VALUES (?,?,?,?)",
+                                     [(t, device_id, k, v) for t, k, v in part])
+
     def forget_interfaces(self, keep: set[int]) -> None:
         """Drop the interfaces of devices no longer read with SNMP."""
         with self._lock:
@@ -203,6 +242,11 @@ class MonitorStore:
             if gone := have - keep:
                 with con:
                     con.executemany("DELETE FROM iface_state WHERE device_id = ?",
+                                    [(g,) for g in gone])
+            have = {r[0] for r in con.execute("SELECT device_id FROM health_state")}
+            if gone := have - keep:
+                with con:
+                    con.executemany("DELETE FROM health_state WHERE device_id = ?",
                                     [(g,) for g in gone])
 
     def rollup(self, now: float, back_hours: int = 48) -> int:
@@ -216,7 +260,7 @@ class MonitorStore:
         done = 0
         hour = start
         while hour + 3600 <= last_full:
-            rows = []
+            rows, hrows = [], []
             for day in {day_of(hour), day_of(hour + 3599)}:
                 path = self.dir / f"ifd-{day.isoformat()}.db"
                 if not path.exists():
@@ -227,17 +271,22 @@ class MonitorStore:
                         "SELECT device_id, if_index, AVG(in_bps), AVG(out_bps), MAX(in_bps), "
                         "MAX(out_bps), AVG(errors), AVG(discards) FROM i WHERE ts >= ? AND ts < ? "
                         "GROUP BY device_id, if_index", (hour, hour + 3600)).fetchall()
+                    hrows += src.execute(
+                        "SELECT device_id, key, AVG(value), MAX(value) FROM hx WHERE ts >= ? AND "
+                        "ts < ? GROUP BY device_id, key", (hour, hour + 3600)).fetchall()
                 except sqlite3.Error:
                     pass
                 finally:
                     src.close()
-            if rows:
+            if rows or hrows:
                 d = dt.datetime.fromtimestamp(hour, dt.UTC)
                 with self._lock:
                     hcon = self._file_writer(f"ifh-{d:%Y-%m}.db", _IF_HOUR_SCHEMA)
                     with hcon:
                         hcon.executemany("INSERT INTO h VALUES (?,?,?,?,?,?,?,?,?)",
                                          [(hour, *r) for r in rows])
+                        hcon.executemany("INSERT INTO hh VALUES (?,?,?,?,?)",
+                                         [(hour, *r) for r in hrows])
                 done += 1
             hour += 3600
         with self._lock:
@@ -500,6 +549,64 @@ class MonitorStore:
         for r in rows:
             r.pop("counters", None)
         return rows
+
+    def health(self, device_id: int | None = None) -> dict | None:
+        """One device's health as last read (or None), or with no device: every device's,
+        by device id."""
+        con = self._read("state.db")
+        if con is None:
+            return None if device_id is not None else {}
+        try:
+            sql = "SELECT * FROM health_state" + (" WHERE device_id = ?" if device_id is not None else "")
+            rows = [dict(r) for r in con.execute(sql, (device_id,) if device_id is not None else ())]
+        except sqlite3.Error:
+            rows = []
+        finally:
+            con.close()
+        for r in rows:
+            for k in ("readings", "problems", "sources"):
+                r[k] = json.loads(r[k] or ("{}" if k == "problems" else "[]"))
+        if device_id is not None:
+            return rows[0] if rows else None
+        return {r["device_id"]: r for r in rows}
+
+    def health_samples(self, device_id: int, since: float, until: float, buckets: int,
+                       detail_days: int) -> dict[str, list[dict]]:
+        """CPU, memory and temperatures over time, per key, in ``buckets`` slots: every
+        reading while kept, else the hourly averages and peaks."""
+        detail = until - since <= detail_days * 86400
+        if detail:
+            first, last = day_of(since), day_of(max(since, until - 0.000001))
+            names = [f"ifd-{(first + dt.timedelta(days=n)).isoformat()}.db"
+                     for n in range((last - first).days + 1)]
+            sql = "SELECT ts, key, value, value FROM hx WHERE device_id = ? AND ts >= ? AND ts < ?"
+        else:
+            a, b = dt.datetime.fromtimestamp(since, dt.UTC), dt.datetime.fromtimestamp(until, dt.UTC)
+            names = [f"ifh-{m // 12:04d}-{m % 12 + 1:02d}.db"
+                     for m in range(a.year * 12 + a.month - 1, b.year * 12 + b.month)]
+            sql = "SELECT ts + 1800, key, avg, max FROM hh WHERE device_id = ? AND ts >= ? AND ts < ?"
+        rows = []
+        for name in names:
+            con = self._read(name)
+            if con is None:
+                continue
+            try:
+                rows += [tuple(r) for r in con.execute(sql, (device_id, since, until))]
+            except sqlite3.Error:
+                pass
+            finally:
+                con.close()
+        width = (until - since) / max(buckets, 1)
+        slots: dict[str, dict[int, list]] = {}
+        for ts, key, avg, peak in rows:
+            slots.setdefault(key, {}).setdefault(min(int((ts - since) / width), buckets - 1), []).append((avg, peak))
+        out = {}
+        for key, by in slots.items():
+            out[key] = [{"ts": since + (i + 0.5) * width,
+                         "value": round(sum(a for a, _ in v if a is not None) / max(1, sum(1 for a, _ in v if a is not None)), 1),
+                         "max": max((p for _, p in v if p is not None), default=None)}
+                        for i, v in sorted(by.items())]
+        return out
 
     def counters(self, device_id: int) -> dict[int, dict]:
         """The raw counters and status kept from one device's last read (for the poller)."""

@@ -138,11 +138,17 @@
             <thead><tr>
               <th class="pick"><input type="checkbox" id="mon-all" aria-label="Select all shown"></th>
               <th>Status</th><th>Device</th><th>Site</th><th>Address</th><th>Response</th>
-              <th>Up for</th><th>Last 7 days</th><th>Since</th><th>Note</th>
+              <th>Up for</th><th>CPU · memory</th><th>Last 7 days</th><th>Since</th><th>Note</th>
             </tr></thead>
             <tbody></tbody>
           </table>
           <p id="mon-empty" class="empty" hidden></p>
+        </div>
+        <div id="mon-hw" hidden>
+          <h3>Hardware problems</h3>
+          <div class="table-wrap"><table id="mon-hw-table">
+            <thead><tr><th>Device</th><th>Site</th><th>What</th><th>Read</th></tr></thead>
+            <tbody></tbody></table></div>
         </div>
         <div id="mon-ports" class="grid2 mon-ports" hidden>
           <div>
@@ -669,6 +675,22 @@
         <p class="error" hidden></p>
         <div class="actions"><button type="submit" class="primary">Save</button></div>
       </form>
+    </div>
+    <div id="mon-d-health-box">
+      <div class="toolbar">
+        <h3>Health</h3>
+        <span id="mon-d-health-note" class="muted"></span>
+      </div>
+      <div class="grid2 mon-health">
+        <div>
+          <div id="mon-d-gauges" class="gauges"></div>
+          <div id="mon-d-health-graph" class="mon-graph small" aria-label="CPU and memory graph"></div>
+        </div>
+        <div class="table-wrap"><table id="mon-d-health">
+          <thead><tr><th>Part</th><th>What</th><th>Reading</th><th>Status</th></tr></thead>
+          <tbody></tbody></table>
+          <p id="mon-d-health-empty" class="empty" hidden></p></div>
+      </div>
     </div>
     <div id="mon-d-ifaces-box">
       <div class="toolbar">

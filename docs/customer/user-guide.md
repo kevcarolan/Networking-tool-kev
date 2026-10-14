@@ -203,6 +203,11 @@ minute with ping and SNMP; the server only asks, it never changes anything.
   average, the band the worst, red marks the checks with no answer), how many checks it
   answered over a day, a week, a month and a year, what it says about itself, and its
   events (down, back up, restarted, SNMP stopped or started answering).
+* **CPU · memory** in the list, with a red **hardware** badge when a fan or power supply has
+  failed, a temperature is too high, or CPU or memory is over the threshold. The
+  **Hardware problems** tile and list show every device with one.
+* **Health**, in the device window: CPU and memory with their graph, and every temperature,
+  fan and power supply with its status.
 * **Interfaces**, in the device window: every port with its description, status, speed, how
   full it is, traffic in and out, and errors and discards a minute. You can sort it busiest
   first, errors first or down first. Click a port for its traffic graph (the dashed red line
