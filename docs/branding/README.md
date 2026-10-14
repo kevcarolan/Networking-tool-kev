@@ -22,6 +22,8 @@ The mark is a lantern whose light is a small network: four devices and five link
   Segoe UI / Helvetica / Arial; for print, convert the text to outlines first.
 * Strapline: *See your whole network.*
 
+`preview.png` shows them all: the mark at 16, 32, 64 and 160 px, then both logos.
+
 These are drafts to judge the idea. A designer can refine them once the name is cleared.
 
 ## Name check (web, 2026-10-14)
