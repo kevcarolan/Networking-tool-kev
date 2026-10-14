@@ -61,3 +61,23 @@ neighbours in the same field. A trademark attorney should judge them.
 but neither is clear. Next: the UK IPO, EUIPO and USPTO registers in classes 9 and 42, the
 .ie/.com/.co.uk domains, then a trademark attorney's clearance search, before spending
 on a logo or registering a company name.
+
+## Other names (web check, 2026-10-14)
+
+The owner ruled out NetSteward (the exact name is a US network-monitoring product) and
+NetLantern (too close to Spectrum's LANtern). Fresh names, searched for software, network
+products, trademarks and companies:
+
+| Name | Idea | Found |
+|---|---|---|
+| **Netcairn** | a cairn is the pile of stones that marks the way on a hill: the network's landmarks, so nobody gets lost | nothing at all (only CAIRN, a US research network that closed in 2001, and CAIRN trademarks for clothing and a hiking app) |
+| **NetKeel** | the keel keeps a boat steady: backups, safe upgrades, nothing drifting | nothing (Keel Marine and Keela are other fields) |
+| **Netquay** | a quay: where everything is moored and tied up | an Australian NETQUAY PTY LTD in an insolvency list (likely closed); nothing in software |
+| **Linkhaven** | a safe harbour for the links | UK property companies (Linkhaven Ltd, Salford), so a UK company of that name can't be registered |
+| NetFathom | understanding the network's depths | nothing as "NetFathom", but "Fathom" is a busy brand (finance and web-analytics software) |
+| Halyard | the rope that raises the sail | no software, but Halyard Health is a large medical brand |
+| Portlight | lights up the ports | **avoid**: a homelab dashboard of the same name shows which ports are in use |
+| Netloom | weaves it together | a network traffic tool called *loom* (Go, 2026) is close |
+
+Best: **Netcairn**, then **NetKeel**. Both still need the registers, the domains and an
+attorney's search.

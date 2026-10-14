@@ -143,8 +143,10 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
    wall display pages too ([try-it.md](try-it.md)); and an upgrade job's pre-checks on an
    Arista, Juniper or NX-OS demo device, which now show the health checks; the search box.
 2. Full install test on Ubuntu ([install-online.md](install-online.md)), after the demo.
-3. Product name, then branding. **Working name NetLantern** (owner, 2026-10-14; NetSteward the
-   alternative); the demo uses it and a draft logo is in [branding/](branding/README.md), with
+3. Product name, then branding. NetLantern and NetSteward ruled out by the owner (2026-10-14: too
+   close to Spectrum's LANtern; the exact name of a US product). New best: **Netcairn**, then
+   **NetKeel** (nothing found for either; [branding/](branding/README.md#other-names-web-check-2026-10-14)).
+   Earlier working name NetLantern (2026-10-14; NetSteward the alternative); the demo uses it and a draft logo is in [branding/](branding/README.md), with
    the second web check: Spectrum's **LANtern** (UK network monitoring) is close to NetLantern,
    and a small US firm sells a network monitoring platform called **NetSteward** (the exact
    name). Next: trademark registers, domains (.ie is free), a trademark attorney.
