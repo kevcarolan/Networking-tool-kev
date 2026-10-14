@@ -21,6 +21,7 @@ from app.core.auth import User, require
 from app.core.db import get_db
 from app.core.models import Device
 from app.tools.monitoring import howto
+from app.tools.monitoring import ifaces as ifm
 from app.tools.monitoring.models import LEVELS, VERSIONS, MonitorTarget, SnmpProfile
 from app.tools.monitoring.snmp import (AUTH_PROTOCOLS, PRIV_PROTOCOLS, SYS_DESCR, SYS_NAME, SYS_UPTIME, SnmpError,
                                        read_system)
@@ -35,7 +36,9 @@ OFF, WAITING = "off", "waiting"
 STATUS_LABELS = {"up": "Up", "warning": "Warning", "down": "Down", "unknown": "Can't check",
                  OFF: "Not monitored", WAITING: "Waiting for the first check"}
 EVENT_LABELS = {"down": "Down", "up": "Back up", "restarted": "Restarted",
-                "snmp_failed": "SNMP stopped answering", "snmp_ok": "SNMP answers again"}
+                "snmp_failed": "SNMP stopped answering", "snmp_ok": "SNMP answers again",
+                "port_down": "Port down", "port_up": "Port back up"}
+TOP_ROWS = 10
 MAX_RANGE_DAYS = 400
 
 
@@ -176,6 +179,95 @@ def events(request: Request, hours: int = Query(24, ge=1, le=MAX_RANGE_DAYS * 24
                                     kinds=wanted, limit=limit)
     names = dict(db.execute(select(Device.id, Device.name)).all())
     return {"events": [_event_out(e, names) for e in rows], "labels": EVENT_LABELS}
+
+
+# --- interfaces ------------------------------------------------------------------------------
+
+def _iface_out(r: dict) -> dict:
+    util = [u for u in (r.get("in_util"), r.get("out_util")) if u is not None]
+    return {**r, "oper_label": ifm.OPER.get(r.get("oper") or 0, "unknown"),
+            "admin_up": r.get("admin") == 1, "util": max(util) if util else None,
+            "watched": bool((r.get("alias") or "").strip()) or r.get("type") == ifm.LAG,
+            "graphed": r.get("admin") == 1 and r.get("type") != ifm.LOOPBACK}
+
+
+@router.get("/devices/{device_id}/interfaces")
+def interfaces(device_id: int, request: Request, db: Session = Depends(get_db),
+               _: User = Depends(VIEW)):
+    if db.get(Device, device_id) is None:
+        raise HTTPException(404, "Device not found")
+    status = store_of(request).status() or {}
+    rows = [_iface_out(r) for r in store_of(request).interfaces(device_id)]
+    return {"interfaces": rows, "error": (status.get("interface_errors") or {}).get(str(device_id), ""),
+            "interval": request.app.state.settings.monitor_interface_seconds,
+            "read_at": max((r["ts"] or 0 for r in rows), default=None)}
+
+
+@router.get("/devices/{device_id}/interfaces/{if_index}")
+def interface_graph(device_id: int, if_index: int, request: Request,
+                    hours: int = Query(24, ge=1, le=MAX_RANGE_DAYS * 24),
+                    db: Session = Depends(get_db), _: User = Depends(VIEW)):
+    d = db.get(Device, device_id)
+    if d is None:
+        raise HTTPException(404, "Device not found")
+    store = store_of(request)
+    row = next((r for r in store.interfaces(device_id) if r["if_index"] == if_index), None)
+    if row is None:
+        raise HTTPException(404, "Interface not found")
+    now = time.time()
+    since = now - hours * 3600
+    keep = request.app.state.settings.monitor_interface_keep_days
+    return {"device": d.name, "interface": _iface_out(row), "hours": hours, "since_ts": since,
+            "until_ts": now, "detail": hours <= keep * 24,
+            "graph": store.iface_samples(device_id, if_index, since, now,
+                                         buckets=min(288, max(24, hours * 4)), detail_days=keep)}
+
+
+@router.get("/ports")
+def ports(request: Request, limit: int = Query(TOP_ROWS, ge=1, le=100),
+          db: Session = Depends(get_db), _: User = Depends(VIEW)):
+    """The busiest ports, and the ports with errors or discards, as last read."""
+    names = dict(db.execute(select(Device.id, Device.name)).all())
+    rows = [_iface_out(r) for r in store_of(request).interfaces() if r["device_id"] in names
+            and r.get("admin") == 1 and r.get("oper") == 1]
+    for r in rows:
+        r["device"] = names[r["device_id"]]
+    busiest = sorted((r for r in rows if r["util"] is not None), key=lambda r: -r["util"])[:limit]
+    errors = sorted((r for r in rows if (r.get("errors") or 0) + (r.get("discards") or 0) > 0),
+                    key=lambda r: -((r.get("errors") or 0) * 10 + (r.get("discards") or 0)))[:limit]
+    return {"busiest": busiest, "errors": errors}
+
+
+class LinkPort(BaseModel):
+    device_id: int
+    port: str = Field(max_length=100)
+
+
+class LinkLoadIn(BaseModel):
+    ports: list[LinkPort] = Field(max_length=4000)
+
+
+@router.post("/link-load")
+def link_load(body: LinkLoadIn, request: Request, _: User = Depends(VIEW)):
+    """Traffic on the ports at the ends of the network map's lines (by port name)."""
+    from app.tools.circuits.importer import normalize_port
+
+    by_device: dict[int, dict[str, dict]] = {}
+    for r in store_of(request).interfaces():
+        names = by_device.setdefault(r["device_id"], {})
+        for n in (r.get("name"), r.get("descr")):
+            if n:
+                names.setdefault(normalize_port(n), r)
+    out = []
+    for p in body.ports:
+        r = by_device.get(p.device_id, {}).get(normalize_port(p.port))
+        if r is None:
+            continue
+        x = _iface_out(r)
+        out.append({"device_id": p.device_id, "port": p.port, "in_bps": x["in_bps"],
+                    "out_bps": x["out_bps"], "util": x["util"], "speed": x["speed"],
+                    "oper": x["oper_label"], "errors": x["errors"], "discards": x["discards"]})
+    return {"ports": out}
 
 
 # --- what is monitored, and how ---------------------------------------------------------------

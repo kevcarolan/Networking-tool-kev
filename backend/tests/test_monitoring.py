@@ -400,3 +400,100 @@ def test_the_wall_display_shows_who_is_down_without_addresses(setup):
     assert "10.0.0." not in str(m)
     assert next(x for x in d["sites"] if x["site"] == "HQ")["down"] == 1
     assert "monitoring" in d["pages"]
+
+
+# --- interfaces (phase 2) ----------------------------------------------------------------------
+
+def test_counters_become_rates():
+    from app.tools.monitoring import ifaces as ifm
+
+    cols = {"name": [(f"{ifm.IF_NAME}.1", "Gi1/0/1"), (f"{ifm.IF_NAME}.2", "Gi1/0/2")],
+            "type": [(f"{ifm.IF_TYPE}.1", 6), (f"{ifm.IF_TYPE}.2", 6)],
+            "high_speed": [(f"{ifm.IF_HIGH_SPEED}.1", 1000), (f"{ifm.IF_HIGH_SPEED}.2", 1000)],
+            "in": [(f"{ifm.IF_IN_OCTETS}.1", 100), (f"{ifm.IF_IN_OCTETS}.2", 2**32 - 1000)],
+            "hc_in": [(f"{ifm.IF_HC_IN}.1", 10**12)]}
+    one, two = ifm.from_walks(cols)
+    assert one.hc and one.counters["in"] == 10**12 and not two.hc and two.speed == 10**9
+    # 32-bit wrap: 1000 bytes before the top, 4000 after it, 8 s later
+    two_later = ifm.Iface(2, counters={"in": 3000}, speed=10**9)
+    assert ifm.rates(two_later, {"in": 2**32 - 1000}, 8)["in_bps"] == 4000 * 8 / 8
+    # a 64-bit counter going backwards is a reset: no rate
+    one_later = ifm.Iface(1, counters={"in": 5}, hc=True, speed=10**9)
+    assert ifm.rates(one_later, {"in": 10**12, "hc": True}, 300)["in_bps"] is None
+    # more than the port can carry is a bad reading
+    assert ifm.rates(ifm.Iface(1, counters={"in": 10**12}, hc=True, speed=10**9),
+                     {"in": 0, "hc": True}, 300)["in_bps"] is None
+    r = ifm.rates(ifm.Iface(1, counters={"in": 375 * 10**6, "in_err": 30}, speed=10**9),
+                  {"in": 0, "in_err": 0}, 60)
+    assert r["in_bps"] == 50_000_000 and r["in_util"] == 0.05 and r["errors"] == 30
+
+
+def test_interfaces_are_read_graphed_and_rolled_up(setup):
+    s = setup
+    _round(s)  # the first read keeps the counters only
+    sw1 = s.ids["sw1"]
+    first = s.admin.get(f"/api/monitoring/devices/{sw1}/interfaces").json()["interfaces"]
+    assert first and all(i["in_bps"] is None for i in first)
+    for _ in range(5):
+        _round(s)  # five minutes later: the second read
+    data = s.admin.get(f"/api/monitoring/devices/{sw1}/interfaces").json()
+    ports = {i["name"]: i for i in data["interfaces"]}
+    assert ports["Gi1/0/1"]["speed"] == 10**9 and "Loopback0" in ports
+    busy = [i for i in data["interfaces"] if i["in_bps"]]
+    assert busy and all(0 < i["util"] <= 1 for i in busy)
+    top = s.admin.get("/api/monitoring/ports").json()
+    assert top["busiest"][0]["device"] in ("sw1", "sw2", "sw3")
+    g = s.admin.get(f"/api/monitoring/devices/{sw1}/interfaces/{busy[0]['if_index']}",
+                    params={"hours": 2}).json()
+    assert g["detail"] and any(p["in_bps"] for p in g["graph"])
+    # hourly averages for longer periods
+    s.clock.t += 2 * 3600
+    _round(s)
+    assert s.poller.store.rollup(s.clock.t) == 0  # the round already rolled the finished hours
+    g = s.admin.get(f"/api/monitoring/devices/{sw1}/interfaces/{busy[0]['if_index']}",
+                    params={"hours": 24 * 30}).json()
+    assert not g["detail"] and any(p["in_bps"] for p in g["graph"])
+    # the map asks for the load at the ends of its lines, by the names neighbours use
+    r = s.admin.post("/api/monitoring/link-load", json={"ports": [
+        {"device_id": sw1, "port": "GigabitEthernet1/0/1"}, {"device_id": sw1, "port": "Te9/9"}]}).json()
+    assert [p["port"] for p in r["ports"]] == ["GigabitEthernet1/0/1"]
+
+
+def test_a_described_port_going_down_is_an_event(setup, monkeypatch):
+    from app.demo.monitor import ports_of
+
+    s = setup
+    port = next(p for p in ports_of("sw2", "cisco_ios") if p.kind == "access" and p.up)
+    monkeypatch.setattr(port, "alias", "uplink to the lab")
+    _round(s, 300)
+    _round(s, 300)
+    monkeypatch.setattr(port, "up", False)
+    _round(s, 300)
+    kinds = _events(s, "sw2")
+    assert kinds[-1][0] == "port_down" and "uplink to the lab" in kinds[-1][1]
+    undescribed = next(p for p in ports_of("sw2", "cisco_ios") if p.kind == "access" and p.up and p is not port)
+    monkeypatch.setattr(undescribed, "up", False)  # an access port without a description: no event
+    _round(s, 300)
+    assert [k for k, _ in _events(s, "sw2")].count("port_down") == 1
+
+
+def test_wall_shows_busiest_ports_without_descriptions(setup, monkeypatch):
+    from app.demo.monitor import ports_of
+
+    s = setup
+    for p in ports_of("sw3", "cisco_ios"):
+        monkeypatch.setattr(p, "alias", "circuit 4471 to 192.0.2.99")
+    _round(s, 300)
+    _round(s, 300)
+    key = s.admin.post("/api/displays", json={"name": "NOC"}).json()["key"]
+    m = s.admin.get("/api/display/data", headers={"Authorization": f"Bearer {key}"}).json()["monitoring"]
+    assert m["busiest"] and set(m["busiest"][0]) == {"device", "port", "util"}
+    assert "192.0.2.99" not in str(m) and "4471" not in str(m)
+
+
+def test_old_interface_files_are_deleted(tmp_path):
+    store = MonitorStore(tmp_path)
+    store.save_interfaces(1, [], [(dt.datetime(2026, 1, 1, tzinfo=dt.UTC).timestamp(), 1, 1.0, 1.0, 0, 0)])
+    (tmp_path / "ifh-2024-01.db").write_bytes(b"")
+    gone = store.prune_interfaces(7, today=dt.date(2026, 3, 1))
+    assert gone == ["ifd-2026-01-01.db", "ifh-2024-01.db"]

@@ -98,3 +98,5 @@ main { flex: 1; padding: 1rem 1.4rem; min-height: 0; }
 .sev.info { border-color: var(--info); } .sev.info .num { color: var(--info); }
 .list .badge { margin-left: 0.5rem; font-weight: 600; }
 .bad-text { color: var(--bad); }
+.warn-text { color: var(--warn); }
+.panel h2.sub-head { margin-top: 1rem; }

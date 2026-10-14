@@ -203,8 +203,16 @@ minute with ping and SNMP; the server only asks, it never changes anything.
   average, the band the worst, red marks the checks with no answer), how many checks it
   answered over a day, a week, a month and a year, what it says about itself, and its
   events (down, back up, restarted, SNMP stopped or started answering).
-* **Last 24 hours** under the list: everything that went down, came back or restarted.
-* **Network map:** the devices coloured green (up), orange (warning) and red (down).
+* **Interfaces**, in the device window: every port with its description, status, speed, how
+  full it is, traffic in and out, and errors and discards a minute. You can sort it busiest
+  first, errors first or down first. Click a port for its traffic graph (the dashed red line
+  is its speed).
+* **Busiest ports** and **Ports with errors or discards** under the list cover every device.
+* **Last 24 hours** under those: everything that went down, came back or restarted, and
+  described ports that went down or came back.
+* **Network map:** the devices coloured green (up), orange (warning) and red (down). The
+  lines are coloured by load: orange from 50%, red from 80%. Click a line for the traffic at
+  both ends.
 * With *manage*: switch monitoring, ping or SNMP off for a device (its window, or tick
   several and use the bar above the list). **SNMP profiles** and **Help: set up devices**
   (the SNMP config for each platform) are for admins; see [monitoring.md](../monitoring.md).

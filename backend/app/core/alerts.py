@@ -229,7 +229,7 @@ def due(db: Session, cfg: Config, now: datetime | None = None, syslog_dir=None,
     return out
 
 
-MONITOR_KINDS = ("down", "up", "restarted")
+MONITOR_KINDS = ("down", "up", "restarted", "port_down", "port_up")
 MONITOR_LIMIT = 50  # events listed in one email
 
 
@@ -250,7 +250,8 @@ def _monitoring(db, since, now, done, monitor_dir) -> list[Alert]:
         return [Alert(keys, "", "", kind="monitoring")]  # maintenance only: nothing to send
     rows.sort(key=lambda e: e["ts"])
     names = {d.id: d for d in db.scalars(select(Device))}
-    label = {"down": "DOWN", "up": "back up", "restarted": "restarted"}
+    label = {"down": "DOWN", "up": "back up", "restarted": "restarted", "port_down": "PORT DOWN",
+             "port_up": "port back up"}
     lines = []
     for e in rows[:MONITOR_LIMIT]:
         d = names.get(e["device_id"])
@@ -275,6 +276,11 @@ def _monitoring(db, since, now, done, monitor_dir) -> list[Alert]:
         parts.append(f"{len(restarted)} restarted: {short(restarted)}")
     elif restarted:
         parts.append(f"{len(restarted)} restarted")
+    ports_down = [e for e in rows if e["kind"] == "port_down"]
+    if ports_down:
+        parts.append(f"{len(ports_down)} port{'s' if len(ports_down) > 1 else ''} down")
+    elif any(e["kind"] == "port_up" for e in rows) and not parts:
+        parts.append("ports back up")
     more = f"\n\n...and {len(rows) - MONITOR_LIMIT} more." if len(rows) > MONITOR_LIMIT else ""
     return [Alert(keys, "Monitoring: " + "; ".join(parts), "What changed:\n\n" + "\n".join(lines)
                   + more + "\n\nThe details and response times are on the Monitoring page.",

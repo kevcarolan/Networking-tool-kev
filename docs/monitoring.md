@@ -6,11 +6,13 @@ The server checks every device in the inventory once a minute:
 * **ping** (ICMP echo), for the response time;
 * **SNMP** (v2c or v3), for the device's name, description and uptime.
 
+Every 5 minutes it also reads each SNMP device's **interfaces**: status, speed, traffic in
+and out, errors and discards.
+
 It is read-only. It only asks (ICMP echo, SNMP GET) and never changes anything on a device.
 There is no SNMP SET and no trap receiver: the devices' own messages go to the **Syslog** page.
 
-Interface graphs (traffic, errors, the busiest ports) come in the next release.
-Health readings (CPU, memory, temperature, fans, power supplies) come after that.
+Health readings (CPU, memory, temperature, fans, power supplies) come in a later release.
 
 ## What the statuses mean
 
@@ -27,7 +29,10 @@ The poller also notes these events:
 
 * when a device went **down** and came back **up**, and for how long;
 * when it **restarted** (its SNMP uptime went back near zero);
-* when SNMP **stopped** or **started** answering.
+* when SNMP **stopped** or **started** answering;
+* when a **port went down** or came back. This is only for ports with a description set on
+  the device (as uplinks and links usually have) and port-channels. Ports without a
+  description, usually access ports, come and go all day and aren't events.
 
 The page shows the last 24 hours. Each device's window shows its last 90 days.
 
@@ -65,15 +70,24 @@ Every change appears within a minute.
   * what it says about itself, and its events.
 
   People with *manage* can switch it, its ping or its SNMP off here, or choose its profile.
+* **A device's interfaces:** under the graph in the device window, every port as last read:
+  its description, status (and since when), speed, how full it is (the busier direction),
+  traffic in and out, and errors and discards a minute. You can sort it busiest first, errors
+  first or down first, and choose to show switched-off ports too. Click a port for its
+  traffic graph, from 6 hours to a year. The dashed red line is the port's speed. Errors and
+  discards get their own graph when there are any.
+* **Busiest ports** and **Ports with errors or discards**, under the list, cover every
+  device. Click one for its graph.
 * **The network map** (Sites, or the Monitoring page's **Network map** button) colours each
-  device: green up, orange warning, red down.
+  device: green up, orange warning, red down. Each line shows the load at its busier end:
+  green, orange from 50%, red from 80%. Click a line for the traffic at both ends.
 * **The wall display** has a *Monitoring* page: counts, who is down and for how long,
-  warnings, and the last day's events. It shows names, sites and times only; never addresses
+  warnings, the last day's events, the busiest ports and the ports with errors. It shows names, sites and times only; never addresses
   or messages. The overview gains a *Devices down* tile, and each site's tile says how many
   of its devices are down.
 * **Email alerts:** on *Settings › Email alerts*, give a recipient **Devices down or up**.
-  They get one email per check with what went down, came back or restarted. Anything in a
-  maintenance window is left out.
+  They get one email per check with what went down, came back or restarted, and described
+  ports that went down or came back. Anything in a maintenance window is left out.
 
 ## Settings
 
@@ -84,6 +98,8 @@ On *Settings › Site and defaults*:
 | Check every device every (seconds) | 60 | 30 to 3600 |
 | Down after this many checks without an answer | 2 | 1 to 10 |
 | Keep every check for (days) | 35 | For the graphs. The daily totals (availability) are kept for a year |
+| Read the interfaces every (seconds) | 300 | 60 to 3600 |
+| Keep every interface reading for (days) | 7 | 2 to 35. After that, the average and peak of each hour are kept for 13 months |
 
 Only in `netops.env`: `NETOPS_MONITOR_WORKERS` (50), the number of devices checked at the same time.
 
@@ -94,15 +110,24 @@ Only in `netops.env`: `NETOPS_MONITOR_WORKERS` (50), the number of devices check
   (`net.ipv4.ping_group_range`). If a server forbids them, the page says so and devices are
   checked with SNMP only.
 * **Its own files:** in `/var/lib/netops/monitoring/`, not the main database:
-  * `state.db`: each device's state, the events and the daily totals;
+  * `state.db`: each device's state and interfaces, the events and the daily totals;
   * one file per day with every check, for the graphs;
+  * `ifd-<day>.db`: every interface reading of that day;
+  * `ifh-<month>.db`: interfaces per hour (average and peak);
   * `status.json`: the poller's heartbeat.
 
   Only the poller writes. The web app reads.
 * **Restarts:** the poller carries on where it was after a restart or an upgrade of the
   platform.
-* **Size:** about 30 bytes per check. 500 devices checked every minute is about 25 MB a day,
-  so roughly 1 GB for the 35 days kept.
+* **Size:**
+  * checks: about 30 bytes each. 500 devices every minute is about 25 MB a day, so roughly
+    1 GB for the 35 days kept;
+  * interfaces: about 10 KB per port a day (5 MB a day for 500 ports). 3,000 ports is about
+    30 MB a day, so roughly 200 MB for 7 days, plus about 100 MB a month for the hourly figures.
+* **Counters:** the 64-bit counters (ifXTable) where the device has them, else the 32-bit
+  ones. Those wrap after 4 GB, about 34 seconds at 1 Gb/s, so a fast port without 64-bit
+  counters reads too low. A counter that goes backwards after a restart gives no rate for
+  that interval. Reading the interfaces needs SNMP; ping alone gives only up and down.
 * **The one exception:** the only thing that asks a device from the web app itself is a
   profile's **Test** button, and only for someone allowed to manage SNMP profiles.
 
@@ -135,6 +160,8 @@ list their modules and so don't include it; the trial does.
 | **Warning: wrong SNMPv3 authentication / encryption password** | The profile's passwords or protocols don't match the device. Cisco's AES-192/256 are "AES-192-C"/"AES-256-C" in the profile |
 | **Warning: the device doesn't know this SNMPv3 user** | The user isn't set up on the device, or was lost in a reload (some platforms don't save SNMPv3 users in the startup config) |
 | **Warning: no reply to ping, but SNMP answers** | A firewall that drops ping: switch ping off for that device |
+| A device has no interfaces, or "Can't read the interfaces" | The SNMP view must include IF-MIB (the configs in the help allow everything read-only). Very large tables (thousands of VLAN interfaces) take a while: 1,000 interfaces per device are read, physical ones first |
+| A port's traffic looks too low or jumps | 32-bit counters wrapping on a fast port: check that the device answers ifXTable (SNMPv2c or v3, not v1). On Cisco, `snmp-server ifindex persist` keeps port numbers the same after a reload |
 | "ping isn't allowed on this server" | `sysctl net.ipv4.ping_group_range` must include the netops group (`0 2147483647`, `deploy/hardening/sysctl-netops.conf`) |
 
 ## Platform configs

@@ -376,8 +376,9 @@ def _syslog(db: Session, settings) -> dict:
 
 
 def _monitoring(db: Session, settings, devices: dict) -> tuple[dict, dict[int, str]]:
-    """Devices down or with a warning, and the last day's events: names, sites and times
-    only (a reason can hold an address, so it is a kind of problem, not the text)."""
+    """Devices down or with a warning, the last day's events, and the busiest ports and
+    those with errors: names, sites, port names and numbers only (a reason or a port's
+    description can hold an address, so neither is shown)."""
     from app.tools.monitoring.api import EVENT_LABELS
     from app.tools.monitoring.store import MonitorStore
 
@@ -411,7 +412,17 @@ def _monitoring(db: Session, settings, devices: dict) -> tuple[dict, dict[int, s
                "at": datetime.fromtimestamp(e["ts"], UTC).replace(tzinfo=None).isoformat(timespec="seconds")}
               for e in store.events(now - RECENT.total_seconds(), now + 60, limit=LIST_ROWS * 3)
               if e["device_id"] in devices][:LIST_ROWS]
+    ports = [r for r in store.interfaces() if r["device_id"] in devices and r["admin"] == 1
+             and r["oper"] == 1]
+    util = lambda r: max([u for u in (r["in_util"], r["out_util"]) if u is not None], default=None)  # noqa: E731
+    busiest = sorted((r for r in ports if util(r) is not None), key=lambda r: -util(r))[:6]
+    errors = sorted((r for r in ports if (r["errors"] or 0) + (r["discards"] or 0) > 0),
+                    key=lambda r: -((r["errors"] or 0) * 10 + (r["discards"] or 0)))[:6]
+    port = lambda r: {"device": devices[r["device_id"]].name, "port": r["name"] or r["descr"]}  # noqa: E731
     return {"running": running, "counts": counts, "monitored": len(states),
+            "busiest": [{**port(r), "util": round(util(r), 3)} for r in busiest],
+            "port_errors": [{**port(r), "errors": r["errors"] or 0, "discards": r["discards"] or 0}
+                            for r in errors],
             "down": down_rows[:LIST_ROWS], "down_more": max(0, len(down_rows) - LIST_ROWS),
             "warnings": warn_rows[:LIST_ROWS], "warnings_more": max(0, len(warn_rows) - LIST_ROWS),
             "events": events}, down

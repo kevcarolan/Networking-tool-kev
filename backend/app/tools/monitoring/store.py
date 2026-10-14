@@ -5,6 +5,9 @@
                                       (polls, how many answered, response times)
     <data>/monitoring/2026-10-14.db   every poll of that day (UTC): response time and result,
                                       for the graphs; whole days are deleted when too old
+    <data>/monitoring/ifd-2026-10-14.db  every interface read of that day (traffic, errors,
+                                      discards), kept ``monitor_interface_keep_days``
+    <data>/monitoring/ifh-2026-10.db  interfaces per hour (average and peak), kept 13 months
     <data>/monitoring/status.json     the poller's heartbeat and counters
 
 Only the poller (``poller.py``, its own service) writes. The web app only reads, like syslog.
@@ -20,6 +23,9 @@ import threading
 from pathlib import Path
 
 _DAY_FILE = re.compile(r"^(\d{4}-\d{2}-\d{2})\.db$")
+_IF_DAY_FILE = re.compile(r"^ifd-(\d{4}-\d{2}-\d{2})\.db$")
+_IF_HOUR_FILE = re.compile(r"^ifh-(\d{4})-(\d{2})\.db$")
+IF_HOURS_KEPT_MONTHS = 13
 
 _STATE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS device_state (
@@ -50,6 +56,24 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS events_ts ON events (ts);
 CREATE INDEX IF NOT EXISTS events_device ON events (device_id, ts);
+CREATE TABLE IF NOT EXISTS iface_state (
+    device_id INTEGER NOT NULL,
+    if_index INTEGER NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    descr TEXT NOT NULL DEFAULT '',
+    alias TEXT NOT NULL DEFAULT '',  -- the description set on the port
+    type INTEGER,
+    admin INTEGER,                 -- 1 up, 2 down
+    oper INTEGER,                  -- 1 up, 2 down, 7 lower layer down...
+    speed INTEGER,                 -- bits/s
+    since REAL,                    -- in this oper status since
+    ts REAL,                       -- read at
+    in_bps REAL, out_bps REAL, in_util REAL, out_util REAL,
+    errors REAL, discards REAL,    -- a minute, in and out together
+    counters TEXT NOT NULL DEFAULT '{}',  -- the raw counters, for the next rate
+    PRIMARY KEY (device_id, if_index)
+);
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS daily (
     device_id INTEGER NOT NULL,
     day TEXT NOT NULL,             -- YYYY-MM-DD (UTC)
@@ -70,6 +94,23 @@ CREATE TABLE IF NOT EXISTS s (
 );
 CREATE INDEX IF NOT EXISTS s_device ON s (device_id, ts);
 """
+_IF_DAY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS i (
+    ts REAL NOT NULL, device_id INTEGER NOT NULL, if_index INTEGER NOT NULL,
+    in_bps REAL, out_bps REAL, errors REAL, discards REAL
+);
+CREATE INDEX IF NOT EXISTS i_port ON i (device_id, if_index, ts);
+"""
+_IF_HOUR_SCHEMA = """
+CREATE TABLE IF NOT EXISTS h (
+    ts REAL NOT NULL, device_id INTEGER NOT NULL, if_index INTEGER NOT NULL,
+    in_avg REAL, out_avg REAL, in_max REAL, out_max REAL, errors REAL, discards REAL
+);
+CREATE INDEX IF NOT EXISTS h_port ON h (device_id, if_index, ts);
+"""
+IFACE_COLUMNS = ("device_id", "if_index", "name", "descr", "alias", "type", "admin", "oper",
+                 "speed", "since", "ts", "in_bps", "out_bps", "in_util", "out_util", "errors",
+                 "discards", "counters")
 STATE_COLUMNS = ("device_id", "status", "since", "last_poll", "rtt_ms", "loss", "ping_ok",
                  "snmp_ok", "reason", "fails", "sys_name", "sys_descr", "sys_object_id",
                  "uptime", "last_restart", "maintenance")
@@ -107,10 +148,130 @@ class MonitorStore:
             con.execute("PRAGMA journal_mode=WAL")
             con.execute("PRAGMA synchronous=NORMAL")
             con.executescript(_DAY_SCHEMA)
-            for old in [d for d in self._days if d < day - dt.timedelta(days=1)]:
+            for old in [d for d in self._days if isinstance(d, dt.date) and d < day - dt.timedelta(days=1)]:
                 self._days.pop(old).close()
             self._days[day] = con
         return con
+
+    def _file_writer(self, name: str, schema: str) -> sqlite3.Connection:
+        con = self._days.get(name)
+        if con is None:
+            self.dir.mkdir(parents=True, exist_ok=True)
+            con = sqlite3.connect(self.dir / name, check_same_thread=False)
+            con.execute("PRAGMA journal_mode=WAL")
+            con.execute("PRAGMA synchronous=NORMAL")
+            con.executescript(schema)
+            if len(self._days) > 8:  # keep a few open: today's, yesterday's, this month's
+                for old in [k for k in self._days if isinstance(k, str)][:-4]:
+                    self._days.pop(old).close()
+            self._days[name] = con
+        return con
+
+    def save_interfaces(self, device_id: int, rows: list[dict], samples: list[tuple],
+                        events: list[dict] | None = None) -> None:
+        """One device's interfaces now (replacing what was there), the samples to graph
+        ((ts, if_index, in_bps, out_bps, errors, discards)), and any port events."""
+        with self._lock:
+            con = self._writer()
+            with con:
+                con.execute("DELETE FROM iface_state WHERE device_id = ?", (device_id,))
+                con.executemany(
+                    f"INSERT INTO iface_state ({', '.join(IFACE_COLUMNS)}) VALUES "
+                    f"({', '.join('?' * len(IFACE_COLUMNS))})",
+                    [tuple(json.dumps(r.get(c) or {}) if c == "counters" else r.get(c)
+                           for c in IFACE_COLUMNS) for r in rows])
+                if events:
+                    con.executemany(
+                        "INSERT INTO events (ts, device_id, kind, detail, maintenance) VALUES (?,?,?,?,?)",
+                        [(e["ts"], e["device_id"], e["kind"], e.get("detail", ""),
+                          int(bool(e.get("maintenance")))) for e in events])
+            by_day: dict[str, list[tuple]] = {}
+            for row in samples:
+                by_day.setdefault(f"ifd-{day_of(row[0]).isoformat()}.db", []).append(row)
+            for name, part in by_day.items():
+                dcon = self._file_writer(name, _IF_DAY_SCHEMA)
+                with dcon:
+                    dcon.executemany(
+                        "INSERT INTO i (ts, device_id, if_index, in_bps, out_bps, errors, discards) "
+                        "VALUES (?,?,?,?,?,?,?)", [(t, device_id, *rest) for t, *rest in part])
+
+    def forget_interfaces(self, keep: set[int]) -> None:
+        """Drop the interfaces of devices no longer read with SNMP."""
+        with self._lock:
+            con = self._writer()
+            have = {r[0] for r in con.execute("SELECT DISTINCT device_id FROM iface_state")}
+            if gone := have - keep:
+                with con:
+                    con.executemany("DELETE FROM iface_state WHERE device_id = ?",
+                                    [(g,) for g in gone])
+
+    def rollup(self, now: float, back_hours: int = 48) -> int:
+        """Average and peak per hour, for every hour finished since the last rollup (at most
+        ``back_hours`` back). Returns the hours done."""
+        with self._lock:
+            con = self._writer()
+            row = con.execute("SELECT value FROM meta WHERE key = 'rolled_until'").fetchone()
+            last_full = int(now // 3600) * 3600  # the hour now running isn't finished
+            start = max(float(row[0]) if row else 0.0, last_full - back_hours * 3600)
+        done = 0
+        hour = start
+        while hour + 3600 <= last_full:
+            rows = []
+            for day in {day_of(hour), day_of(hour + 3599)}:
+                path = self.dir / f"ifd-{day.isoformat()}.db"
+                if not path.exists():
+                    continue
+                src = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
+                try:
+                    rows += src.execute(
+                        "SELECT device_id, if_index, AVG(in_bps), AVG(out_bps), MAX(in_bps), "
+                        "MAX(out_bps), AVG(errors), AVG(discards) FROM i WHERE ts >= ? AND ts < ? "
+                        "GROUP BY device_id, if_index", (hour, hour + 3600)).fetchall()
+                except sqlite3.Error:
+                    pass
+                finally:
+                    src.close()
+            if rows:
+                d = dt.datetime.fromtimestamp(hour, dt.UTC)
+                with self._lock:
+                    hcon = self._file_writer(f"ifh-{d:%Y-%m}.db", _IF_HOUR_SCHEMA)
+                    with hcon:
+                        hcon.executemany("INSERT INTO h VALUES (?,?,?,?,?,?,?,?,?)",
+                                         [(hour, *r) for r in rows])
+                done += 1
+            hour += 3600
+        with self._lock:
+            con = self._writer()
+            with con:
+                con.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('rolled_until', ?)",
+                            (repr(max(hour, start)),))
+        return done
+
+    def prune_interfaces(self, keep_days: int, today: dt.date | None = None) -> list[str]:
+        """Delete interface day files older than ``keep_days`` and hour files older than
+        13 months. Returns the files deleted."""
+        today = today or dt.datetime.now(dt.UTC).date()
+        first_day = today - dt.timedelta(days=max(keep_days, 1) - 1)
+        first_month = (today.year * 12 + today.month - 1) - (IF_HOURS_KEPT_MONTHS - 1)
+        gone = []
+        if not self.dir.is_dir():
+            return gone
+        for name in os.listdir(self.dir):
+            m, h = _IF_DAY_FILE.match(name), _IF_HOUR_FILE.match(name)
+            old = (m and dt.date.fromisoformat(m.group(1)) < first_day) or \
+                (h and int(h.group(1)) * 12 + int(h.group(2)) - 1 < first_month)
+            if old:
+                with self._lock:
+                    con = self._days.pop(name, None)
+                    if con:
+                        con.close()
+                    for suffix in ("", "-wal", "-shm"):
+                        try:
+                            os.unlink(self.dir / f"{name}{suffix}")
+                        except FileNotFoundError:
+                            pass
+                gone.append(name)
+        return sorted(gone)
 
     def save(self, states: list[dict], events: list[dict], samples: list[tuple]) -> None:
         """One poll round: new states, events, and (ts, device_id, rtt_ms, ok) samples."""
@@ -322,6 +483,80 @@ class MonitorStore:
             return []
         finally:
             con.close()
+
+    def interfaces(self, device_id: int | None = None) -> list[dict]:
+        """The interfaces as last read: one device's, or every device's."""
+        con = self._read("state.db")
+        if con is None:
+            return []
+        try:
+            sql = "SELECT * FROM iface_state" + (" WHERE device_id = ?" if device_id is not None else "")
+            rows = [dict(r) for r in con.execute(sql + " ORDER BY device_id, if_index",
+                                                  (device_id,) if device_id is not None else ())]
+        except sqlite3.Error:
+            return []
+        finally:
+            con.close()
+        for r in rows:
+            r.pop("counters", None)
+        return rows
+
+    def counters(self, device_id: int) -> dict[int, dict]:
+        """The raw counters and status kept from one device's last read (for the poller)."""
+        con = self._read("state.db")
+        if con is None:
+            return {}
+        try:
+            return {r["if_index"]: {**json.loads(r["counters"] or "{}"), "oper": r["oper"],
+                                    "since": r["since"], "ts": r["ts"]}
+                    for r in con.execute("SELECT if_index, counters, oper, since, ts FROM iface_state "
+                                         "WHERE device_id = ?", (device_id,))}
+        except sqlite3.Error:
+            return {}
+        finally:
+            con.close()
+
+    def iface_samples(self, device_id: int, if_index: int, since: float, until: float,
+                      buckets: int, detail_days: int) -> list[dict]:
+        """Traffic of one interface, oldest first, in ``buckets`` slots: from every read while
+        those are kept, else from the hourly averages and peaks."""
+        detail = until - since <= detail_days * 86400
+        rows = []
+        if detail:
+            first, last = day_of(since), day_of(max(since, until - 0.000001))
+            names = [f"ifd-{(first + dt.timedelta(days=n)).isoformat()}.db"
+                     for n in range((last - first).days + 1)]
+            sql = ("SELECT ts, in_bps, out_bps, in_bps, out_bps, errors, discards FROM i "
+                   "WHERE device_id = ? AND if_index = ? AND ts >= ? AND ts < ? ORDER BY ts")
+        else:
+            a, b = dt.datetime.fromtimestamp(since, dt.UTC), dt.datetime.fromtimestamp(until, dt.UTC)
+            months = range(a.year * 12 + a.month - 1, b.year * 12 + b.month)
+            names = [f"ifh-{m // 12:04d}-{m % 12 + 1:02d}.db" for m in months]
+            sql = ("SELECT ts + 1800, in_avg, out_avg, in_max, out_max, errors, discards FROM h "
+                   "WHERE device_id = ? AND if_index = ? AND ts >= ? AND ts < ? ORDER BY ts")
+        for name in names:
+            con = self._read(name)
+            if con is None:
+                continue
+            try:
+                rows += [tuple(r) for r in con.execute(sql, (device_id, if_index, since, until))]
+            except sqlite3.Error:
+                pass
+            finally:
+                con.close()
+        width = (until - since) / max(buckets, 1)
+        slots: dict[int, list] = {}
+        for r in rows:
+            slots.setdefault(min(int((r[0] - since) / width), buckets - 1), []).append(r)
+        avg = lambda xs: round(sum(xs) / len(xs), 1) if xs else None  # noqa: E731
+        out = []
+        for i in sorted(slots):
+            v = slots[i]
+            col = lambda k: [r[k] for r in v if r[k] is not None]  # noqa: E731
+            out.append({"ts": since + (i + 0.5) * width, "in_bps": avg(col(1)), "out_bps": avg(col(2)),
+                        "in_max": max(col(3), default=None), "out_max": max(col(4), default=None),
+                        "errors": avg(col(5)), "discards": avg(col(6))})
+        return out
 
     def availability(self, days: int, today: dt.date | None = None) -> dict[int, float]:
         """Per device: the share of polls answered over the last ``days`` days, in %."""
