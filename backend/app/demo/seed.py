@@ -19,6 +19,7 @@ from app.demo.simnet import IOS_HEALTH, FakeNetwork, SimDevice
 from app.tools.circuits import live
 from app.tools.config_backup.collector import BackupError
 
+PRODUCT_NAME = "NetLantern"  # the working name (docs/branding/); a real install sets its own
 ADMIN_USER = "demo"
 ADMIN_PASSWORD = "demo-password"
 

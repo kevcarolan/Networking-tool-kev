@@ -18,7 +18,9 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 ### Product
 - [x] Per-customer settings: customer or site name (header, reports) and day-to-day defaults on the Settings page; safety gates stay in `netops.env`
 - [ ] Product name and branding (GUI title, logo, docs). The name is now one setting,
-  `NETOPS_PRODUCT_NAME`; still to do: choose the name, a logo, and rename the docs
+  `NETOPS_PRODUCT_NAME`. Working name NetLantern, draft logo in [branding/](branding/README.md);
+  still to do: clear the name, then the logo in the GUI (favicon, sign-in, reports, wall display)
+  and rename the docs
 - [x] Licence modules: the licence unlocks tools (backups, firmware, upgrades, circuits, syslog); locked tabs greyed out ([licensing.md](licensing.md))
 - [ ] Licence terms: draft agreement in [legal/EULA-draft.md](legal/EULA-draft.md); decisions listed at its end, then a solicitor's review
 - [ ] Owner: make the licence signing key and commit its public key ([licensing.md](licensing.md#one-time-make-the-signing-key))
@@ -141,7 +143,12 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
    wall display pages too ([try-it.md](try-it.md)); and an upgrade job's pre-checks on an
    Arista, Juniper or NX-OS demo device, which now show the health checks; the search box.
 2. Full install test on Ubuntu ([install-online.md](install-online.md)), after the demo.
-3. Product name, then branding. Not decided yet (owner, 2026-10-12). Checked on the web:
+3. Product name, then branding. **Working name NetLantern** (owner, 2026-10-14; NetSteward the
+   alternative); the demo uses it and a draft logo is in [branding/](branding/README.md), with
+   the second web check: Spectrum's **LANtern** (UK network monitoring) is close to NetLantern,
+   and a small US firm sells a network monitoring platform called **NetSteward** (the exact
+   name). Next: trademark registers, domains (.ie is free), a trademark attorney.
+   Earlier check (2026-10-12):
    * ruled out: NetKeeper / NetKeeper Pro (live US trademark NETKEEPER, reg. 4944745, network
      management software), NetWeb (two companies), Backplane, Rackwise, Uplinq, Configra,
      Portwarden (existing products); NetKeep is close to the NETKEEPER mark (risky);
@@ -212,3 +219,4 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-13 | Networking-tool-kev | Maintenance calendar (migration 0014_calendar): month and list views, clashes and change freezes, add/edit/copy/delete, .ics download; demo has two weeks of planned work with two clashes |
 | 2026-10-13 | Networking-tool-kev | Two-factor sign-in (migration 0013_two_factor): authenticator codes and recovery codes, set-up with a QR code, required for local users by a setting, admin reset, break-glass secret (`netops-cli totp-secret`), lock-out shared with wrong passwords |
 | 2026-10-13 | Networking-tool-kev | Network map: neighbours (CDP, LLDP detail and table, MikroTik) kept at each scan, map per site and for every site with links between sites, phones/APs optional, drag and save layout, SVG download; the demo network is cabled (HQ cores, DC leaf/spine, branches, warehouse) |
+| 2026-10-14 | Networking-tool-kev | Name: second web check of NetLantern and NetSteward (both have neighbours in network monitoring: Spectrum's LANtern, Network Stewards' NetSteward); the demo is called NetLantern; draft lantern logo (mark, light and dark logos) in docs/branding |
