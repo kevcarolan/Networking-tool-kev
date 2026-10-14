@@ -61,7 +61,7 @@ def test_test_email(app, admin, outbox):
     assert r["ok"] and len(outbox) == 1
     msg = outbox[0]
     assert msg["To"] == "noc@corp.example, oncall@corp.example"
-    assert msg["Subject"] == "[NetOps Tools] Test email"
+    assert msg["Subject"] == "[NetCairn] Test email"
 
     def broken(cfg, m):
         raise ConnectionRefusedError("connection refused")
@@ -86,7 +86,7 @@ def test_failing_backups_once_past_the_limit(app, admin, outbox, device, fetcher
     with session_scope() as db:
         db.get(Device, device["id"]).created_at = utcnow() - timedelta(hours=30)
     [subject] = _tick(app)
-    assert subject == "[NetOps Tools · Acme Ltd] 1 device not backed up for over 24 h"
+    assert subject == "[NetCairn · Acme Ltd] 1 device not backed up for over 24 h"
     assert "core-sw1 (HQ): auth, never backed up" in outbox[0].get_content()
     assert _tick(app) == []  # once only
     # a device that worked 2 hours ago isn't reported
@@ -212,13 +212,13 @@ def test_real_smtp_conversation():
                         mail_from="netops@corp.example", mail_to=("noc@corp.example",))
 
     class S:
-        product_name, site_name = "NetOps Tools", ""
+        product_name, site_name = "NetCairn", ""
     alerts.smtp_send(cfg, alerts.message(cfg, S(), "Hello", "Body text"))
     t.join(5)
     srv.close()
     assert [m.lower() for m in received["MAIL"]] == ["mail from:<netops@corp.example>"]
     assert [m.lower() for m in received["RCPT"]] == ["rcpt to:<noc@corp.example>"]
-    assert "Subject: [NetOps Tools] Hello" in received["data"] and "Body text" in received["data"]
+    assert "Subject: [NetCairn] Hello" in received["data"] and "Body text" in received["data"]
 
 
 # --- who gets what, and syslog -------------------------------------------------------------

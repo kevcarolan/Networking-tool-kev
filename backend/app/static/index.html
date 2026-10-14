@@ -12,7 +12,7 @@
   <!-- Login -->
   <section id="login-view" class="login" hidden>
     <form id="login-form" class="card login-card">
-      <h1>{{product_name}}</h1>
+      <h1><picture><source srcset="mark-light.svg" media="(prefers-color-scheme: dark)"><img src="favicon.svg" alt="" class="brand-mark"></picture>{{product_name}}</h1>
       <p class="muted">Sign in with your domain account</p>
       <label>Username <input name="username" autocomplete="username" required autofocus></label>
       <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
@@ -21,7 +21,7 @@
     </form>
     <!-- Two-factor: a code after the password, or setting it up when it is required -->
     <form id="login-code-form" class="card login-card" hidden>
-      <h1>{{product_name}}</h1>
+      <h1><picture><source srcset="mark-light.svg" media="(prefers-color-scheme: dark)"><img src="favicon.svg" alt="" class="brand-mark"></picture>{{product_name}}</h1>
       <p class="muted">Enter the 6-digit code from your authenticator app, or one of your recovery codes.</p>
       <label>Code <input name="code" autocomplete="one-time-code" inputmode="numeric" maxlength="20" required></label>
       <p class="error" hidden></p>
@@ -34,7 +34,7 @@
   <!-- First-run setup (a new install has no way to sign in yet) -->
   <section id="setup-view" class="login" hidden>
     <div class="card setup-card">
-      <h1>{{product_name}}</h1>
+      <h1><picture><source srcset="mark-light.svg" media="(prefers-color-scheme: dark)"><img src="favicon.svg" alt="" class="brand-mark"></picture>{{product_name}}</h1>
       <p class="muted">First-run setup</p>
       <ol id="setup-steps" class="setup-steps"></ol>
       <div id="setup-body"></div>
@@ -44,7 +44,7 @@
   <!-- App shell -->
   <div id="app-view" hidden>
     <header class="topbar">
-      <span class="brand">{{product_name}}</span>
+      <span class="brand"><picture><source srcset="mark-light.svg" media="(prefers-color-scheme: dark)"><img src="favicon.svg" alt="" class="brand-mark"></picture>{{product_name}}</span>
       <span id="site-name" class="site-name muted" hidden></span>
       <nav id="nav">
         <button data-view="backups" class="active" data-perm="backups:view">Config backups</button>

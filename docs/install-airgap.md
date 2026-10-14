@@ -1,4 +1,4 @@
-# Installing NetOps Tools on an air-gapped server
+# Installing NetCairn on an air-gapped server
 
 This is the supported way to install the platform on a network with no internet
 access. For a server that can reach the internet, [install-online.md](install-online.md)
@@ -320,7 +320,7 @@ On one device of each platform and model:
 
 ---
 
-## 7. Upgrading NetOps Tools
+## 7. Upgrading NetCairn
 
 1. Build a new bundle (step 3), transfer it and verify it (step 4).
 2. `sudo bash netops-bundle-<new>/install.sh`

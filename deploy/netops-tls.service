@@ -1,5 +1,5 @@
 [Unit]
-Description=NetOps Tools: install a new web certificate for nginx
+Description=NetCairn: install a new web certificate for nginx
 After=nginx.service
 
 [Service]

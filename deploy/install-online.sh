@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs or upgrades NetOps Tools on an Ubuntu server that can reach the internet.
+# Installs or upgrades NetCairn on an Ubuntu server that can reach the internet.
 #
 #     sudo git clone <repository> /usr/local/src/netops    # as root: see below
 #     cd /usr/local/src/netops && sudo deploy/install-online.sh

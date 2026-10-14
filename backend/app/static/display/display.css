@@ -91,3 +91,4 @@ main { flex: 1; padding: 1rem 1.4rem; min-height: 0; }
 .sev.s3 { border-color: var(--warn); } .sev.s3 .num { color: var(--warn); }
 .sev.ok .num { color: var(--ok); }
 .sev.zero .num { color: var(--dim); }
+.title .mark { height: 1.6em; vertical-align: -0.4em; margin-right: 0.5rem; }

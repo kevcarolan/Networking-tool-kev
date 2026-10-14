@@ -78,7 +78,7 @@ def test_overview_counts_and_failing_devices(app, admin, device, fetcher):
                                "since": None, "failures": 1}]
     assert d["firmware"]["total"] == 2 and d["firmware"]["percent"] is None
     assert {x["site"]: x["failing"] for x in d["sites"]} == {"Branch": 0, "HQ": 1}
-    assert d["server"]["licence"]["mode"] == "trial" and d["product_name"] == "NetOps Tools"
+    assert d["server"]["licence"]["mode"] == "trial" and d["product_name"] == "NetCairn"
     # Names and statuses only: no addresses, configs or credentials
     text = str(d)
     assert "10.0.0.1" not in text and "10.9.9.9" not in text and "s3cret" not in text

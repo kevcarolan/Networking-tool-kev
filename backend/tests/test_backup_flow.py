@@ -113,7 +113,7 @@ def test_site_change_moves_config(app, admin, device):
 
 def test_frontend_served(client):
     r = client.get("/")
-    assert r.status_code == 200 and "NetOps Tools" in r.text
+    assert r.status_code == 200 and "NetCairn" in r.text
     assert "default-src 'self'" in r.headers["content-security-policy"]
     assert "{{product_name}}" not in r.text
     assert client.get("/index.html").text == r.text
@@ -131,7 +131,7 @@ def test_product_name_setting(settings):
     from app.main import STATIC_DIR
     places = (STATIC_DIR / "index.html").read_text().count("{{product_name}}")
     assert places >= 3 and page.count("Acme &lt;Net&gt; Ops") == places
-    assert "NetOps Tools" not in page
+    assert "NetCairn" not in page
 
 
 def test_run_command_uses_the_port_setting(monkeypatch):

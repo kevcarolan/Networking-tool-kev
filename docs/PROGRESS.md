@@ -3,9 +3,12 @@
 The single place to see where Networking-tool-kev is and what's next. Update it at the end
 of every working session.
 
-**Now:** Clean copy of NetOps Tools (config backup, firmware and upgrade jobs, circuits with
-live MAC/ARP locations, users and activity). No PRTG integration; generic sample data.
-**Next:** Multi-vendor support, as planned in [plans/multi-vendor.md](plans/multi-vendor.md): PR A (backup, versions, circuits for every new platform), then PR B (SSH/SCP upgrade drivers), then PR C (firewall upgrades via API).
+**Now:** NetCairn (named 2026-10-14; it started as a clean copy of NetOps Tools): config
+backups and compliance, firmware and upgrade jobs for every platform, circuits with live
+locations, syslog, inventory, sites, racks and the network map, the calendar, search, alerts,
+reports, the wall display, users with two-factor sign-in, licences and the installers.
+**Next:** the owner's to-do list below: test in the demo, lab tests on real devices, the full
+install test on Ubuntu, then clearing the name and the licence terms.
 
 ## Roadmap
 
@@ -18,7 +21,9 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 ### Product
 - [x] Per-customer settings: customer or site name (header, reports) and day-to-day defaults on the Settings page; safety gates stay in `netops.env`
 - [ ] Product name and branding (GUI title, logo, docs). The name is now one setting,
-  `NETOPS_PRODUCT_NAME`; still to do: choose the name, a logo, and rename the docs
+  `NETOPS_PRODUCT_NAME`, default **NetCairn**; the cairn logo is the browser icon and is on the
+  sign-in page, top bar and wall display ([branding/](branding/README.md)). Still to do: clear
+  the name (owner), then perhaps rename the internal names (`netops` service, `NETOPS_`)
 - [x] Licence modules: the licence unlocks tools (backups, firmware, upgrades, circuits, syslog); locked tabs greyed out ([licensing.md](licensing.md))
 - [ ] Licence terms: draft agreement in [legal/EULA-draft.md](legal/EULA-draft.md); decisions listed at its end, then a solicitor's review
 - [ ] Owner: make the licence signing key and commit its public key ([licensing.md](licensing.md#one-time-make-the-signing-key))
@@ -131,6 +136,7 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-13 | Two-factor sign-in uses standard authenticator-app codes (TOTP, RFC 6238), checked in our own code; the QR code is drawn on the server with `segno` (one pure-Python wheel, no dependencies, added to requirements and so to the offline bundle) | Works with every phone app, on air-gapped sites, and nothing is sent outside |
 | 2026-10-13 | Two-factor is for users on the Users page (local and AD); compulsory only for local users (a Settings option); the break-glass admin's secret lives in netops.env | AD users usually have MFA in their organisation already; the break-glass account must not depend on the database |
 | 2026-10-13 | The network map is drawn from the neighbours kept at the circuit scan (table `ct_live_neighbors`, migration 0012), so it is part of the Circuits module and permission; no new device commands | The scan already reads CDP/LLDP on every switch for uplinks; keeping the names costs nothing and the map never contacts a device |
+| 2026-10-14 | The product is called NetCairn (default `product_name`); internal names (`netops` service and account, `NETOPS_` settings, paths, `netops-cli`) stay | The owner chose the name; renaming internals needs an upgrade path for installed servers and can wait until the trademark is cleared |
 | 2026-10-12 | Sites are a list of their own (table `sites`); items and devices keep a Site text, matched to a site's name or code; renaming a site rewrites that text | The owner: a site list cross-referenced with the inventory, without changing how devices and backups store their site |
 
 ## Open questions
@@ -141,7 +147,16 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
    wall display pages too ([try-it.md](try-it.md)); and an upgrade job's pre-checks on an
    Arista, Juniper or NX-OS demo device, which now show the health checks; the search box.
 2. Full install test on Ubuntu ([install-online.md](install-online.md)), after the demo.
-3. Product name, then branding. Not decided yet (owner, 2026-10-12). Checked on the web:
+3. Product name: **NetCairn** (owner, 2026-10-14). The product, demo and logo use it
+   ([branding/](branding/README.md)). Still to do by the owner: buy netcairn.ie, search the
+   trademark registers, an attorney's clearance, then register the mark (see the session log).
+   NetLantern and NetSteward were ruled out (too close to Spectrum's LANtern; the exact name of
+   a US product).
+   Earlier working name NetLantern (2026-10-14; NetSteward the alternative); the demo uses it and a draft logo is in [branding/](branding/README.md), with
+   the second web check: Spectrum's **LANtern** (UK network monitoring) is close to NetLantern,
+   and a small US firm sells a network monitoring platform called **NetSteward** (the exact
+   name). Next: trademark registers, domains (.ie is free), a trademark attorney.
+   Earlier check (2026-10-12):
    * ruled out: NetKeeper / NetKeeper Pro (live US trademark NETKEEPER, reg. 4944745, network
      management software), NetWeb (two companies), Backplane, Rackwise, Uplinq, Configra,
      Portwarden (existing products); NetKeep is close to the NETKEEPER mark (risky);
@@ -212,3 +227,5 @@ live MAC/ARP locations, users and activity). No PRTG integration; generic sample
 | 2026-10-13 | Networking-tool-kev | Maintenance calendar (migration 0014_calendar): month and list views, clashes and change freezes, add/edit/copy/delete, .ics download; demo has two weeks of planned work with two clashes |
 | 2026-10-13 | Networking-tool-kev | Two-factor sign-in (migration 0013_two_factor): authenticator codes and recovery codes, set-up with a QR code, required for local users by a setting, admin reset, break-glass secret (`netops-cli totp-secret`), lock-out shared with wrong passwords |
 | 2026-10-13 | Networking-tool-kev | Network map: neighbours (CDP, LLDP detail and table, MikroTik) kept at each scan, map per site and for every site with links between sites, phones/APs optional, drag and save layout, SVG download; the demo network is cabled (HQ cores, DC leaf/spine, branches, warehouse) |
+| 2026-10-14 | Networking-tool-kev | Name: second web check of NetLantern and NetSteward (both have neighbours in network monitoring: Spectrum's LANtern, Network Stewards' NetSteward); the demo is called NetLantern; draft lantern logo (mark, light and dark logos) in docs/branding |
+| 2026-10-14 | Networking-tool-kev | Named NetCairn: default product name, demo, deploy labels, README and install guide; cairn logo (mark, light and dark logos) as the browser icon and on the sign-in page, top bar and wall display; other names checked on the web (NetKeel, Netquay, Linkhaven, Portlight…) |

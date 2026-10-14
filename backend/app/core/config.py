@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="NETOPS_", env_file=".env", extra="ignore")
 
     # Product name shown in the browser title, the page header and reports.
-    product_name: str = "NetOps Tools"
+    product_name: str = "NetCairn"
     # The customer or site, shown next to the product name and in reports (Settings page)
     site_name: str = ""
 

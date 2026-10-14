@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs or upgrades NetOps Tools on an air-gapped Ubuntu server from an
+# Installs or upgrades NetCairn on an air-gapped Ubuntu server from an
 # offline bundle made by build-bundle.sh. Nothing is downloaded.
 #
 #     tar -xzf netops-bundle-<version>.tar.gz -C /tmp
@@ -230,7 +230,7 @@ if have_systemd; then
     if health; then
       systemctl enable --quiet netops-worker
       systemctl start netops-worker
-      echo "NetOps Tools $VERSION is running (web app and upgrade worker)."
+      echo "NetCairn $VERSION is running (web app and upgrade worker)."
     else
       echo "The new release did not become healthy - rolling back."
       journalctl -u netops -n 30 --no-pager || true

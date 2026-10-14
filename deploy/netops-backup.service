@@ -1,5 +1,5 @@
 [Unit]
-Description=NetOps Tools nightly backup
+Description=NetCairn nightly backup
 After=netops.service
 
 [Service]

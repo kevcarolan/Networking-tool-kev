@@ -83,7 +83,7 @@ def _procedure(job: dict) -> str:
     return f"<p>{kind} procedure ({_e(job['path_label'])}):</p><ol>{''.join(items)}</ol>"
 
 
-def render_html(job: dict, product_name: str = "NetOps Tools", site_name: str = "") -> str:
+def render_html(job: dict, product_name: str = "NetCairn", site_name: str = "") -> str:
     d, img = job["device"], job["image"]
     multi = len(job.get("units", [])) > 1
     units = "; ".join(f"{u['name']} ({u['address']}{', ' + u['role'] if u['role'] else ''}): "
