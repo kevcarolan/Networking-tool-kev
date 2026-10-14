@@ -1,4 +1,4 @@
-# NetOps Tools
+# NetCairn
 
 A self-hosted web platform for network operations: one server, one web address, one login
 (Active Directory and/or local users), and a set of tools that share a device inventory and

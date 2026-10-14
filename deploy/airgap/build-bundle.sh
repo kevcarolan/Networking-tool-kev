@@ -132,7 +132,7 @@ echo "$(grep -c . "$OUT/MANIFEST.txt") lines written to MANIFEST.txt"
 
 say "Checksums and bundle"
 {
-  echo "NetOps Tools offline bundle"
+  echo "NetCairn offline bundle"
   echo "version:  $VERSION"
   echo "commit:   $(git -c safe.directory='*' rev-parse HEAD 2>/dev/null || echo unknown)"
   echo "built:    $(date -u +%FT%TZ) on $(hostname)"

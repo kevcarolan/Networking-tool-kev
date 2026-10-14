@@ -33,7 +33,6 @@ def settings_for(data: Path, port: int) -> Settings:
     return Settings(
         _env_file=None, data_dir=data, port=port, host="127.0.0.1",
         session_https_only=False, ldap_url="", local_admin_password_hash="",
-        product_name=seed.PRODUCT_NAME,
         upgrade_live_platforms=seed.LIVE_PLATFORMS, upgrade_settle_seconds=10,
         upgrade_poll_seconds=5, upgrade_reload_timeout_min=10, circuit_scan_schedule="",
     ).prepare()

@@ -1,30 +1,34 @@
-# Branding (draft)
+# Branding
 
-**Working name: NetLantern** (owner's choice, 2026-10-14). Not final until the trademark
-check below is done. The name is one setting, `NETOPS_PRODUCT_NAME`; the demo uses
-NetLantern (`app/demo/seed.py`, `PRODUCT_NAME`).
+**Name: NetCairn** (owner's choice, 2026-10-14). A cairn is the pile of stones that marks
+the way on a hill so nobody gets lost: the product does that for a network (what's where,
+how it connects, what changed). Not final until the trademark check is done (see the end).
+The owner is buying **netcairn.ie** (.ie and .co.uk were free on 2026-10-14).
+
+The name is one setting, `NETOPS_PRODUCT_NAME`, whose default is now NetCairn; a customer can
+still show their own name. Internal names (the `netops` service and account, `NETOPS_`
+settings, `/etc/netops`, `netops-cli`) are unchanged: renaming them needs a careful upgrade
+path for installed servers, so it waits until the name is cleared.
 
 ## The logo
 
 | File | Use |
 |---|---|
-| `netlantern-mark.svg` | The mark alone: favicon, app icon, wall display corner. Reads at 16 px. |
-| `netlantern-logo.svg` | Mark + name + strapline, on light backgrounds (sign-in page, reports, documents). |
-| `netlantern-logo-dark.svg` | The same on the dark navy (dark mode, slides, the wall display). |
+| `netcairn-mark.svg` | The mark alone. The product's `favicon.svg` (browser tab, sign-in page, top bar) and the wall display's `mark.svg` are copies of it without the name. |
+| `netcairn-logo.svg` | Mark + name + strapline, on light backgrounds (website, documents, reports). |
+| `netcairn-logo-dark.svg` | The same on dark navy (slides, dark pages). |
+| `preview.png` | All of them, the mark at 16, 32, 64 and 160 px. |
 
-The mark is a lantern whose light is a small network: four devices and five links,
-"see your whole network". It is drawn with plain shapes, so it prints in one colour too
-(all navy, the glass left white).
+The mark is a cairn of four stones with the top stone lit, and an amber trail linking a
+point on each stone, like a path through a network.
 
-* Colours: navy `#1b2a4a` (frame, "Net"), amber `#d98a00` on light / `#ffc24a` on dark
-  ("Lantern"), glow `#fff1c4` → `#ffbd3d`, strapline grey `#5b6478`.
+* Colours: navy `#1b2a4a` (stones, "Net"), amber `#d98a00` on light / `#ffc24a` on dark
+  ("Cairn", the top stone and the trail `#ffbd3d`), strapline grey `#5b6478`.
 * Type: Inter (free, SIL Open Font Licence), bold for the name. The SVGs fall back to
   Segoe UI / Helvetica / Arial; for print, convert the text to outlines first.
-* Strapline: *See your whole network.*
+* Strapline: *Every network, mapped and kept.*
 
-`preview.png` shows them all: the mark at 16, 32, 64 and 160 px, then both logos.
-
-These are drafts to judge the idea. A designer can refine them once the name is cleared.
+Drafts: good enough to use now; a designer can refine them before a launch.
 
 ## Name check (web, 2026-10-14)
 
@@ -79,5 +83,5 @@ products, trademarks and companies:
 | Portlight | lights up the ports | **avoid**: a homelab dashboard of the same name shows which ports are in use |
 | Netloom | weaves it together | a network traffic tool called *loom* (Go, 2026) is close |
 
-Best: **Netcairn**, then **NetKeel**. Both still need the registers, the domains and an
-attorney's search.
+Best: **Netcairn**, then **NetKeel**. The owner chose **NetCairn** (2026-10-14). It still
+needs the registers and an attorney's search.

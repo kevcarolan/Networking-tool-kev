@@ -1,11 +1,12 @@
-# NetOps Tools: notes for Claude
+# NetCairn: notes for Claude
 
 Read this first in every session, then read [docs/PROGRESS.md](docs/PROGRESS.md) to see
 where the project is and what comes next.
 
 ## What this is
 
-**Networking-tool-kev**: the owner's own product version of NetOps Tools, for their own
+**Networking-tool-kev**, product name **NetCairn** (2026-10-14; logo and notes in
+`docs/branding/`): the owner's own product version of NetOps Tools, for their own
 deployments to sites and, later, to give or sell to customers. It started as a clean copy
 of the NetOps Tools code (no history, no PRTG integration, generic sample data).
 
