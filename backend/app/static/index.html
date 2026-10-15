@@ -117,6 +117,7 @@
           <span class="spacer"></span>
           <button id="mon-map" data-perm="circuits:view" data-module="circuits" title="The network map, coloured by up and down">Network map</button>
           <button id="mon-profiles" title="The SNMP communities and SNMPv3 users devices are polled with">SNMP profiles</button>
+          <button id="mon-sensors" title="Your own SNMP sensors: any value a device gives, by its OID, with thresholds">Sensors</button>
           <button id="mk-connections" data-perm="inventory:credentials" title="Meraki organisations read through the Dashboard API">Meraki</button>
           <button id="mon-help">Help: set up devices</button>
         </div>
@@ -707,7 +708,8 @@
         <div class="table-wrap"><table id="mon-d-health">
           <thead><tr><th>Part</th><th>What</th><th>Reading</th><th>Status</th></tr></thead>
           <tbody></tbody></table>
-          <p id="mon-d-health-empty" class="empty" hidden></p></div>
+          <p id="mon-d-health-empty" class="empty" hidden></p>
+          <div id="mon-d-sensor-graph" class="mon-graph small" hidden></div></div>
       </div>
     </div>
     <div id="mon-d-ifaces-box">
@@ -836,6 +838,85 @@
         <button type="submit" class="primary">Save</button>
       </div>
       <p id="mon-p-test-result" hidden></p>
+    </form>
+  </dialog>
+
+  <!-- Monitoring: custom SNMP sensors -->
+  <dialog id="sn-dialog" class="wide">
+    <div class="detail-head">
+      <h2>Sensors</h2>
+      <button id="sn-close" class="ghost">Close</button>
+    </div>
+    <p class="muted">Your own SNMP sensors: any value a device gives over SNMP (a UPS on battery, BGP
+      peers, firewall sessions, a room temperature…), read with the hardware health every few minutes.
+      A value past a threshold makes the device a <b>warning</b>, is an event and is emailed with the
+      Monitoring alerts. Each sensor's readings and graph are in the device's window, under Health.</p>
+    <details id="sn-help" class="help-box">
+      <summary>How to set up a sensor</summary>
+      <ol>
+        <li><b>Find the OID.</b> The device's MIB (from the vendor's support site) names every value. Look
+          for the object you want, e.g. <code>upsAdvBatteryCapacity</code>, and its number. A value on
+          its own ends in its instance, usually <code>.0</code>; a table column (one value per port, peer
+          or sensor) is the column's OID without the row.</li>
+        <li><b>Check it from this server</b> (Ubuntu, package <code>snmp</code>):
+          <pre class="config">snmpget -v3 -l authPriv -u USER -a SHA -A AUTHPASS -x AES -X PRIVPASS DEVICE 1.3.6.1.2.1.33.1.2.4.0
+snmpwalk -v3 … DEVICE 1.3.6.1.2.1.15.3.1.2        # a table column: one line per row
+snmptranslate -On UPS-MIB::upsEstimatedChargeRemaining.0   # a name to numbers (needs the MIB file)</pre>
+          With v2c: <code>snmpget -v2c -c COMMUNITY DEVICE OID</code>. If it says <i>No Such Object</i>,
+          the device doesn't have it (another model or release), or the SNMP view leaves it out.</li>
+        <li><b>Choose how to read it:</b> <i>Value</i> for a number as it is (temperature, %, sessions;
+          <i>Scale</i> 0.1 for tenths); <i>Rate</i> for a counter that only goes up (errors, packets:
+          shown per second); <i>State</i> for a status code: list the codes that are fine (the MIB says
+          what each number means), and any that are only a warning. Anything else is critical.</li>
+        <li><b>Thresholds</b> (Value and Rate): warn or critical above or below. Leave empty what you don't need.</li>
+        <li><b>Which devices:</b> a platform, a site, or chosen devices; or leave all empty for every SNMP device.
+          Devices without the OID show the sensor as <i>unknown</i>, so keep it to the devices that have it.</li>
+        <li><b>Test on a device</b> before saving: it reads the value now with the device's SNMP profile.</li>
+      </ol>
+      <p class="muted">Start from an example below: they come from the vendors' MIB documentation; check them with Test.
+        More in the Monitoring guide (Custom sensors).</p>
+    </details>
+    <div class="table-wrap"><table id="sn-table">
+      <thead><tr><th>Name</th><th>OID</th><th>Read as</th><th>Fine when</th><th>For</th><th>Devices</th><th></th></tr></thead>
+      <tbody></tbody></table></div>
+    <div class="actions" data-perm="monitoring:manage">
+      <select id="sn-example" aria-label="Start from an example"></select>
+      <button id="sn-add" class="primary">+ Add sensor</button>
+    </div>
+    <form id="sn-form" class="form" hidden>
+      <h3 id="sn-form-title">Add sensor</h3>
+      <div class="grid2">
+        <label>Name <input name="name" required maxlength="60" placeholder="UPS battery charge"></label>
+        <label>OID <input name="oid" required maxlength="200" placeholder="1.3.6.1.2.1.33.1.2.4.0"></label>
+        <label>Read as <select name="mode"></select></label>
+        <label data-sn="num">Unit <input name="unit" maxlength="20" placeholder="%, °C, sessions"></label>
+        <label data-sn="num">Scale (multiply by) <input name="scale" type="number" step="any" value="1"></label>
+        <label class="inline"><input type="checkbox" name="table"> <span>A table column: a reading per row</span></label>
+        <label data-sn="table">Row names from (OID, optional) <input name="label_oid" maxlength="200" placeholder="1.3.6.1.2.1.31.1.1.1.1 (ifName)"></label>
+        <label data-sn="num">Warning above <input name="warn_above" type="number" step="any"></label>
+        <label data-sn="num">Critical above <input name="crit_above" type="number" step="any"></label>
+        <label data-sn="num">Warning below <input name="warn_below" type="number" step="any"></label>
+        <label data-sn="num">Critical below <input name="crit_below" type="number" step="any"></label>
+        <label data-sn="state">Fine when the code is <input name="ok_values" maxlength="100" placeholder="1 or 2, 3"></label>
+        <label data-sn="state">Only a warning when <input name="warn_values" maxlength="100" placeholder="optional"></label>
+        <label>Platform <select name="platform"></select></label>
+        <label>Site <input name="site" maxlength="100" placeholder="any site" list="sn-sites"></label>
+        <label>Only these devices <select name="device_ids" multiple size="5"></select></label>
+        <label>Notes <textarea name="notes" rows="3" maxlength="2000" placeholder="What it means, the MIB object"></textarea></label>
+        <label class="inline"><input type="checkbox" name="enabled" checked> <span>Read it</span></label>
+      </div>
+      <datalist id="sn-sites"></datalist>
+      <p class="error" hidden></p>
+      <div class="actions">
+        <span class="test-row">
+          <select id="sn-test-device" aria-label="Device to test with"></select>
+          <button type="button" id="sn-test">Test on this device</button>
+        </span>
+        <span class="spacer"></span>
+        <button type="button" class="ghost" id="sn-cancel">Cancel</button>
+        <button type="submit" class="primary">Save</button>
+      </div>
+      <div id="sn-test-result" hidden></div>
     </form>
   </dialog>
 

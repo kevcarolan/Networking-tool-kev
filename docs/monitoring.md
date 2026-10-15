@@ -246,6 +246,121 @@ everything that uses the API. A read takes 4 requests plus one per network once 
 | A device is **alerting** | Meraki's own reason is in the Meraki dashboard (for example a failed uplink, a port error or a VPN problem) |
 | A device is **dormant** | Meraki hasn't heard from it for a long time (unplugged, or never installed) |
 
+## Custom sensors
+
+The hardware health covers CPU, memory, temperatures, fans and power supplies. **Sensors**
+add anything else a device gives over SNMP: a UPS on battery, its charge and runtime, BGP
+peers and OSPF neighbours, firewall sessions and VPN tunnels, a room temperature probe, errors
+on one important port. You give the **OID** (the number SNMP uses for the value), say how
+to read it and when it is a problem.
+
+They are read with the hardware health (every 5 minutes) and work the same way:
+
+* each reading is in the device's window under **Health** (Part: *Sensor*); click it for its graph;
+* a value past a threshold makes the device a **warning** and shows in **Hardware problems**;
+* starting and clearing are **events**, emailed with the *Devices down or up* alerts;
+* the wall display shows the sensor's name and "warning" or "critical" (never a row's
+  name or the value, which can be an address).
+
+Read-only: SNMP GET and GETBULK only, like the rest of monitoring.
+
+### Setting one up, step by step
+
+1. **Find the value in the device's MIB.** The vendor publishes MIB files (look for "MIB" on
+   their support or download site). A MIB names each value and gives its number. Search it
+   for what you want (`upsEstimatedChargeRemaining`, `bgpPeerState`, `fgSysSesCount`). Read
+   the description: it says the unit, and for a status, what each number means.
+2. **Work out the full OID.**
+   * A single value ends in its instance, almost always `.0`:
+     `1.3.6.1.2.1.33.1.2.4.0`.
+   * A **table** (one value per port, peer, sensor or tunnel) is the column's OID
+     without the row: `1.3.6.1.2.1.15.3.1.2` (bgpPeerState). Tick *A table column*; every
+     row becomes its own reading, up to 50. Rows are named by their index (for BGP, the
+     peer's address), or by another column if you give *Row names from* (e.g. ifName,
+     `1.3.6.1.2.1.31.1.1.1.1`, for interface tables).
+   * Turn a name into numbers on any Linux box with the MIB files:
+     `snmptranslate -On UPS-MIB::upsEstimatedChargeRemaining.0`.
+3. **Check it from this server** before adding it (Ubuntu package `snmp`):
+
+   ```bash
+   # SNMPv3, the same user and passwords as the device's SNMP profile
+   snmpget  -v3 -l authPriv -u netops-mon -a SHA -A 'AUTHPASS' -x AES -X 'PRIVPASS' 10.0.0.5 1.3.6.1.2.1.33.1.2.4.0
+   snmpwalk -v3 -l authPriv -u netops-mon -a SHA -A 'AUTHPASS' -x AES -X 'PRIVPASS' 10.0.0.5 1.3.6.1.2.1.15.3.1.2
+   # SNMPv2c
+   snmpget -v2c -c 'COMMUNITY' 10.0.0.5 1.3.6.1.2.1.33.1.2.4.0
+   ```
+
+   *No Such Object* or *No Such Instance* means the device doesn't have it (another model
+   or software release), or its SNMP view leaves it out. Walking the parent shows what
+   is there: `snmpwalk … 10.0.0.5 1.3.6.1.2.1.33`.
+4. **Add it:** Monitoring › **Sensors** › *+ Add sensor* (or *Start from an example*).
+   * **Read as**:
+     * **Value**: the number as it is. Use *Scale* when the device counts in tenths
+       (0.1) or hundredths (0.01), or to change units.
+     * **Rate**: a counter that only goes up (errors, packets, octets). It is shown per
+       second, from the second read on. Counter wraps are handled; a counter that goes back
+       (a restart) gives no reading that time.
+     * **State**: a status code. List the codes that are **fine** (e.g. `3` for
+       upsOutputSource "normal"), and any that are **only a warning**. Every other code is
+       critical.
+   * **Thresholds** (Value and Rate): *warning above*, *critical above*, *warning below*,
+     *critical below*. "Below 50" means less than 50, so "warning below 1" warns at 0.
+     Leave empty what you don't need; with none at all the sensor is only graphed.
+   * **Which devices**: a **platform**, a **site**, or chosen **devices** (chosen devices win
+     over the other two). Leave all empty for every SNMP device. A device without the OID
+     shows the sensor as *unknown* (not a problem), so keep sensors to the devices that
+     have them.
+5. **Test on this device** reads it straight away with the device's SNMP profile and shows
+   the value and the status it would get. Then **Save**. It is read at the next health
+   read (within 5 minutes).
+
+### Examples
+
+*Start from an example* in the Sensors window fills the form. These come from the vendors'
+MIB documentation: check each with **Test** on your own devices.
+
+| Example | OID | Read as | Fine when |
+|---|---|---|---|
+| UPS on battery (UPS-MIB) | `1.3.6.1.2.1.33.1.4.1.0` | State | 3 (normal); 4 (bypass) a warning |
+| UPS battery charge (UPS-MIB) | `1.3.6.1.2.1.33.1.2.4.0` | Value, % | warning below 80, critical below 50 |
+| UPS runtime (UPS-MIB) | `1.3.6.1.2.1.33.1.2.3.0` | Value, min | warning below 15, critical below 5 |
+| APC UPS output status (PowerNet-MIB) | `1.3.6.1.4.1.318.1.1.1.4.1.1.0` | State | 2 (on line); 12 (smart trim) a warning |
+| APC UPS battery capacity | `1.3.6.1.4.1.318.1.1.1.2.2.1.0` | Value, % | warning below 80, critical below 50 |
+| APC UPS load | `1.3.6.1.4.1.318.1.1.1.4.2.3.0` | Value, % | warning above 70, critical above 90 |
+| APC UPS battery replace | `1.3.6.1.4.1.318.1.1.1.2.2.4.0` | State | 1 (no need) |
+| BGP peers (BGP4-MIB) | `1.3.6.1.2.1.15.3.1.2` (table) | State | 6 (established) |
+| OSPF neighbours (OSPF-MIB) | `1.3.6.1.2.1.14.10.1.6` (table) | State | 8 (full); 4 (2-way) a warning |
+| FortiGate sessions | `1.3.6.1.4.1.12356.101.4.1.8.0` | Value | graph only |
+| Palo Alto session use | `1.3.6.1.4.1.25461.2.1.2.3.1.0` | Value, % | warning above 80, critical above 95 |
+| ASA connections | `1.3.6.1.4.1.9.9.147.1.2.2.2.1.5.40.6` | Value | graph only |
+| IPsec tunnels up (Cisco) | `1.3.6.1.4.1.9.9.171.1.3.1.1.0` | Value | warning below 1 |
+| Errors on one port | `1.3.6.1.2.1.2.2.1.14.<ifIndex>` | Rate, /s | warning above 1, critical above 10 |
+| APC room temperature probe | `1.3.6.1.4.1.318.1.1.10.2.3.2.1.4.1` | Value, °C | warning above 27, critical above 32 |
+
+Sensors are read from devices in the inventory's device list. A UPS or environment probe
+with its own network card isn't one of the supported platforms yet, so the UPS and probe
+examples work today only where a supported device answers them (for example a UPS-MIB
+agent on a server you added). An "SNMP only" device type for UPSs, probes and PDUs is on
+the to-do list.
+
+Notes:
+
+* BGP4-MIB lists IPv4 peers in the default VRF only. Many platforms have their own MIB for
+  VRFs and IPv6 (Cisco CISCO-BGP4-MIB `cbgpPeer2State`, Juniper BGP4-V2-MIB).
+* Each device reads at most 40 sensor values per read and 50 rows per table.
+* Changing a sensor's name starts a new graph; the old one ages out with the health history.
+
+### Sensor troubleshooting
+
+| What you see | Look at |
+|---|---|
+| *the device doesn't have this OID* | A typo, the wrong instance (`.0` missing or extra), or the model or release doesn't have it. Walk the parent OID from the server |
+| *the device has no rows under this OID* | A table that is empty (no BGP peers) or not in the SNMP view. Keep the sensor to the devices that have it |
+| *not a number* | The OID is text (a name or description): use State with the text as the fine code, or another OID |
+| *first read: the rate is shown from the next one* | Normal for a Rate sensor; it appears 5 minutes later |
+| A value 10 or 100 times too big | Set *Scale* to 0.1 or 0.01 |
+| Every device shows the sensor as unknown | It is for every device: choose a platform, a site or the devices |
+
 ## Permissions
 
 The **Monitoring** area on the Users page:
@@ -259,6 +374,8 @@ credentials*:
 
 * **credentials** to add, change or delete them;
 * **addresses** to choose a device's profile.
+
+Sensors: Monitoring **view** sees them; **manage** adds, changes, deletes and tests them.
 
 Meraki connections hold an API key, so they also need **credentials** (to add, change,
 delete or test them). Monitoring **view** shows the Meraki devices. **Add to the inventory**

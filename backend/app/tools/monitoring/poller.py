@@ -13,9 +13,10 @@ A device is:
 Every ``monitor_interface_seconds`` (5 minutes) it also reads each SNMP device's interfaces
 (ifaces.py): status, speed, traffic, errors and discards, kept for the graphs. Every
 ``monitor_health_seconds`` (5 minutes) it reads its hardware health (health.py): CPU,
-memory, temperatures, fans and power supplies. A device that answers but has a hardware
+memory, temperatures, fans and power supplies, and the admins' custom SNMP sensors that
+apply to it (sensors.py). A device that answers but has a hardware
 problem (a failed fan or power supply, a temperature alarm, CPU or memory over the
-thresholds) is a **warning**, and each problem starting or clearing is an event.
+thresholds, a custom sensor past its threshold) is a **warning**, and each problem starting or clearing is an event.
 
 It also notes restarts (the SNMP uptime went back to near zero), when SNMP stops or
 starts working, and when a port with a description (or a port-channel) goes down or up. Each change is an **event**; the web app's alerts email them. A device in
@@ -43,6 +44,7 @@ from app.tools.monitoring import health as hw
 from app.tools.monitoring import ifaces
 from app.tools.monitoring import meraki as mk
 from app.tools.monitoring import ping as pinging
+from app.tools.monitoring import sensors
 from app.tools.monitoring.snmp import (SYS_DESCR, SYS_NAME, SYS_OBJECT_ID, SYS_UPTIME, SYSTEM,
                                        SnmpClient, SnmpError, SnmpTarget)
 from app.tools.monitoring.store import MonitorStore
@@ -145,6 +147,25 @@ def load_jobs(db: Session, cipher) -> list[Job]:
     return jobs
 
 
+def load_sensors(db: Session) -> list[dict]:
+    """The custom SNMP sensors that are on, as the poller uses them."""
+    from app.tools.monitoring.models import Sensor
+
+    out = []
+    for x in db.scalars(select(Sensor).where(Sensor.enabled.is_(True)).order_by(Sensor.name)):
+        try:
+            ids = [int(i) for i in json.loads(x.device_ids or "[]")]
+        except (ValueError, TypeError):
+            ids = []
+        out.append({"id": x.id, "name": x.name, "oid": x.oid, "mode": x.mode, "table": x.table,
+                    "label_oid": x.label_oid, "unit": x.unit, "scale": x.scale,
+                    "warn_above": x.warn_above, "crit_above": x.crit_above,
+                    "warn_below": x.warn_below, "crit_below": x.crit_below,
+                    "ok_values": x.ok_values, "warn_values": x.warn_values,
+                    "platform": x.platform, "site": x.site, "device_ids": ids, "enabled": True})
+    return out
+
+
 class Poller:
     def __init__(self, settings: Settings, store: MonitorStore, cipher=None, snmp=None,
                  pinger=pinging.ping, clock=time.time, meraki_fetch=None):
@@ -160,6 +181,8 @@ class Poller:
         self.if_prev: dict[int, dict[int, dict]] = {}  # device -> ifIndex -> last counters
         self.if_errors: dict[int, str] = {}  # why a device's interfaces couldn't be read
         self.health: dict[int, dict] = {}  # device -> the last health read (store.health)
+        self.sensors: list[dict] = []  # custom SNMP sensors (sensors.py)
+        self.sensor_prev: dict[int, dict] = {}  # device -> raw counters of 'rate' sensors
         self.meraki_fetch = meraki_fetch  # None: real HTTPS (tests and the demo pass their own)
         self.meraki_orgs: list[dict] = []
         self.meraki_last: dict[int, float] = {}
@@ -312,6 +335,14 @@ class Poller:
         if known and not readings:  # the readers that answered before found nothing: start again
             readings, sources = await hw.read(self.snmp, job.snmp, job.platform)
         hw.judge(readings, self.settings.monitor_cpu_warn, self.settings.monitor_mem_warn)
+        mine = [x for x in self.sensors if sensors.applies(x, job.device_id, job.platform, job.site)]
+        if mine:
+            try:
+                readings += await sensors.read(self.snmp, job.snmp, mine, now,
+                                               self.sensor_prev.setdefault(job.device_id, {}))
+            except SnmpError as exc:
+                self.health[job.device_id] = {**old, "error": str(exc)}
+                return None
         problems = hw.problems(readings)
         before = old.get("problems") or {}
         events = []
@@ -335,6 +366,9 @@ class Poller:
         temps = [r for r in readings if r.kind == "temperature" and r.value is not None]
         for r in sorted(temps, key=lambda r: -r.value)[:8]:
             samples.append((now, f"t:{r.name}"[:100], r.value))
+        for r in readings:
+            if r.kind == "sensor" and isinstance(r.value, (int, float)) and not isinstance(r.value, bool):
+                samples.append((now, f"s:{r.name}"[:100], float(r.value)))
         return record, samples, events
 
     def _interfaces_due(self, device_id: int, now: float) -> bool:
@@ -441,6 +475,9 @@ class Poller:
         self.store.forget_interfaces(snmp)
         self.if_prev = {k: v for k, v in self.if_prev.items() if k in snmp}
         self.health = {k: v for k, v in self.health.items() if k in snmp}
+        self.sensor_prev = {k: v for k, v in self.sensor_prev.items() if k in snmp}
+        with session_scope() as db:
+            self.sensors = load_sensors(db) if self.licensed else []
         self.meraki_orgs = self._load_meraki() if self.licensed else []
         self.store.forget_meraki({o["id"] for o in self.meraki_orgs})
 

@@ -20,7 +20,7 @@ from app.tools.monitoring.snmp import SnmpError
 
 OK, WARNING, CRITICAL, ABSENT, UNKNOWN = "ok", "warning", "critical", "absent", "unknown"
 KINDS = {"cpu": "CPU", "memory": "Memory", "temperature": "Temperature", "fan": "Fan",
-         "psu": "Power supply"}
+         "psu": "Power supply", "sensor": "Sensor"}
 ENT_NAME = "1.3.6.1.2.1.47.1.1.1.1.7"  # ENTITY-MIB entPhysicalName
 ENT_DESCR = "1.3.6.1.2.1.47.1.1.1.1.2"
 
@@ -32,6 +32,8 @@ class Reading:
     value: float | None = None  # % for cpu and memory, °C for temperatures, rpm for fans
     status: str = OK
     source: str = ""
+    unit: str = ""  # custom sensors (sensors.py)
+    sensor: str = ""  # custom sensors: the sensor's own name (a table row's name adds its label)
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -479,7 +481,10 @@ def problems(readings: list[Reading]) -> dict[str, str]:
         if r.status not in (WARNING, CRITICAL):
             continue
         key = f"{r.kind}:{r.name.lower()}"
-        if r.kind in ("cpu", "memory"):
+        if r.kind == "sensor":
+            from app.tools.monitoring.sensors import problem_text
+            out[key] = problem_text(r)
+        elif r.kind in ("cpu", "memory"):
             out[key] = f"{r.name} {r.value:.0f}%"
         elif r.kind == "temperature":
             out[key] = f"Temperature {r.name} {'critical' if r.status == CRITICAL else 'high'}" + (

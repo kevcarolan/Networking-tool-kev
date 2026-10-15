@@ -39,7 +39,7 @@ STATUS_LABELS = {"up": "Up", "warning": "Warning", "down": "Down", "unknown": "C
 EVENT_LABELS = {"down": "Down", "up": "Back up", "restarted": "Restarted",
                 "snmp_failed": "SNMP stopped answering", "snmp_ok": "SNMP answers again",
                 "port_down": "Port down", "port_up": "Port back up",
-                "health_problem": "Hardware problem", "health_ok": "Hardware back to normal"}
+                "health_problem": "Hardware or sensor problem", "health_ok": "Hardware or sensor back to normal"}
 TOP_ROWS = 10
 MAX_RANGE_DAYS = 400
 
@@ -717,6 +717,167 @@ def meraki_to_inventory(request: Request, db: Session = Depends(get_db),
             updated += changed
     audit(db, user.username, "monitoring.meraki_inventory", f"{added} added, {updated} brought up to date")
     return {"added": added, "updated": updated, "total": len(devices)}
+
+
+# --- custom SNMP sensors ---------------------------------------------------------------------
+
+class SensorIn(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    oid: str = Field(min_length=1, max_length=200)
+    mode: str = "value"
+    table: bool = False
+    label_oid: str = Field(default="", max_length=200)
+    unit: str = Field(default="", max_length=20)
+    scale: float = Field(default=1.0, gt=-1e9, lt=1e9)
+    warn_above: float | None = None
+    crit_above: float | None = None
+    warn_below: float | None = None
+    crit_below: float | None = None
+    ok_values: str = Field(default="", max_length=100)
+    warn_values: str = Field(default="", max_length=100)
+    platform: str = Field(default="", max_length=50)
+    site: str = Field(default="", max_length=100)
+    device_ids: list[int] = Field(default_factory=list, max_length=1000)
+    notes: str = Field(default="", max_length=2000)
+    enabled: bool = True
+
+
+def _check_sensor(body: SensorIn) -> dict:
+    """The sensor as the poller uses it; 422 with plain words when something is wrong."""
+    from app.core.platforms import PLATFORMS
+    from app.tools.monitoring import sensors as sn
+
+    try:
+        oid = sn.clean_oid(body.oid)
+        label = sn.clean_oid(body.label_oid) if body.label_oid.strip() else ""
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+    if body.mode not in sn.MODES:
+        raise HTTPException(422, "Choose value, rate or state")
+    if body.mode == "state" and not sn.codes(body.ok_values):
+        raise HTTPException(422, "A state sensor needs the codes that are fine (e.g. 1)")
+    if body.platform and body.platform not in PLATFORMS:
+        raise HTTPException(422, "Unknown platform")
+    if body.scale == 0:
+        raise HTTPException(422, "The scale can't be 0 (1 keeps the value as it is)")
+    return {**body.model_dump(), "name": body.name.strip(), "oid": oid, "label_oid": label,
+            "unit": body.unit.strip(), "site": body.site.strip(), "id": 0}
+
+
+def _sensor_out(x, counts: dict) -> dict:
+    import json
+
+    return {"id": x.id, "name": x.name, "oid": x.oid, "mode": x.mode, "table": x.table,
+            "label_oid": x.label_oid, "unit": x.unit, "scale": x.scale, "warn_above": x.warn_above,
+            "crit_above": x.crit_above, "warn_below": x.warn_below, "crit_below": x.crit_below,
+            "ok_values": x.ok_values, "warn_values": x.warn_values, "platform": x.platform,
+            "site": x.site, "device_ids": json.loads(x.device_ids or "[]"), "notes": x.notes,
+            "enabled": x.enabled, "devices": counts.get(x.id, 0), "updated_by": x.updated_by}
+
+
+def _apply_sensor(x, v: dict, user: User) -> None:
+    import json
+
+    for k in ("name", "oid", "mode", "table", "label_oid", "unit", "scale", "warn_above", "crit_above",
+              "warn_below", "crit_below", "ok_values", "warn_values", "platform", "site", "notes", "enabled"):
+        setattr(x, k, v[k])
+    x.device_ids = json.dumps(sorted(set(v["device_ids"])))
+    x.updated_by = user.username
+
+
+@router.get("/sensors")
+def list_sensors(db: Session = Depends(get_db), _: User = Depends(VIEW)):
+    """The custom SNMP sensors, how many devices each applies to, and the examples."""
+    from app.core.platforms import PLATFORMS
+    from app.tools.monitoring import sensors as sn
+    from app.tools.monitoring.models import Sensor
+    from app.tools.monitoring.poller import load_jobs, load_sensors
+
+    defs = {d["id"]: d for d in load_sensors(db)}
+    jobs = [j for j in load_jobs(db, None) if j.snmp is not None or "secrets" in j.snmp_note]
+    counts = {i: sum(sn.applies(d, j.device_id, j.platform, j.site) for j in jobs) for i, d in defs.items()}
+    return {"sensors": [_sensor_out(x, counts) for x in db.scalars(select(Sensor).order_by(Sensor.name))],
+            "modes": sn.MODES, "examples": sn.EXAMPLES,
+            "platforms": {k: p.label for k, p in PLATFORMS.items()}}
+
+
+@router.post("/sensors", status_code=201)
+def add_sensor(body: SensorIn, db: Session = Depends(get_db), user: User = Depends(MANAGE)):
+    from app.tools.monitoring.models import Sensor
+
+    x = Sensor()
+    _apply_sensor(x, _check_sensor(body), user)
+    db.add(x)
+    try:
+        db.flush()
+    except IntegrityError:
+        raise HTTPException(409, "A sensor with that name already exists") from None
+    audit(db, user.username, "monitoring.sensor_add", f"{x.name}: {x.oid} ({x.mode})")
+    return _sensor_out(x, {})
+
+
+@router.put("/sensors/{sensor_id}")
+def change_sensor(sensor_id: int, body: SensorIn, db: Session = Depends(get_db), user: User = Depends(MANAGE)):
+    from app.tools.monitoring.models import Sensor
+
+    x = db.get(Sensor, sensor_id)
+    if x is None:
+        raise HTTPException(404, "Sensor not found")
+    _apply_sensor(x, _check_sensor(body), user)
+    try:
+        db.flush()
+    except IntegrityError:
+        raise HTTPException(409, "A sensor with that name already exists") from None
+    audit(db, user.username, "monitoring.sensor_change", f"{x.name}: {x.oid} ({x.mode}), {'on' if x.enabled else 'off'}")
+    return _sensor_out(x, {})
+
+
+@router.delete("/sensors/{sensor_id}")
+def delete_sensor(sensor_id: int, db: Session = Depends(get_db), user: User = Depends(MANAGE)):
+    from app.tools.monitoring.models import Sensor
+
+    x = db.get(Sensor, sensor_id)
+    if x is None:
+        raise HTTPException(404, "Sensor not found")
+    db.delete(x)
+    audit(db, user.username, "monitoring.sensor_delete", x.name)
+    return {"ok": True}
+
+
+class SensorTestIn(SensorIn):
+    test_device_id: int
+
+
+@router.post("/sensors/test")
+def test_sensor(body: SensorTestIn, request: Request, db: Session = Depends(get_db),
+                user: User = Depends(MANAGE)):
+    """Read the sensor (saved or not) from one device now, with the device's SNMP profile."""
+    import asyncio
+
+    from app.tools.monitoring import sensors as sn
+    from app.tools.monitoring.poller import load_jobs
+
+    v = _check_sensor(body)
+    d = db.get(Device, body.test_device_id)
+    if d is None:
+        raise HTTPException(404, "Device not found")
+    job = next((j for j in load_jobs(db, request.app.state.cipher) if j.device_id == d.id), None)
+    if job is None or job.snmp is None:
+        raise HTTPException(422, f"{d.name} isn't polled with SNMP" + (f": {job.snmp_note}" if job and job.snmp_note else ""))
+    client = request.app.state.snmp_client
+    if client is None:
+        from app.tools.monitoring.snmp import SnmpClient
+        client = SnmpClient()
+    try:
+        readings = asyncio.run(sn.read(client, job.snmp, [v], time.time(), {}))
+    except SnmpError as exc:
+        audit(db, user.username, "monitoring.sensor_test", f"{v['name']} on {d.name}: failed: {exc}")
+        return {"ok": False, "message": str(exc), "readings": []}
+    audit(db, user.username, "monitoring.sensor_test", f"{v['name']} on {d.name}: {len(readings)} reading(s)")
+    got = [r for r in readings if r.value is not None or r.source.startswith("first read")]
+    msg = (f"{d.name} answered: {len(readings)} reading{'s' if len(readings) != 1 else ''}" if got
+           else readings[0].source if readings else "No answer")
+    return {"ok": bool(got), "message": msg, "readings": [r.as_dict() for r in readings]}
 
 
 @router.get("/howto")

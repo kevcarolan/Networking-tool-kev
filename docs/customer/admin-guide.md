@@ -355,6 +355,21 @@ way mark their devices *maintenance*: what happens to them is recorded, not emai
 
 Statuses, sizing and troubleshooting: [monitoring.md](../monitoring.md).
 
+**Custom sensors** read anything else a device gives over SNMP (a UPS on battery, BGP
+peers, firewall sessions, a room temperature): Monitoring › **Sensors**. Open *How to set up
+a sensor* in that window, or start from an example:
+
+1. Find the value's OID in the vendor's MIB, and check it from the server with `snmpget`
+   (a single value, ending `.0`) or `snmpwalk` (a table column).
+2. **+ Add sensor**: the OID, how to read it (*Value*, *Rate* for counters, *State* for status
+   codes), the thresholds or the codes that are fine, and which devices (a platform, a site
+   or chosen devices).
+3. **Test on this device**, then **Save**. It is read with the hardware health, every 5 minutes.
+
+A sensor past its threshold makes the device a warning and is emailed with *Devices down or
+up*. Sensors need the Monitoring *manage* permission. Full guide, examples and
+troubleshooting: [monitoring.md](../monitoring.md#custom-sensors).
+
 **Cisco Meraki** devices are read from the Meraki cloud through the Dashboard API, not with
 ping and SNMP:
 

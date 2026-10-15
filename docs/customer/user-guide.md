@@ -208,6 +208,10 @@ minute with ping and SNMP; the server only asks, it never changes anything.
   **Hardware problems** tile and list show every device with one.
 * **Health**, in the device window: CPU and memory with their graph, and every temperature,
   fan and power supply with its status.
+* **Sensors** your admins added (a UPS, BGP peers, firewall sessions…) are in the same
+  Health table (Part: *Sensor*); click one for its graph. One past its threshold makes the
+  device a warning, like a failed fan. With Monitoring *manage* you can add them yourself:
+  **Sensors** on the Monitoring page, with a step-by-step guide in the window.
 * **Interfaces**, in the device window: every port with its description, status, speed, how
   full it is, traffic in and out, and errors and discards a minute. You can sort it busiest
   first, errors first or down first. Click a port for its traffic graph (the dashed red line

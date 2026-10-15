@@ -375,6 +375,15 @@ def _syslog(db: Session, settings) -> dict:
             "top": [{"device": name(src), "count": n} for src, n in top]}
 
 
+def _wall_problems(h: dict) -> list[str]:
+    """A device's hardware problems for the wall. A custom sensor shows only its own name
+    ("BGP peer critical"): a table row's label or a value can be an address."""
+    out = {text for key, text in h["problems"].items() if not key.startswith("sensor:")}
+    out |= {f"{r.get('sensor') or 'Sensor'} {'critical' if r['status'] == 'critical' else 'warning'}"
+            for r in h.get("readings") or [] if r.get("kind") == "sensor" and r.get("status") in ("warning", "critical")}
+    return sorted(out)
+
+
 def _monitoring(db: Session, settings, devices: dict) -> tuple[dict, dict[int, str]]:
     """Devices down or with a warning, the last day's events, and the busiest ports and
     those with errors: names, sites, port names and numbers only (a reason or a port's
@@ -425,8 +434,7 @@ def _monitoring(db: Session, settings, devices: dict) -> tuple[dict, dict[int, s
     for device_id, h in (store.health() or {}).items():
         if h["problems"] and device_id in devices and device_id in states:
             hardware.append({"device": devices[device_id].name, "site": devices[device_id].site,
-                             "critical": h["status"] == "critical",
-                             "problems": sorted(h["problems"].values())[:3]})
+                             "critical": h["status"] == "critical", "problems": _wall_problems(h)[:3]})
     hardware.sort(key=lambda r: (not r["critical"], r["device"]))
     counts["hardware"] = len(hardware)
     mk = store.meraki()
