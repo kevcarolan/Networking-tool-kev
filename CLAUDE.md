@@ -93,7 +93,11 @@ remote); never sync the two automatically.
   only for `backups:configs`. Licences (`core/licence.py`, made with `python -m app.licence_tool`, see
   [docs/licensing.md](docs/licensing.md)): a 60-day trial, then signed licences with an end
   date, a device count and the tools it unlocks (`licence.MODULES`: backups, firmware,
-  upgrades, circuits, syslog, monitoring; one full install, the licence unlocks parts of it). A tool's
+  upgrades, circuits, syslog, monitoring; one full install, the licence unlocks parts of it;
+  `licence.EDITIONS` and `ADDONS` name sets of them; each Meraki organisation uses
+  `MERAKI_DEVICES` of the device count, `licence.meraki_room()`). `licence_tool` keeps a
+  ledger CSV (the owner's OneDrive, `NETCAIRN_LEDGER`) and renews `--from` it; the selling
+  process is [docs/selling.md](docs/selling.md). A tool's
   router gets `Depends(licence.module(...))`, its scheduler checks `licence.has_module`,
   and the GUI greys out its tab (`data-module`). The trial and older licences unlock
   everything. Without a licence, only new work is blocked (`licence.require_active`,

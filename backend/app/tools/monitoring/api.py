@@ -16,6 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core import licence
 from app.core.audit import audit
 from app.core.auth import User, require
 from app.core.db import get_db
@@ -611,6 +612,8 @@ def add_meraki(body: MerakiIn, request: Request, db: Session = Depends(get_db),
                user: User = Depends(PROFILES)):
     from app.tools.monitoring.models import MerakiOrg
 
+    if body.enabled:
+        licence.meraki_room(db)  # an organisation uses a block of the licence's devices
     o = MerakiOrg()
     _apply_meraki(o, body, request.app.state.cipher, user)
     db.add(o)
@@ -635,6 +638,8 @@ def _get_meraki(db: Session, conn_id: int):
 def change_meraki(conn_id: int, body: MerakiIn, request: Request, db: Session = Depends(get_db),
                   user: User = Depends(PROFILES)):
     o = _get_meraki(db, conn_id)
+    if body.enabled and not o.enabled:
+        licence.meraki_room(db)
     _apply_meraki(o, body, request.app.state.cipher, user)
     try:
         db.flush()

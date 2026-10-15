@@ -48,6 +48,19 @@ BEGIN, END = "-----BEGIN LICENCE-----", "-----END LICENCE-----"
 MODULES = {"backups": "Config backups", "firmware": "Firmware", "upgrades": "Upgrade jobs",
            "circuits": "Circuits", "syslog": "Syslog", "monitoring": "Monitoring"}
 
+# Editions are names for a set of modules (docs/licensing.md); the licence keeps the modules
+# themselves, so an edition can be re-bundled without changing licences already sold.
+EDITIONS = {
+    "essentials": ("Essentials", ["backups", "syslog"]),
+    "professional": ("Professional", ["backups", "syslog", "firmware", "upgrades", "circuits"]),
+    "complete": ("Complete", list(MODULES)),
+}
+ADDONS = {"monitoring": "Monitoring add-on"}
+
+# A Cisco Meraki organisation (Monitoring › Meraki) uses this many of the licence's devices,
+# unless the licence says otherwise ("meraki_devices").
+MERAKI_DEVICES = 25
+
 INSTALL_ID = "install_id"
 TRIAL_STARTED = "trial_started_at"
 LICENCE = "licence"
@@ -160,13 +173,36 @@ def _device_count(db: Session) -> int:
     return db.scalar(select(func.count(Device.id))) or 0
 
 
+def _meraki_count(db: Session) -> int:
+    """Meraki organisations being read (each uses a block of the licence's devices)."""
+    try:
+        from app.tools.monitoring.models import MerakiOrg
+    except ImportError:  # pragma: no cover
+        return 0
+    return db.scalar(select(func.count(MerakiOrg.id)).where(MerakiOrg.enabled.is_(True))) or 0
+
+
+def edition_label(payload: dict) -> str:
+    """'Professional + Monitoring add-on', from the licence's edition and modules."""
+    if payload.get("kind") == "internal":
+        return "Internal use"
+    name = EDITIONS.get(payload.get("edition") or "", (None, None))[0]
+    if not name:
+        return "Custom" if payload.get("modules") is not None else "Complete"
+    mods = set(licensed_modules(payload))
+    extra = [ADDONS[a] for a in ADDONS if a in mods and a not in EDITIONS[payload["edition"]][1]]
+    return " + ".join([name, *extra])
+
+
 def status(db: Session, today: datetime.date | None = None) -> dict:
     """Where the install stands. ``active`` is False when new work is blocked."""
     today = today or utcnow().date()
     ensure_install(db)
     values = appsettings.stored(db)
-    devices = _device_count(db)
-    out = {"mode": "", "active": True, "message": "", "warning": "", "devices": devices,
+    meraki = _meraki_count(db)
+    out = {"mode": "", "active": True, "message": "", "warning": "", "devices": 0,
+           "physical_devices": _device_count(db), "meraki_orgs": meraki,
+           "meraki_devices_each": MERAKI_DEVICES, "edition": None,
            "max_devices": None, "ends": None, "days_left": None, "licence": None,
            "install_id": values[INSTALL_ID], "development": DEVELOPMENT,
            "modules": list(MODULES), "module_labels": MODULES}
@@ -182,6 +218,10 @@ def status(db: Session, today: datetime.date | None = None) -> dict:
             out["warning"] = f"The installed licence can't be used: {exc}"
             licence = None
 
+    if licence and licence.get("meraki_devices") is not None:
+        out["meraki_devices_each"] = int(licence["meraki_devices"])
+    out["devices"] = devices = out["physical_devices"] + meraki * out["meraki_devices_each"]
+
     if DEVELOPMENT:
         out.update(mode="development", message="Development mode: no licence needed")
         return out
@@ -189,7 +229,8 @@ def status(db: Session, today: datetime.date | None = None) -> dict:
     if licence:
         ends = _date(licence.get("expires"))
         out.update(mode="licensed", licence=_summary(licence), max_devices=licence.get("max_devices"),
-                   ends=ends.isoformat() if ends else None, modules=licensed_modules(licence))
+                   ends=ends.isoformat() if ends else None, modules=licensed_modules(licence),
+                   edition=edition_label(licence))
         who = licence.get("customer") or "?"
         if ends is None:
             out["message"] = f"Licensed to {who}, no end date"
@@ -222,14 +263,15 @@ def status(db: Session, today: datetime.date | None = None) -> dict:
                           f"admin adds a licence on the Settings page.")
     elif out["max_devices"] is not None and devices >= out["max_devices"]:
         out["warning"] = out["warning"] or (
-            f"The licence covers {out['max_devices']} devices and {devices} are in the "
-            f"inventory: no more can be added.")
+            f"The licence covers {out['max_devices']} devices and {devices} are in use: "
+            f"no more can be added.")
     return out
 
 
 def _summary(p: dict) -> dict:
     return {**{k: p.get(k) for k in ("id", "customer", "issued", "expires", "max_devices",
-                                     "install_id", "kind")}, "modules": licensed_modules(p)}
+                                     "install_id", "kind")}, "modules": licensed_modules(p),
+            "edition": edition_label(p)}
 
 
 # --- checks used by the tools -----------------------------------------------------
@@ -252,9 +294,16 @@ def room_for(db: Session, adding: int = 1) -> int | None:
         return None
     room = s["max_devices"] - s["devices"]
     if room < adding:
+        meraki = (f" (including {s['meraki_orgs']} Meraki organisation(s) at "
+                  f"{s['meraki_devices_each']} each)") if s["meraki_orgs"] else ""
         raise HTTPException(403, f"The licence covers {s['max_devices']} devices and "
-                                 f"{s['devices']} are in the inventory")
+                                 f"{s['devices']} are in use{meraki}; this needs {adding} more")
     return room
+
+
+def meraki_room(db: Session) -> None:
+    """Room for one more Meraki organisation (a block of devices). Raises if not."""
+    room_for(db, status(db)["meraki_devices_each"])
 
 
 def has_module(module: str, db: Session | None = None) -> bool:
@@ -314,6 +363,6 @@ def install(body: LicenceIn, db: Session = Depends(get_db),
     audit(db, user.username, "licence.install",
           f"{payload.get('id')} for {payload.get('customer')}, until "
           f"{payload.get('expires') or 'no end date'}, "
-          f"{payload.get('max_devices') or 'any number of'} devices, "
+          f"{payload.get('max_devices') or 'any number of'} devices, {edition_label(payload)}, "
           f"modules {', '.join(licensed_modules(payload))}")
     return status(db)

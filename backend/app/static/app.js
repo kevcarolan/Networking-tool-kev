@@ -3182,7 +3182,9 @@ async function licencePanel() {
     h("dl", { class: "kv" },
       h("dt", {}, "Tools unlocked"), h("dd", {}, h("span", { class: "chips" }, Object.entries(s.module_labels).map(([m, label]) =>
         h("span", { class: `chip ${s.modules.includes(m) ? "" : "off"}`, title: s.modules.includes(m) ? "Unlocked" : "Not in the licence" }, label)))),
-      h("dt", {}, "Devices"), h("dd", {}, s.max_devices == null ? `${s.devices} (no limit)` : `${s.devices} of ${s.max_devices}`),
+      ...(s.edition ? [h("dt", {}, "Edition"), h("dd", {}, s.edition)] : []),
+      h("dt", {}, "Devices"), h("dd", {}, s.max_devices == null ? `${s.devices} (no limit)` : `${s.devices} of ${s.max_devices}`,
+        s.meraki_orgs ? h("small", { class: "muted" }, ` (${s.physical_devices} devices + ${s.meraki_orgs} Meraki organisation${s.meraki_orgs > 1 ? "s" : ""} × ${s.meraki_devices_each})`) : null),
       ...(l ? [h("dt", {}, "Licence"), h("dd", {}, `${l.id}${l.kind === "internal" ? " (internal use)" : ""}, issued ${l.issued}`)] : []),
       h("dt", {}, "Installation ID"), h("dd", {}, h("code", {}, s.install_id))),
     h("p", { class: "muted" }, "Send the installation ID when you ask for a licence. Paste the licence you receive below."),

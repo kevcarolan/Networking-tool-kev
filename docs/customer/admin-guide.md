@@ -54,7 +54,10 @@ Wrong codes are slowed down and written to the activity log. The steps:
   Circuits, Syslog). Others are greyed out with a padlock in the top bar, and their
   scheduled work doesn't run. To add one, ask your supplier for a new licence that
   includes it.
-* **Devices:** how many are in the inventory, and how many the licence covers.
+* **Edition:** Essentials, Professional or Complete, and the Monitoring add-on if you have it.
+* **Devices:** how many are in use, and how many the licence covers. Every device counts,
+  including UPS cards, PDUs and probes; each Cisco Meraki organisation you connect counts as
+  a block of 25 devices.
 * **Installation ID:** send it when you ask for a licence or a renewal.
 * **Adding a licence:** paste the licence text and press **Add licence**. A new licence
   replaces the old one straight away.
