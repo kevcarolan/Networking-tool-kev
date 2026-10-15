@@ -62,3 +62,23 @@ def test_tags_the_commit_that_dated_the_version(tmp_path, monkeypatch):
     # a version dated in a commit whose VERSION file says something else is refused
     commit("2.1.0", "## 2.2.0 (2026-11-01)\n\n## 2.1.0 (2026-10-15)\n- a\n", "dated too early")
     assert release.plan() == []
+
+
+def test_tells_the_workflow_which_releases_were_made(tmp_path, monkeypatch):
+    out = tmp_path / "output"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(out))
+    release.write_output(["v2.1.0"])
+    assert out.read_text() == 'tags=["v2.1.0"]\n'
+    monkeypatch.setattr(release, "plan", lambda: [{"tag": "v2.2.0", "version": "2.2.0", "date": "2026-11-01",
+                                                   "sha": "a" * 40, "notes": "- x"}])
+    out.unlink()
+    assert release.main(["--dry-run"]) == 0
+    assert out.read_text() == "tags=[]\n"  # a dry run makes nothing, so no bundles
+
+
+def test_bundles_are_built_on_the_customers_ubuntu_and_attached():
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+    assert "ubuntu:26.04 deploy/airgap/build-bundle.sh" in workflow and "gh release upload" in workflow
+    sync = (ROOT / "deploy" / "windows" / "Sync-NetCairnRelease.ps1").read_text()
+    # the PC copy checks the SHA-256 before anything replaces the old version
+    assert sync.index("Get-FileHash (Join-Path $incoming") < sync.index("Rename-Item $incoming")

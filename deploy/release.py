@@ -9,9 +9,14 @@ changelog as its notes. The commit's VERSION file must say the same version, or 
 made. A heading "(not released yet)" is skipped. Run again, it does nothing new.
 
     python3 deploy/release.py --dry-run     # what it would do, nothing changed
+
+The workflow then builds each new release's install bundle on Ubuntu and attaches it to the
+release; the owner's PC copies it into OneDrive (deploy/windows/Sync-NetCairnRelease.ps1).
 """
 
 import argparse
+import json
+import os
 import re
 import subprocess
 import sys
@@ -86,7 +91,15 @@ def main(argv=None) -> int:
                      "The install bundle and its SHA-256 come from your supplier.\n")
         subprocess.run(["gh", "release", "create", r["tag"], "--target", r["sha"],
                         "--title", r["version"], "--notes-file", fh.name], check=True, cwd=ROOT)
+    write_output([] if args.dry_run else [r["tag"] for r in todo])
     return 0
+
+
+def write_output(tags: list[str]) -> None:
+    """Tell the workflow which releases were made, so it builds their bundles."""
+    if os.environ.get("GITHUB_OUTPUT"):
+        with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+            fh.write(f"tags={json.dumps(tags)}\n")
 
 
 if __name__ == "__main__":

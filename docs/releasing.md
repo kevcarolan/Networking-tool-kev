@@ -39,13 +39,50 @@ merge is a release: you choose when to ship.
    dated it `v2.1.0` and makes the GitHub release with that changelog section as its
    notes, within a minute or two. Check it under **Releases** on GitHub. (`python3
    deploy/release.py --dry-run` shows what it would do.)
-3. Build the bundle from the tag (`git checkout v2.1.0`, then `deploy/airgap/build-bundle.sh`):
-   it is named `netops-bundle-2.1.0.tar.gz`.
+3. The same workflow then builds the install bundle from the tag on Ubuntu 26.04 and attaches
+   it to the release (`netops-bundle-2.1.0.tar.gz`, its `.sha256` and `MANIFEST.txt`), in
+   about ten minutes. Your PC copies it into OneDrive by itself (below). To build or
+   rebuild the bundle of an existing release: **Actions › Release › Run workflow**, tag
+   `v2.1.0`.
 4. Straight after (or with the next feature), a pull request sets `VERSION` to the next version (usually the next
    minor, 2.2.0) with a new "(not released yet)" section in the changelog.
 
 A fix for an installed version: branch from its tag, fix, set `VERSION` to the patch
 (2.1.1), and release it the same way.
+
+## The bundles in OneDrive
+
+A script on your PC, `deploy/windows/Sync-NetCairnRelease.ps1`, copies the newest release's
+bundle from GitHub into `OneDrive\NetCairn\releases\<version>\` (with the release notes),
+checks its SHA-256 first, and then removes the older version folders (to the OneDrive
+recycle bin, kept 30 days). It runs every day at 08:10 and when you sign in; when there is
+no new release it does nothing. Its log is `%LOCALAPPDATA%\NetCairn\release-sync.log`.
+
+Share the `releases` folder itself with customers, not a version folder: the link then
+stays the same from one release to the next.
+
+One-time set-up on the PC:
+
+1. On GitHub: **Settings › Developer settings › Fine-grained tokens › Generate new token**.
+   Repository access: only this repository. Permissions: **Contents: Read-only**, nothing
+   else. Expiry: a year; put the renewal date in your calendar.
+2. Copy the script from the repository to a folder of your own (not OneDrive), e.g.
+   `C:\NetCairn\`, and in PowerShell (not as administrator):
+
+   ```powershell
+   cd C:\NetCairn
+   Unblock-File .\Sync-NetCairnRelease.ps1
+   powershell -ExecutionPolicy Bypass -File .\Sync-NetCairnRelease.ps1 -SetToken   # paste the token
+   powershell -ExecutionPolicy Bypass -File .\Sync-NetCairnRelease.ps1             # first copy
+   powershell -ExecutionPolicy Bypass -File .\Sync-NetCairnRelease.ps1 -Register   # daily task
+   ```
+
+   The token is stored encrypted for your Windows account only
+   (`%LOCALAPPDATA%\NetCairn\github-token.dat`). `-Keep 2` keeps the previous version
+   too; `-Folder` puts the releases somewhere else (give the same options with
+   `-Register`).
+
+If the log says the token was refused, make a new one and run `-SetToken` again.
 
 ## Upgrading a site
 
