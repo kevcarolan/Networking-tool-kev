@@ -47,7 +47,16 @@ elif [[ -z "${SKIP_DEBS:-}" ]]; then
   die "run with sudo (needed to download the Ubuntu packages)"
 fi
 
-VERSION="$(date -u +%Y%m%d)-$(git -c safe.directory='*' rev-parse --short HEAD 2>/dev/null || echo nogit)"
+# The version is the VERSION file (docs/releasing.md). A commit tagged v<VERSION> is that
+# release; anything else is a build on the way to it: <VERSION>-dev.<date>.<commit>.
+BASE="$(tr -d '[:space:]' < VERSION)"
+[[ "$BASE" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "VERSION must be MAJOR.MINOR.PATCH, e.g. 2.1.0 (it is '$BASE')"
+COMMIT="$(git -c safe.directory='*' rev-parse --short HEAD 2>/dev/null || echo nogit)"
+if [[ "$(git -c safe.directory='*' tag --points-at HEAD 2>/dev/null)" == *"v$BASE"* ]]; then
+  VERSION="$BASE"
+else
+  VERSION="$BASE-dev.$(date -u +%Y%m%d).$COMMIT"
+fi
 if [[ -n "$(git -c safe.directory='*' status --porcelain 2>/dev/null)" ]]; then
   VERSION="${VERSION}-dirty"
   echo "WARNING: the working tree has uncommitted changes; they are NOT in the bundle (git archive uses HEAD)."

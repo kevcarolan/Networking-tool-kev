@@ -83,6 +83,7 @@ label input, label select, label textarea { color: var(--text); }
   padding: 10px 20px; background: var(--surface); border-bottom: 1px solid var(--border);
 }
 .brand { font-weight: 700; margin-right: 12px; display: inline-flex; align-items: center; }
+.app-version { font-size: 12px; margin-right: 12px; }
 .brand-mark { height: 1.5em; width: auto; margin-right: 8px; vertical-align: -0.35em; }
 .site-name { margin-right: 12px; font-size: 14px; }
 nav { display: flex; gap: 4px; flex-wrap: wrap; }

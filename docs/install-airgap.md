@@ -116,7 +116,7 @@ The build takes a couple of minutes. It writes these files to `dist/`:
 
 | File | What it is |
 |---|---|
-| `netops-bundle-<date>-<commit>.tar.gz` | The bundle (about 90 MB): app, Python packages, Ubuntu packages, checksums |
+| `netops-bundle-<version>.tar.gz` | The bundle (about 90 MB): app, Python packages, Ubuntu packages, checksums. `<version>` is e.g. `2.1.0` for a release, or `2.1.0-dev.<date>.<commit>` for a build between releases ([releasing.md](releasing.md)) |
 | `….tar.gz.sha256` | Its SHA-256 |
 | `….MANIFEST.txt` | **The list of every package and version in the bundle, with the vulnerability report.** Attach it to the change ticket |
 | `….iso` and `….iso.sha256` | With `MAKE_ISO=1`: a CD image holding the three files above, for vSphere (§4) |

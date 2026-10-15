@@ -35,6 +35,7 @@ from app.tools.inventory import layout as layout_api
 from app.tools.inventory import sites as sites_api
 from app.tools.monitoring import api as monitoring_api
 from app.tools.syslog import api as syslog_api
+from app.version import VERSION
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -86,7 +87,7 @@ def create_app(settings: Settings | None = None, fetcher=fetch_config,
         alert_service.stop()
 
     docs = settings.api_docs
-    app = FastAPI(title=settings.product_name, lifespan=lifespan, redoc_url=None,
+    app = FastAPI(title=settings.product_name, version=VERSION, lifespan=lifespan, redoc_url=None,
                   docs_url="/docs" if docs else None,
                   openapi_url="/openapi.json" if docs else None)
     app.state.settings = settings

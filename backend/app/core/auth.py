@@ -354,8 +354,10 @@ def logout(request: Request):
 
 def signed_in(request: Request, user: User) -> dict:
     """The signed-in user, as the page needs it after signing in and on every reload."""
+    from app.version import VERSION
+
     return {**user.out(), "site_name": request.app.state.settings.site_name,
-            "demo": getattr(request.app.state, "demo", False)}
+            "demo": getattr(request.app.state, "demo", False), "version": VERSION}
 
 
 @router.get("/me")
