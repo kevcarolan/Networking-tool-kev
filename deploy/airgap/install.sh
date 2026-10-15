@@ -53,6 +53,21 @@ PYTHON="python$PYVER"
 REL="$PREFIX/releases/$VERSION"
 APP="$BUNDLE/app"
 
+# Versions are MAJOR.MINOR.PATCH (docs/releasing.md); a build between releases is
+# "2.1.0-dev.<date>.<commit>". Never go back to an older version: its code would not know
+# the newer database. Bundles from before versioning (dated, e.g. 20261014-a5fa5a2) count
+# as older than any version.
+semver() { [[ "$1" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+) ]] && printf '%05d%05d%05d' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}"; }
+RUNNING=""
+[[ -L "$PREFIX/current" ]] && RUNNING="$(basename "$(readlink -f "$PREFIX/current")")"
+if [[ -n "$RUNNING" && "$RUNNING" != "$VERSION" ]]; then
+  say "Upgrading from $RUNNING to $VERSION"
+  new_v="$(semver "$VERSION" || true)"; old_v="$(semver "$RUNNING" || true)"
+  if [[ -n "$old_v" && ( -z "$new_v" || "$new_v" < "$old_v" ) && -z "${ALLOW_DOWNGRADE:-}" ]]; then
+    die "this bundle ($VERSION) is older than the installed version ($RUNNING). Install $RUNNING or newer (ALLOW_DOWNGRADE=1 only with a database backup from that version)"
+  fi
+fi
+
 say "Checking bundle integrity ($VERSION)"
 # The files must be root's own: anyone who could change them could run commands as root.
 other="$(find "$BUNDLE" \( ! -user root -o -perm -0002 -o -perm -0020 \) -print -quit)"

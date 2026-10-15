@@ -208,6 +208,10 @@ remote); never sync the two automatically.
 * Work on a feature branch and never push to `main`. The user merges through pull requests.
 * Nothing that changes a device (copy, boot, reload, install) runs without an explicit
   admin action, a maintenance window and pre-checks. See the safety rules in `docs/firmware.md`.
+* **Versions** ([docs/releasing.md](docs/releasing.md)): MAJOR.MINOR.PATCH in the `VERSION`
+  file (the next release; `app/version.py` reads it). Every PR that changes what people see
+  adds a plain-words line to the "(not released yet)" section of `CHANGELOG.md`. No version
+  numbers in branch names. The version is never shown before sign-in (health, sign-in page).
 * **At the end of every session, update `docs/PROGRESS.md`:** tick finished items, add a
   line to the session log, and record new decisions and open questions.
 * Keep the docs in plain language. The users are network engineers, not developers.

@@ -18,6 +18,7 @@ from app.core.auth import User, require_admin
 from app.core.db import get_db, utcnow
 from app.core.models import Device
 from app.core.platforms import uses_ssh
+from app.version import VERSION
 
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 LIST = 15  # names listed per line of the report
@@ -33,6 +34,7 @@ def build(db: Session, settings, days: int = 7, now: datetime | None = None) -> 
     add = out["sections"].append
     lic = licence.status(db)
     add({"key": "overview", "title": "Overview", "rows": [
+        ("Version", VERSION),
         ("Devices managed", len(devices)),
         *_inventory_rows(db),
         ("Licence", lic.get("message") or lic.get("mode", "")),

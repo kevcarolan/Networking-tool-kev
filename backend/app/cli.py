@@ -305,6 +305,13 @@ def _db_status(_args) -> int:
     return 0
 
 
+def _version(args) -> int:
+    from app.version import VERSION
+
+    print(VERSION)
+    return 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -328,6 +335,7 @@ def main(argv=None) -> int:
     p.set_defaults(func=_capture)
     sub.add_parser("upgrades-running").set_defaults(func=_upgrades_running)
     sub.add_parser("db-status").set_defaults(func=_db_status)
+    sub.add_parser("version", help="the installed version").set_defaults(func=_version)
     args = parser.parse_args(argv)
     if args.cmd not in ("hash-password", "totp-secret"):
         from app.core import ssh
