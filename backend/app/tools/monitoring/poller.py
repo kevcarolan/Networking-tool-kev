@@ -147,6 +147,22 @@ def load_jobs(db: Session, cipher) -> list[Job]:
     return jobs
 
 
+ACTIVE_ROLES = ("active", "primary")
+
+
+def failovers(before: dict[str, str], now: dict[str, str]) -> list[dict]:
+    """A failover: the unit that was active (a stack's active switch, an HA pair's active or
+    primary unit) isn't any more, and another one is. Keys are "<kind>:<unit name>"."""
+    events = []
+    for kind, label in (("stack", "Stack"), ("ha", "HA")):
+        was = sorted(k.split(":", 1)[1] for k, role in before.items() if k.startswith(kind + ":") and role in ACTIVE_ROLES)
+        is_ = sorted(k.split(":", 1)[1] for k, role in now.items() if k.startswith(kind + ":") and role in ACTIVE_ROLES)
+        if was and is_ and was != is_:
+            events.append({"kind": "failover", "detail": f"{label} failover: {', '.join(is_)} is now active "
+                                                          f"(was {', '.join(was)})"})
+    return events
+
+
 def load_sensors(db: Session) -> list[dict]:
     """The custom SNMP sensors that are on, as the poller uses them."""
     from app.tools.monitoring.models import Sensor
@@ -335,6 +351,7 @@ class Poller:
         if known and not readings:  # the readers that answered before found nothing: start again
             readings, sources = await hw.read(self.snmp, job.snmp, job.platform)
         hw.judge(readings, self.settings.monitor_cpu_warn, self.settings.monitor_mem_warn)
+        self._optics_on_down_ports(job.device_id, readings)
         mine = [x for x in self.sensors if sensors.applies(x, job.device_id, job.platform, job.site)]
         if mine:
             try:
@@ -346,6 +363,9 @@ class Poller:
         problems = hw.problems(readings)
         before = old.get("problems") or {}
         events = []
+        roles = {f"{r.kind}:{r.name}": r.unit for r in readings if r.kind in hw.ROLE_KINDS}
+        if old.get("ts"):
+            events += failovers(old.get("roles") or {}, roles)
         if old.get("ts"):  # not the first read: what started and what cleared
             for key, text in problems.items():
                 if key not in before:
@@ -356,7 +376,7 @@ class Poller:
         record = {"device_id": job.device_id, "ts": now, "status": hw.worst(readings),
                   "readings": [r.as_dict() for r in readings], "problems": problems,
                   "sources": sources, "discovered": now if not known else old.get("discovered"),
-                  "error": ""}
+                  "error": "", "roles": roles}
         self.health[job.device_id] = record
         samples = []
         for kind in ("cpu", "memory"):
@@ -370,6 +390,24 @@ class Poller:
             if r.kind == "sensor" and isinstance(r.value, (int, float)) and not isinstance(r.value, bool):
                 samples.append((now, f"s:{r.name}"[:100], float(r.value)))
         return record, samples, events
+
+    def _optics_on_down_ports(self, device_id: int, readings: list) -> None:
+        """An optic's light is only a problem on a port that is up: a port switched off (or
+        with nothing plugged in at the far end) has no light by design. The sensor is named
+        after its port ("Te1/1/1 Receive Power Sensor"), matched to the interfaces read."""
+        optics = [r for r in readings if r.kind == "optic" and r.status in (hw.WARNING, hw.CRITICAL)]
+        if not optics:
+            return
+        ports = {}
+        for i in self.store.interfaces(device_id):
+            for n in (i.get("name"), i.get("descr")):
+                if n:
+                    ports[str(n).lower()] = i.get("oper")
+        for r in optics:
+            port = r.name.split()[0].lower() if r.name else ""
+            oper = ports.get(port)
+            if oper is not None and oper != 1:
+                r.status, r.note = hw.UNKNOWN, "port down"
 
     def _interfaces_due(self, device_id: int, now: float) -> bool:
         if device_id not in self.if_prev:

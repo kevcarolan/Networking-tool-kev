@@ -16,6 +16,12 @@ itself, and the installer refuses to go back to an older version.
   the report and with `netops-cli version`; bundles are named by version; the installer
   says "Upgrading from … to …" and refuses to install an older version.
 
+- **Stacks, HA and optics**: the Monitoring page now shows each switch in a Cisco stack, the
+  units of ASA, FortiGate and Palo Alto HA pairs, Cisco optics' light levels and the PoE
+  budget used. A stack member or HA peer lost, an optic past its own limits (on a port that
+  is up) or PoE nearly used up is a hardware problem; a change of active unit is a
+  **Failover** event, emailed with the monitoring alerts.
+
 **Fixed**
 - The Add/Edit device window (and other two-column forms) no longer runs off the right-hand
   side, hiding the Save button.

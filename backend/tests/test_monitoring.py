@@ -507,7 +507,7 @@ def test_every_platform_has_health_readers():
     assert set(PLATFORMS) <= set(hw.PLATFORM_PROBES), set(PLATFORMS) - set(hw.PLATFORM_PROBES)
     assert all(p in hw.PROBES for names in hw.PLATFORM_PROBES.values() for p in names)
     assert hw.probes_for("arista_eos") == hw.GENERIC  # the standard MIBs
-    assert hw.probes_for("cisco_ios")[-3:] == hw.GENERIC  # after Cisco's own
+    assert hw.probes_for("cisco_ios")[-len(hw.GENERIC):] == hw.GENERIC  # after Cisco's own
 
 
 @pytest.mark.parametrize("platform, fault, expected", [

@@ -525,7 +525,7 @@ td.actions { display: table-cell; }
 .tile.mon-off .num, .tile.mon-unknown .num { color: var(--idle); }
 .badge.mon-up, .badge.ev-up, .badge.ev-snmp_ok { background: var(--ok-bg); color: var(--ok); }
 .badge.mon-down, .badge.ev-down { background: var(--fail-bg); color: var(--fail); font-weight: 600; }
-.badge.mon-warning, .badge.ev-restarted, .badge.ev-snmp_failed { background: var(--warn-bg); color: var(--warn); }
+.badge.mon-warning, .badge.ev-restarted, .badge.ev-snmp_failed, .badge.ev-failover { background: var(--warn-bg); color: var(--warn); }
 .badge.mon-unknown, .badge.mon-waiting, .badge.mon-off { background: var(--idle-bg); color: var(--idle); }
 .badge.mon-maint { background: transparent; border: 1px solid var(--accent); color: var(--accent); margin-left: 4px; }
 #mon-table tbody tr { cursor: pointer; }

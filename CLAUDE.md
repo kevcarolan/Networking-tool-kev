@@ -155,7 +155,11 @@ remote); never sync the two automatically.
   Alembic) and writes `status.json`; the web app only reads. Interfaces: `ifaces.py`
   (IF-MIB columns, counters to rates). Hardware health: `health.py` (`PLATFORM_PROBES`, one
   entry per platform, a test checks; readers from vendor MIB docs until confirmed in the lab;
-  the simulator answers them in `app/demo/monitor.py` `health_mib`). Read-only towards devices:
+  the simulator answers them in `app/demo/monitor.py` `health_mib`). Stacks and HA pairs
+  are readings of kind `stack`/`ha` whose `unit` is the role; `poller.failovers()` compares
+  roles with the last read for **failover** events. Optics (`optic`, Cisco dBm with the
+  transceiver's own thresholds) only count as problems on ports that are up; PoE (`poe`,
+  POWER-ETHERNET-MIB) is a generic reader. Read-only towards devices:
   ping sockets (`ping.py`) and SNMP GET/GETBULK (`snmp.py`, pysnmp), never SET, no traps
   (syslog covers device messages). SNMP profiles (`mon_profiles`, secrets encrypted) need
   `inventory:credentials`; choosing a device's profile needs `inventory:addresses`; area
