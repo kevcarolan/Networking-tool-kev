@@ -209,6 +209,15 @@ remote); never sync the two automatically.
   show command a driver or check sends must pass `capture.is_read_only`; the capture refuses
   anything else.
 
+## Website
+
+The public website is `website/` (plain HTML, no scripts or trackers; `python3 website/build.py`
+writes `website/public/`, which the owner uploads to their web host; see `website/README.md`).
+Values such as the email address, prices and Stripe links are in `website/site.json`. It is
+left out of the install bundle (`.gitattributes` export-ignore). The product name may appear
+on the website. Claims on it must match what the product does today (upgrade drivers not yet
+lab-tested are marked so).
+
 ## Working rules
 
 * Run the tests before every commit: `cd backend && python -m venv .venv && . .venv/bin/activate && pip install -r requirements-dev.txt && pytest -q`.

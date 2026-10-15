@@ -1,0 +1,22 @@
+{
+  "_help": "The values the website pages use. Change them here, run `python3 website/build.py`, and upload website/public/. A price or a Stripe link left as null shows 'Ask us' / an email link instead.",
+  "name": "NetCairn",
+  "domain": "netcairn.ie",
+  "base_url": "https://netcairn.ie",
+  "email": "hello@netcairn.ie",
+  "company": "NetCairn",
+  "country": "Ireland",
+  "currency": "€",
+  "bands": ["50", "250", "1000", "unlimited"],
+  "prices": {
+    "essentials": {"50": null, "250": null, "1000": null, "unlimited": null},
+    "professional": {"50": null, "250": null, "1000": null, "unlimited": null},
+    "complete": {"50": null, "250": null, "1000": null, "unlimited": null},
+    "monitoring": {"50": null, "250": null, "1000": null, "unlimited": null}
+  },
+  "stripe_links": {
+    "essentials": {"50": null, "250": null, "1000": null},
+    "professional": {"50": null, "250": null, "1000": null},
+    "complete": {"50": null, "250": null, "1000": null}
+  }
+}

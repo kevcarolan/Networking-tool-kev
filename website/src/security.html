@@ -1,0 +1,62 @@
+<!-- title: Security -->
+<!-- description: How the server is built and installed: self-hosted, no outbound connections, read-only towards devices, offline licences, signed and checksummed install bundles. -->
+<section class="hero page-hero">
+  <div class="wrap">
+    <h1>A tool that holds your device logins should be hard to get into</h1>
+    <p class="lede">It keeps credentials for every switch and firewall you own, so we designed it to stay inside your network and to change nothing on a device without a person deciding to.</p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <div class="trail">
+      <p class="eyebrow">Where it runs</p>
+      <h2>Inside your network, on your server</h2>
+    </div>
+    <div class="facts">
+      <div class="fact"><h3>No cloud, no call home</h3><p>There is no hosted part to the product. The server makes no connection to the internet unless you connect a Cisco Meraki organisation, and its firewall blocks outbound traffic by default.</p></div>
+      <div class="fact"><h3>Works air-gapped</h3><p>It installs from one offline bundle: the application, every Python package and the Ubuntu packages it needs. Nothing is downloaded on the server.</p></div>
+      <div class="fact"><h3>Checked before it installs</h3><p>Each bundle comes with a SHA-256 checksum, which the installer checks before installing anything, and a list of every package and version in it for your change ticket. Every bundle is checked for known vulnerabilities when it's built.</p></div>
+      <div class="fact"><h3>Offline licences</h3><p>A licence is a signed file pasted into the settings page and checked on the server. No licence server, no phone-home, no usage reports.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="section alt">
+  <div class="wrap">
+    <div class="trail">
+      <p class="eyebrow">Towards your devices</p>
+      <h2>Read-only unless a person starts a change</h2>
+    </div>
+    <div class="facts">
+      <div class="fact"><h3>Read-only checks</h3><p>Backups and version checks send only show commands. Monitoring uses ping and SNMP reads; it never sends an SNMP SET.</p></div>
+      <div class="fact"><h3>Upgrades need a person, a window and passing checks</h3><p>An upgrade only runs when an admin with upgrade rights starts it, inside a maintenance window, after the pre-checks pass and the device's name has been typed to confirm. Each platform must also be switched on for live upgrades in the server's own settings.</p></div>
+      <div class="fact"><h3>Images are pushed, never pulled</h3><p>Firmware is sent from the server over SSH or the device's own API. No device is ever told to fetch anything.</p></div>
+      <div class="fact"><h3>SSH host keys checked</h3><p>Each device's SSH key is recorded the first time and checked on every connection after, so a device that's been swapped or spoofed is noticed.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <div class="trail">
+      <p class="eyebrow">People and data</p>
+      <h2>Who can see and do what</h2>
+    </div>
+    <div class="facts">
+      <div class="fact"><h3>Your directory</h3><p>Active Directory over LDAPS, local users, or both, with two-factor sign-in from any authenticator app, and a break-glass admin for when the directory is down.</p></div>
+      <div class="fact"><h3>Permissions per area</h3><p>View, change or manage, separately for inventory, backups, firmware, upgrades, circuits, syslog and monitoring. Seeing configs and using credentials are permissions of their own.</p></div>
+      <div class="fact"><h3>Secrets encrypted</h3><p>Device passwords and SNMP keys are encrypted in the database. Lines that look like secrets are never shown in alerts or reports.</p></div>
+      <div class="fact"><h3>An activity log</h3><p>Every change made through it is recorded with who, what and when, and the server can forward its own logs to your SIEM.</p></div>
+    </div>
+    <p class="note">Admins get a hardening guide covering the VM, operating system, firewall, accounts and quarterly checks. Ask us for a copy before you buy.</p>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap">
+    <h2>Questions from your security team?</h2>
+    <p>Send them to <span class="mono">{{email}}</span>. We'll answer them in writing, with the documentation.</p>
+    <div class="actions"><a class="btn primary" href="mailto:{{email}}?subject=Security%20questions">Email us</a></div>
+  </div>
+</section>
