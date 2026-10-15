@@ -28,13 +28,20 @@ page, `/api/health`): an exact version tells an attacker which known problems to
 
 ## Making a release
 
+A **merge** puts a change into `main`; a **release** marks one point of `main` as a version
+(a tag, `v2.1.0`, and a GitHub release with its notes) for customers to install. Not every
+merge is a release: you choose when to ship.
+
 1. A pull request "Release 2.1.0": the changelog heading gets the date instead of "(not
    released yet)". Nothing else.
-2. After it is merged: tag the merge commit `v2.1.0` and make a GitHub release with the
-   changelog section as its notes.
+2. Merge it. That's all: the **Release** workflow (`.github/workflows/release.yml`, which
+   runs `deploy/release.py`) sees the dated heading with no tag yet, tags the commit that
+   dated it `v2.1.0` and makes the GitHub release with that changelog section as its
+   notes, within a minute or two. Check it under **Releases** on GitHub. (`python3
+   deploy/release.py --dry-run` shows what it would do.)
 3. Build the bundle from the tag (`git checkout v2.1.0`, then `deploy/airgap/build-bundle.sh`):
    it is named `netops-bundle-2.1.0.tar.gz`.
-4. Straight after, a pull request sets `VERSION` to the next version (usually the next
+4. Straight after (or with the next feature), a pull request sets `VERSION` to the next version (usually the next
    minor, 2.2.0) with a new "(not released yet)" section in the changelog.
 
 A fix for an installed version: branch from its tag, fix, set `VERSION` to the patch

@@ -1,0 +1,27 @@
+# Publishes a release when a "Release x.y.z" pull request is merged: deploy/release.py tags
+# the commit that dated the version's changelog heading and makes the GitHub release with
+# that section as its notes. Every other push to main finds nothing to do.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write  # tags and releases
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # the whole history and the tags
+      - run: python3 deploy/release.py
+        env:
+          GH_TOKEN: ${{ github.token }}
