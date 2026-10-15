@@ -14,13 +14,16 @@ critical, failed, not present). A temperature with no status from the device is 
 judged. CPU and memory are judged against the Settings page thresholds by the poller.
 """
 
+import re
 from dataclasses import asdict, dataclass
 
 from app.tools.monitoring.snmp import SnmpError
 
 OK, WARNING, CRITICAL, ABSENT, UNKNOWN = "ok", "warning", "critical", "absent", "unknown"
 KINDS = {"cpu": "CPU", "memory": "Memory", "temperature": "Temperature", "fan": "Fan",
-         "psu": "Power supply", "sensor": "Sensor"}
+         "psu": "Power supply", "sensor": "Sensor", "stack": "Stack member", "ha": "HA unit",
+         "optic": "Optic", "poe": "PoE"}
+ROLE_KINDS = ("stack", "ha")  # their ``unit`` is the role: a change of active unit is a failover
 ENT_NAME = "1.3.6.1.2.1.47.1.1.1.1.7"  # ENTITY-MIB entPhysicalName
 ENT_DESCR = "1.3.6.1.2.1.47.1.1.1.1.2"
 
@@ -34,6 +37,7 @@ class Reading:
     source: str = ""
     unit: str = ""  # custom sensors (sensors.py)
     sensor: str = ""  # custom sensors: the sensor's own name (a table row's name adds its label)
+    note: str = ""  # why it is a problem, in words ("removed from the stack", "peer lost")
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -118,16 +122,28 @@ async def ucd_mem(c, t) -> list[Reading]:
     return [Reading("memory", "Memory", round(100 * max(used, 0) / total, 1), source="UCD-SNMP-MIB")]
 
 
-async def entity_sensor(c, t, base: str = "1.3.6.1.2.1.99.1.1.1", source: str = "ENTITY-SENSOR-MIB") -> list[Reading]:
+async def entity_sensor(c, t, base: str = "1.3.6.1.2.1.99.1.1.1", source: str = "ENTITY-SENSOR-MIB",
+                        optics: bool = False) -> list[Reading]:
     """Temperatures (celsius) and fans (rpm) from ENTITY-SENSOR-MIB (RFC 3433) or Cisco's
-    copy of it: type, scale, precision, value and status per physical entity."""
+    copy of it: type, scale, precision, value and status per physical entity. ``optics``
+    (Cisco only): also the transceivers' light levels (dBm), judged by their own alarm
+    thresholds (entSensorThresholdTable: a threshold crossed now, minor = warning, major or
+    critical = critical)."""
     kinds = await _walk(c, t, f"{base}.1")
-    wanted = {k: v for k, v in kinds.items() if v in (8, 10)}  # 8 celsius, 10 rpm
+    wanted = {k: v for k, v in kinds.items() if v in (8, 10) or (optics and v == 14)}  # 8 °C, 10 rpm, 14 dBm
     if not wanted:
         return []
     scale, prec = await _walk(c, t, f"{base}.2"), await _walk(c, t, f"{base}.3")
     value, status = await _walk(c, t, f"{base}.4"), await _walk(c, t, f"{base}.5")
     names = await _names(c, t)
+    crossed: dict[str, int] = {}  # sensor -> worst severity of a threshold crossed now
+    if any(v == 14 for v in wanted.values()):
+        th = "1.3.6.1.4.1.9.9.91.1.2.1.1"
+        severity, evaluation = await _walk(c, t, f"{th}.2"), await _walk(c, t, f"{th}.5")
+        for key, ev in evaluation.items():
+            if ev == 1:  # true: crossed now
+                k = key.rsplit(".", 1)[0]
+                crossed[k] = max(crossed.get(k, 0), int(_num(severity.get(key)) or 10))
     out = []
     for k, kind in wanted.items():
         raw = _num(value.get(k))
@@ -139,7 +155,14 @@ async def entity_sensor(c, t, base: str = "1.3.6.1.2.1.99.1.1.1", source: str = 
             v = v * 10 ** ((int(scale[k]) - 9) * 3)
         st = {1: OK, 2: UNKNOWN, 3: CRITICAL}.get(status.get(k), UNKNOWN)
         name = names.get(k) or f"Sensor {k}"
-        if kind == 8:
+        if kind == 14:
+            sev = crossed.get(k, 0)
+            short = re.sub(r"\s+(Receive|Transmit) Power Sensor$", lambda m: f" {m.group(1).lower()}", name)
+            short = re.sub(r"\s+Transceiver\s+", " ", short)
+            out.append(Reading("optic", short, round(v, 2), CRITICAL if sev >= 20 else WARNING if sev else
+                               (OK if st == OK else UNKNOWN), source, unit="dBm",
+                               note="beyond its alarm level" if sev >= 20 else "beyond its warning level" if sev else ""))
+        elif kind == 8:
             out.append(Reading("temperature", name, round(v, 1), st, source))
         else:
             out.append(Reading("fan", name, round(v), st if not (st == OK and v == 0) else CRITICAL, source))
@@ -197,7 +220,119 @@ async def cisco_envmon(c, t) -> list[Reading]:
 
 
 async def cisco_entity_sensor(c, t) -> list[Reading]:
-    return await entity_sensor(c, t, "1.3.6.1.4.1.9.9.91.1.1.1.1", "CISCO-ENTITY-SENSOR-MIB")
+    return await entity_sensor(c, t, "1.3.6.1.4.1.9.9.91.1.1.1.1", "CISCO-ENTITY-SENSOR-MIB", optics=True)
+
+
+# Stacks and HA pairs: each unit is a reading whose ``unit`` is its role; the poller notices
+# when the active unit changes (a failover) by comparing the roles with the last read.
+
+STACK_ROLE = {1: "active", 2: "member", 3: "not a member", 4: "standby"}
+STACK_STATE = {1: "waiting", 2: "starting", 3: "added", 4: "ready", 5: "SDM template mismatch",
+               6: "software version mismatch", 7: "feature mismatch", 8: "new active starting",
+               9: "configured but not present", 10: "invalid", 11: "removed from the stack"}
+
+
+async def cisco_stack(c, t) -> list[Reading]:
+    """CISCO-STACKWISE-MIB cswSwitchInfoTable: each switch's number, role and state. A stack
+    of one isn't shown."""
+    base = "1.3.6.1.4.1.9.9.500.1.2.1.1"
+    states = await _walk(c, t, f"{base}.6")
+    if len(states) < 2:
+        return []
+    roles, nums = await _walk(c, t, f"{base}.3"), await _walk(c, t, f"{base}.1")
+    out = []
+    for k, st in states.items():
+        st = int(_num(st) or 0)
+        name = f"Switch {nums.get(k)}" if nums.get(k) else f"Unit {k}"
+        status = OK if st == 4 else CRITICAL if st in (5, 6, 7, 9, 10, 11) else WARNING
+        out.append(Reading("stack", name, None, status, "CISCO-STACKWISE-MIB",
+                           unit=STACK_ROLE.get(int(_num(roles.get(k)) or 0), ""),
+                           note="" if status == OK else STACK_STATE.get(st, f"state {st}")))
+    return out
+
+
+ASA_UNIT = {"6": "Primary unit", "7": "Secondary unit"}
+ASA_VALUE = {2: "up", 3: "down", 4: "error", 9: "active", 10: "standby"}
+
+
+async def asa_failover(c, t) -> list[Reading]:
+    """CISCO-FIREWALL-MIB cfwHardwareStatusTable rows 6 and 7: the failover units. Nothing
+    when failover isn't set up."""
+    base = "1.3.6.1.4.1.9.9.147.1.2.1.1.1"
+    values, details = await _walk(c, t, f"{base}.3"), await _walk(c, t, f"{base}.4")
+    rows = {k: int(_num(values.get(k)) or 0) for k in ASA_UNIT if k in values}
+    if not any(v in (9, 10) for v in rows.values()):
+        return []  # "Failover Off": a single firewall
+    out = []
+    for k, v in rows.items():
+        ok = v in (9, 10)
+        out.append(Reading("ha", ASA_UNIT[k], None, OK if ok else CRITICAL, "CISCO-FIREWALL-MIB",
+                           unit=ASA_VALUE.get(v, "unknown"),
+                           note="" if ok else f"failover peer {ASA_VALUE.get(v, 'not answering')}"
+                                              + (f" ({str(details.get(k))[:60]})" if details.get(k) else "")))
+    return out
+
+
+async def fortinet_ha(c, t) -> list[Reading]:
+    """FORTINET-FORTIGATE-MIB: HA mode, and per member its name, whether its configuration is
+    in sync, and which one is the primary."""
+    mode = _num((await c.get(t, ["1.3.6.1.4.1.12356.101.13.1.1.0"])).get("1.3.6.1.4.1.12356.101.13.1.1.0"))
+    if mode in (None, 1):  # standalone
+        return []
+    base = "1.3.6.1.4.1.12356.101.13.2.1.1"
+    serials, hosts = await _walk(c, t, f"{base}.2"), await _walk(c, t, f"{base}.11")
+    sync, primary = await _walk(c, t, f"{base}.12"), await _walk(c, t, f"{base}.16")
+    out = []
+    for k, serial in serials.items():
+        insync = _num(sync.get(k)) == 1
+        role = "primary" if primary.get(k) and str(primary.get(k)) == str(serial) else "secondary"
+        out.append(Reading("ha", str(hosts.get(k) or serial), None, OK if insync else WARNING,
+                           "FORTINET-FORTIGATE-MIB", unit=role, note="" if insync else "configuration not in sync"))
+    if len(out) == 1:
+        out.append(Reading("ha", "HA peer", None, CRITICAL, "FORTINET-FORTIGATE-MIB", unit="missing",
+                           note="the cluster has only one member"))
+    return out
+
+
+async def panos_ha(c, t) -> list[Reading]:
+    """PAN-COMMON-MIB panSysHAMode, panSysHAState (this unit) and panSysHAPeerState."""
+    oids = {"mode": "1.3.6.1.4.1.25461.2.1.2.1.13.0", "local": "1.3.6.1.4.1.25461.2.1.2.1.11.0",
+            "peer": "1.3.6.1.4.1.25461.2.1.2.1.12.0"}
+    got = await c.get(t, list(oids.values()))
+    v = {k: str(got.get(o) or "").strip().lower() for k, o in oids.items()}
+    if not v["mode"] or v["mode"] == "disabled":
+        return []
+    good = ("active", "passive", "active-primary", "active-secondary")
+    out = []
+    for key, name in (("local", "This unit"), ("peer", "HA peer")):
+        ok = v[key] in good
+        out.append(Reading("ha", name, None, OK if ok else CRITICAL, "PAN-COMMON-MIB", unit=v[key] or "unknown",
+                           note="" if ok else f"{'peer' if key == 'peer' else 'this unit'} is {v[key] or 'not answering'}"))
+    return out
+
+
+async def poe(c, t) -> list[Reading]:
+    """POWER-ETHERNET-MIB pethMainPseTable (any vendor): each PoE power supply's budget, what
+    is drawn, and whether it works. Warning at the device's own usage threshold (else 90%)."""
+    base = "1.3.6.1.2.1.105.1.3.1.1"
+    budget = await _walk(c, t, f"{base}.2")
+    if not budget:
+        return []
+    status, used, limit = await _walk(c, t, f"{base}.3"), await _walk(c, t, f"{base}.4"), await _walk(c, t, f"{base}.5")
+    out = []
+    for k, watts in budget.items():
+        total, draw = _num(watts), _num(used.get(k))
+        if not total:
+            continue
+        pct = round(100 * (draw or 0) / total)
+        at = int(_num(limit.get(k)) or 0) or 90
+        faulty = _num(status.get(k)) == 3
+        status_ = CRITICAL if faulty else WARNING if pct >= at else OK
+        name = "PoE" if len(budget) == 1 else f"PoE {k}"
+        out.append(Reading("poe", name, round(draw) if draw is not None else None, status_, "POWER-ETHERNET-MIB",
+                           unit=f"W of {total:g} W",
+                           note="power supply faulty" if faulty else f"{pct}% of the budget used" if status_ != OK else ""))
+    return out
 
 
 async def cisco_fru(c, t) -> list[Reading]:
@@ -399,18 +534,20 @@ PROBES = {
     "cisco_entity_sensor": cisco_entity_sensor, "cisco_fru": cisco_fru, "cisco_smb_cpu": cisco_smb_cpu,
     "juniper": juniper, "fortinet": fortinet, "hp_procurve": hp_procurve, "extreme": extreme,
     "huawei": huawei, "mikrotik": mikrotik, "checkpoint": checkpoint, "aruba_aos8": aruba_aos8,
+    "cisco_stack": cisco_stack, "asa_failover": asa_failover, "fortinet_ha": fortinet_ha,
+    "panos_ha": panos_ha, "poe": poe,
 }
-GENERIC = ["host_cpu", "host_mem", "entity_sensor"]
+GENERIC = ["host_cpu", "host_mem", "entity_sensor", "poe"]
 PLATFORM_PROBES: dict[str, list[str]] = {
-    "cisco_ios": ["cisco_cpu", "cisco_mempool", "cisco_envmon", "cisco_entity_sensor", "cisco_fru"],
+    "cisco_ios": ["cisco_cpu", "cisco_mempool", "cisco_envmon", "cisco_entity_sensor", "cisco_fru", "cisco_stack"],
     "cisco_nxos": ["cisco_cpu", "cisco_entity_sensor", "cisco_fru"],
     "cisco_xr": ["cisco_cpu", "cisco_entity_sensor", "cisco_fru"],
-    "cisco_asa": ["cisco_cpu", "cisco_mempool", "cisco_entity_sensor"],
+    "cisco_asa": ["cisco_cpu", "cisco_mempool", "cisco_entity_sensor", "asa_failover"],
     "cisco_ftd": ["cisco_cpu", "cisco_mempool", "cisco_entity_sensor"],
     "cisco_smb": ["cisco_smb_cpu"],
     "juniper_junos": ["juniper"],
-    "fortinet_fortios": ["fortinet"],
-    "paloalto_panos": [],
+    "fortinet_fortios": ["fortinet", "fortinet_ha"],
+    "paloalto_panos": ["panos_ha"],
     "checkpoint_gaia": ["checkpoint", "ucd_mem"],
     "arista_eos": [],
     "aruba_aoscx": [],
@@ -487,6 +624,14 @@ def problems(readings: list[Reading]) -> dict[str, str]:
         if r.kind == "sensor":
             from app.tools.monitoring.sensors import problem_text
             out[key] = problem_text(r)
+        elif r.kind == "stack":
+            out[key] = f"Stack member {r.name}: {r.note or 'not ready'}"
+        elif r.kind == "ha":
+            out[key] = f"HA {r.name}: {r.note or 'not ready'}"
+        elif r.kind == "optic":
+            out[key] = f"Optic {r.name}: {r.value:g} dBm, {r.note or 'beyond its limits'}"
+        elif r.kind == "poe":
+            out[key] = f"{r.name}: {r.note}"
         elif r.kind in ("cpu", "memory"):
             out[key] = f"{r.name} {r.value:.0f}%"
         elif r.kind == "temperature":

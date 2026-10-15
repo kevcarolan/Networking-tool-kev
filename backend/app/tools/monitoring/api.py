@@ -39,7 +39,8 @@ STATUS_LABELS = {"up": "Up", "warning": "Warning", "down": "Down", "unknown": "C
 EVENT_LABELS = {"down": "Down", "up": "Back up", "restarted": "Restarted",
                 "snmp_failed": "SNMP stopped answering", "snmp_ok": "SNMP answers again",
                 "port_down": "Port down", "port_up": "Port back up",
-                "health_problem": "Hardware or sensor problem", "health_ok": "Hardware or sensor back to normal"}
+                "health_problem": "Hardware or sensor problem", "health_ok": "Hardware or sensor back to normal",
+                "failover": "Failover"}
 TOP_ROWS = 10
 MAX_RANGE_DAYS = 400
 
@@ -210,7 +211,8 @@ def device_health(device_id: int, request: Request,
     h = store.health(device_id) or {}
     now = time.time()
     since = now - hours * 3600
-    order = {"cpu": 0, "memory": 1, "psu": 2, "fan": 3, "temperature": 4}
+    order = {"cpu": 0, "memory": 1, "stack": 2, "ha": 2, "psu": 3, "fan": 4, "poe": 5, "temperature": 6,
+             "optic": 7}
     readings = sorted(h.get("readings") or [], key=lambda r: (order.get(r["kind"], 9), r["name"]))
     return {"device": d.name, "platform": d.platform, "read_at": h.get("ts"),
             "status": h.get("status"), "error": h.get("error", ""),
