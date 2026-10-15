@@ -240,6 +240,19 @@ def seed(client, settings, net) -> dict:
         "name": "switches-v3", "version": "3", "username": "netops-mon", "level": "authPriv",
         "auth_protocol": "SHA", "auth_key": "demo-auth-pass", "priv_protocol": "AES",
         "priv_key": "demo-priv-pass", "is_default": True}))
+    _ok(client.post("/api/monitoring/sensors", json={  # custom SNMP sensors (app.demo.monitor answers them)
+        "name": "BGP peer", "oid": "1.3.6.1.2.1.15.3.1.2", "mode": "state", "table": True, "ok_values": "6",
+        "device_ids": [ids["hq-core1"], ids["hq-core2"]], "notes": "bgpPeerState: 6 = established"}))
+    _ok(client.post("/api/monitoring/sensors", json={
+        "name": "ASA connections", "oid": "1.3.6.1.4.1.9.9.147.1.2.2.2.1.5.40.6", "unit": "connections",
+        "warn_above": 50000, "platform": "cisco_asa"}))
+    _ok(client.post("/api/monitoring/sensors", json={
+        "name": "IPsec tunnels", "oid": "1.3.6.1.4.1.9.9.171.1.3.1.1.0", "unit": "tunnels",
+        "warn_below": 1, "platform": "cisco_asa"}))
+    from app.demo import meraki as demo_meraki
+    _ok(client.post("/api/monitoring/meraki/connections", json={  # answered by app.demo.meraki
+        "name": demo_meraki.ORG["name"], "api_key": demo_meraki.KEY, "org_id": demo_meraki.ORG["id"],
+        "org_name": demo_meraki.ORG["name"]}))
     screen = _ok(client.post("/api/displays", json={"name": "Demo wall"})).json()
     return {"display_key": screen["key"], "ids": ids}
 

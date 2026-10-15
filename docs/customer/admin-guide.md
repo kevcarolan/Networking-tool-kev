@@ -355,6 +355,37 @@ way mark their devices *maintenance*: what happens to them is recorded, not emai
 
 Statuses, sizing and troubleshooting: [monitoring.md](../monitoring.md).
 
+**Custom sensors** read anything else a device gives over SNMP (a UPS on battery, BGP
+peers, firewall sessions, a room temperature): Monitoring › **Sensors**. Open *How to set up
+a sensor* in that window, or start from an example:
+
+1. Find the value's OID in the vendor's MIB, and check it from the server with `snmpget`
+   (a single value, ending `.0`) or `snmpwalk` (a table column).
+2. **+ Add sensor**: the OID, how to read it (*Value*, *Rate* for counters, *State* for status
+   codes), the thresholds or the codes that are fine, and which devices (a platform, a site
+   or chosen devices).
+3. **Test on this device**, then **Save**. It is read with the hardware health, every 5 minutes.
+
+A sensor past its threshold makes the device a warning and is emailed with *Devices down or
+up*. Sensors need the Monitoring *manage* permission. Full guide, examples and
+troubleshooting: [monitoring.md](../monitoring.md#custom-sensors).
+
+**Cisco Meraki** devices are read from the Meraki cloud through the Dashboard API, not with
+ping and SNMP:
+
+1. In the Meraki dashboard, add a **read-only** organisation administrator, check that API
+   access is on (*Organization › API & webhooks*), sign in as that administrator and
+   generate an **API key** (*My profile › API keys*).
+2. Let the server reach the Dashboard API over HTTPS (443): the addresses in *Help ›
+   Firewall info* in the Meraki dashboard (`MERAKI_HOSTS` in the server's firewall), or your
+   proxy (`https_proxy=` in `/etc/netops/netops.env`). Not possible on an air-gapped site.
+3. Monitoring › **Meraki** › **+ Add connection**: a name, the region, the key, **Find
+   organisations**, pick one, **Save**. The devices appear within 5 minutes.
+4. **Add to the inventory** (inventory *manage*) adds them to the inventory by serial number.
+
+Meraki connections need *credentials* for Devices and credentials; anyone with Monitoring
+*view* sees the devices. Details: [monitoring.md](../monitoring.md#cisco-meraki).
+
 ## 6b. Syslog from the devices
 
 The server receives the devices' syslog on UDP and TCP 514 (the `netops-syslog` service)

@@ -106,6 +106,8 @@ OPTIONS = (
     Option("monitor_cpu_warn", "Monitoring: warn at CPU (%)", int, 1, 100,
            help="Most devices give the 5-minute average"),
     Option("monitor_mem_warn", "Monitoring: warn at memory used (%)", int, 1, 100),
+    Option("monitor_meraki_seconds", "Meraki: read the Dashboard API every (seconds)", int, 60, 3600,
+           help="Meraki allows about 10 requests a second per organisation; 300 is usual"),
     Option("upgrade_backup_max_age_hours", "Take a fresh backup before an upgrade if older than (hours)",
            int, 1, 720),
 )

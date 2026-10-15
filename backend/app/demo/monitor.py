@@ -44,6 +44,7 @@ class SimMonitor:
         self.clock = clock
         self.down: set[str] = set()
         self.no_ping: set[str] = set()
+        self.extra: dict[str, dict[str, object]] = {}  # name -> more OIDs it answers (tests)
         self.snmp_error: dict[str, str] = {}
         self.rtt: dict[str, float] = {}
         self.boot: dict[str, float] = {}
@@ -96,7 +97,8 @@ class SimMonitor:
 
     def mib(self, name: str, platform: str) -> dict[str, object]:
         """The device's hardware health values (instance OID -> value), as its vendor's MIBs give them."""
-        return health_mib(name, platform, self.clock(), self.faults.get(name, set()), self.cpu.get(name))
+        return {**health_mib(name, platform, self.clock(), self.faults.get(name, set()), self.cpu.get(name)),
+                **self.extra.get(name, {})}
 
     async def walk(self, target, oid: str, max_rows: int = 20000) -> list:
         await self.get(target, [SYS_NAME])
@@ -188,6 +190,14 @@ def health_mib(name: str, platform: str, t: float, faults: set[str], cpu: float 
         for k, n, kind, v, st in sensors:
             m[f"{e}.1.{k}"], m[f"{e}.2.{k}"], m[f"{e}.3.{k}"] = kind, 9, 0
             m[f"{e}.4.{k}"], m[f"{e}.5.{k}"], m[f"{ENT_NAME}.{k}"] = v, st, n
+    # for the custom sensors in the demo (Monitoring › Sensors): BGP peers on the routers,
+    # connections and VPN tunnels on the ASA
+    if name in BGP_PEERS:
+        for i, peer in enumerate(BGP_PEERS[name]):
+            m[f"1.3.6.1.2.1.15.3.1.2.{peer}"] = 3 if "bgp" in faults and i == len(BGP_PEERS[name]) - 1 else 6
+    if platform == "cisco_asa":
+        m["1.3.6.1.4.1.9.9.147.1.2.2.2.1.5.40.6"] = int(1800 + 1400 * max(day, 0) + seed % 200)
+        m["1.3.6.1.4.1.9.9.171.1.3.1.1.0"] = 4
     return m
 
 
@@ -309,7 +319,9 @@ def ports_of(name: str, platform: str) -> list[SimPort]:
 DOWN = {"bn-sw3"}  # unplugged at the branch (its backups fail too)
 NO_PING = {"hq-fw1"}  # the firewall drops ping; SNMP answers
 SNMP_ERROR = {"bn-rtr1": "The device doesn't know this SNMPv3 user"}  # not set up for SNMP yet
-FAULTS = {"hq-core2": {"psu2"}, "wh-sw3": {"fan2"}}  # a failed power supply, a stopped fan
+# a failed power supply, a stopped fan, a BGP peer down (the custom sensor in the demo)
+FAULTS = {"hq-core2": {"psu2"}, "wh-sw3": {"fan2"}, "hq-core1": {"bgp"}}
+BGP_PEERS = {"hq-core1": ["192.0.2.66", "198.51.100.1"], "hq-core2": ["192.0.2.65", "198.51.100.5"]}
 CPU_HIGH = {"dc1-leaf2": 92.0}  # a busy control plane
 RTT = {"HQ": 1.2, "DC1": 0.6, "Branch-North": 14.0, "Branch-South": 18.0, "Warehouse": 26.0}
 HISTORY_DAYS = 3
@@ -330,13 +342,14 @@ def sim_for(net, clock=time.time) -> SimMonitor:
     return sim
 
 
-def build(settings, sim: SimMonitor, cipher, clock=time.time):
-    """The demo's poller: the simulated network answers instead of real ping and SNMP."""
+def build(settings, sim: SimMonitor, cipher, clock=time.time, meraki_fetch=None):
+    """The demo's poller: the simulated network answers instead of real ping and SNMP (and
+    a pretend Dashboard API, ``app.demo.meraki``, instead of Meraki's)."""
     from app.tools.monitoring.poller import Poller
     from app.tools.monitoring.store import MonitorStore
 
     return Poller(settings, MonitorStore(settings.monitor_dir), cipher, snmp=sim,
-                  pinger=sim.ping, clock=clock)
+                  pinger=sim.ping, clock=clock, meraki_fetch=meraki_fetch)
 
 
 def history(poller, now: float | None = None) -> None:
@@ -465,11 +478,11 @@ def history(poller, now: float | None = None) -> None:
     poller.health = {}
 
 
-def start(settings, sim: SimMonitor, cipher) -> None:
+def start(settings, sim: SimMonitor, cipher, meraki_fetch=None) -> None:
     """Run the demo's poller in a thread of its own (its own event loop)."""
     import asyncio
     import threading
 
-    poller = build(settings, sim, cipher)
+    poller = build(settings, sim, cipher, meraki_fetch=meraki_fetch)
     threading.Thread(target=lambda: asyncio.run(poller.serve()), name="demo-monitor",
                      daemon=True).start()

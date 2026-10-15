@@ -39,7 +39,7 @@ STATUS_LABELS = {"up": "Up", "warning": "Warning", "down": "Down", "unknown": "C
 EVENT_LABELS = {"down": "Down", "up": "Back up", "restarted": "Restarted",
                 "snmp_failed": "SNMP stopped answering", "snmp_ok": "SNMP answers again",
                 "port_down": "Port down", "port_up": "Port back up",
-                "health_problem": "Hardware problem", "health_ok": "Hardware back to normal"}
+                "health_problem": "Hardware or sensor problem", "health_ok": "Hardware or sensor back to normal"}
 TOP_ROWS = 10
 MAX_RANGE_DAYS = 400
 
@@ -544,6 +544,340 @@ def test_profile(profile_id: int, body: TestIn, request: Request, db: Session = 
     return {"ok": True, "message": f"{d.name} answered", "sys_name": values.get(SYS_NAME) or "",
             "sys_descr": (values.get(SYS_DESCR) or "")[:300],
             "uptime": uptime / 100 if isinstance(uptime, int) else None}
+
+
+# --- Meraki (Dashboard API) ------------------------------------------------------------------
+
+def _meraki_out(o, state: dict | None) -> dict:
+    from app.tools.monitoring import meraki as mk
+
+    st = state or {}
+    return {"id": o.id, "name": o.name, "base_url": o.base_url,
+            "base_label": mk.BASES.get(o.base_url, o.base_url), "org_id": o.org_id,
+            "org_name": o.org_name, "enabled": o.enabled, "has_key": bool(o.api_key_enc),
+            "updated_at": o.updated_at, "updated_by": o.updated_by, "read_at": st.get("ts"),
+            "error": st.get("error", ""), "devices": st.get("devices"), "networks": st.get("networks")}
+
+
+@router.get("/meraki")
+def meraki(request: Request, db: Session = Depends(get_db), _: User = Depends(VIEW)):
+    """The Meraki organisations, their devices and status, and scheduled firmware upgrades."""
+    from app.tools.monitoring import meraki as mk
+    from app.tools.monitoring.models import MerakiOrg
+
+    data = store_of(request).meraki()
+    orgs = list(db.scalars(select(MerakiOrg).order_by(MerakiOrg.name)))
+    names = {o.id: o.name for o in orgs}
+    devices = [{**d, "org": names.get(d["org_ref"], ""),
+                "status_label": mk.STATUSES.get(d["status"], d["status"].capitalize())}
+               for d in data["devices"] if d["org_ref"] in names]
+    counts = {k: 0 for k in mk.STATUSES}
+    for d in devices:
+        counts[d["status"]] = counts.get(d["status"], 0) + 1
+    order = {"offline": 0, "alerting": 1, "online": 3, "dormant": 4}
+    devices.sort(key=lambda d: (order.get(d["status"], 2), d["network"], d["name"]))
+    return {"connections": [_meraki_out(o, data["state"].get(o.id)) for o in orgs],
+            "devices": devices, "counts": counts, "bases": mk.BASES,
+            "upgrades": [u for u in data["upgrades"] if u["org_ref"] in names],
+            "interval": request.app.state.settings.monitor_meraki_seconds}
+
+
+class MerakiIn(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    base_url: str = "https://api.meraki.com/api/v1"
+    api_key: str | None = Field(default=None, max_length=200)  # None on change = keep
+    org_id: str = Field(min_length=1, max_length=50, pattern=r"^[A-Za-z0-9_-]+$")
+    org_name: str = Field(default="", max_length=200)
+    enabled: bool = True
+
+
+def _apply_meraki(o, body: MerakiIn, cipher, user: User) -> None:
+    from app.tools.monitoring import meraki as mk
+
+    if body.base_url not in mk.BASES:
+        raise HTTPException(422, "Choose one of the Dashboard API addresses")
+    if body.api_key is not None and not body.api_key.strip() or (not o.api_key_enc and not body.api_key):
+        raise HTTPException(422, "Enter the API key")
+    o.name, o.base_url, o.org_id = body.name.strip(), body.base_url, body.org_id.strip()
+    o.org_name, o.enabled, o.updated_by = body.org_name.strip(), body.enabled, user.username
+    if body.api_key:
+        o.api_key_enc = cipher.encrypt(body.api_key.strip())
+
+
+@router.post("/meraki/connections", status_code=201)
+def add_meraki(body: MerakiIn, request: Request, db: Session = Depends(get_db),
+               user: User = Depends(PROFILES)):
+    from app.tools.monitoring.models import MerakiOrg
+
+    o = MerakiOrg()
+    _apply_meraki(o, body, request.app.state.cipher, user)
+    db.add(o)
+    try:
+        db.flush()
+    except IntegrityError:
+        raise HTTPException(409, "A Meraki connection with that name already exists") from None
+    audit(db, user.username, "monitoring.meraki_add", f"{o.name}: organisation {o.org_id} at {o.base_url}")
+    return _meraki_out(o, None)
+
+
+def _get_meraki(db: Session, conn_id: int):
+    from app.tools.monitoring.models import MerakiOrg
+
+    o = db.get(MerakiOrg, conn_id)
+    if o is None:
+        raise HTTPException(404, "Meraki connection not found")
+    return o
+
+
+@router.put("/meraki/connections/{conn_id}")
+def change_meraki(conn_id: int, body: MerakiIn, request: Request, db: Session = Depends(get_db),
+                  user: User = Depends(PROFILES)):
+    o = _get_meraki(db, conn_id)
+    _apply_meraki(o, body, request.app.state.cipher, user)
+    try:
+        db.flush()
+    except IntegrityError:
+        raise HTTPException(409, "A Meraki connection with that name already exists") from None
+    audit(db, user.username, "monitoring.meraki_change",
+          f"{o.name}: organisation {o.org_id}, {'on' if o.enabled else 'off'}"
+          f"{', new API key' if body.api_key else ''}")
+    return _meraki_out(o, None)
+
+
+@router.delete("/meraki/connections/{conn_id}")
+def delete_meraki(conn_id: int, db: Session = Depends(get_db), user: User = Depends(PROFILES)):
+    o = _get_meraki(db, conn_id)
+    db.delete(o)
+    audit(db, user.username, "monitoring.meraki_delete", o.name)
+    return {"ok": True}
+
+
+class MerakiOrgsIn(BaseModel):
+    base_url: str = "https://api.meraki.com/api/v1"
+    api_key: str | None = Field(default=None, max_length=200)
+    connection_id: int | None = None  # use that connection's saved key
+
+
+@router.post("/meraki/organizations")
+def meraki_organizations(body: MerakiOrgsIn, request: Request, db: Session = Depends(get_db),
+                         user: User = Depends(PROFILES)):
+    """The organisations an API key can read (the connection form's Test button)."""
+    from app.tools.monitoring import meraki as mk
+
+    key = (body.api_key or "").strip()
+    base = body.base_url
+    if not key and body.connection_id:
+        o = _get_meraki(db, body.connection_id)
+        base = body.base_url or o.base_url
+        try:
+            key = request.app.state.cipher.decrypt(o.api_key_enc)
+        except Exception:  # noqa: BLE001
+            raise HTTPException(422, "Can't read the saved API key: enter it again") from None
+    if not key:
+        raise HTTPException(422, "Enter the API key")
+    try:
+        orgs = mk.MerakiClient(base, key, fetch=request.app.state.meraki_fetch).organizations()
+    except mk.MerakiError as exc:
+        audit(db, user.username, "monitoring.meraki_test", f"{base}: failed: {exc}")
+        return {"ok": False, "message": str(exc), "organizations": []}
+    audit(db, user.username, "monitoring.meraki_test", f"{base}: {len(orgs)} organisation(s)")
+    return {"ok": True, "message": f"The key reads {len(orgs)} organisation(s)", "organizations": orgs}
+
+
+@router.post("/meraki/inventory")
+def meraki_to_inventory(request: Request, db: Session = Depends(get_db),
+                        user: User = Depends(require("inventory", "manage"))):
+    """Add the Meraki devices to the inventory, or bring their rows up to date (by serial
+    number). Only the columns Meraki knows are written; the rest are left as they are."""
+    from app.tools.inventory.models import Asset
+    from app.tools.monitoring import meraki as mk
+    from app.tools.monitoring.models import MerakiOrg
+
+    orgs = {o.id for o in db.scalars(select(MerakiOrg))}
+    devices = [d for d in store_of(request).meraki()["devices"] if d["org_ref"] in orgs and d["serial"]]
+    existing = {a.serial.upper(): a for a in db.scalars(select(Asset).where(Asset.serial != ""))}
+    added = updated = 0
+    for d in devices:
+        a = existing.get(d["serial"].upper())
+        values = {"name": d["name"][:200], "type": mk.PRODUCT_TYPES.get(d["product_type"], "other"),
+                  "manufacturer": "Cisco Meraki", "model": d["model"][:100], "serial": d["serial"][:100],
+                  "version": d["firmware"][:100], "mgmt_ip": d["lan_ip"][:255], "mac": d["mac"][:50],
+                  "site": d["network"][:100]}
+        if a is None:
+            db.add(Asset(**values, status="in service"))
+            added += 1
+        else:
+            changed = False
+            for k, v in values.items():
+                if k == "name" and a.device_id:
+                    continue  # a managed device keeps its own name
+                if v and getattr(a, k) != v:
+                    setattr(a, k, v)
+                    changed = True
+            updated += changed
+    audit(db, user.username, "monitoring.meraki_inventory", f"{added} added, {updated} brought up to date")
+    return {"added": added, "updated": updated, "total": len(devices)}
+
+
+# --- custom SNMP sensors ---------------------------------------------------------------------
+
+class SensorIn(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    oid: str = Field(min_length=1, max_length=200)
+    mode: str = "value"
+    table: bool = False
+    label_oid: str = Field(default="", max_length=200)
+    unit: str = Field(default="", max_length=20)
+    scale: float = Field(default=1.0, gt=-1e9, lt=1e9)
+    warn_above: float | None = None
+    crit_above: float | None = None
+    warn_below: float | None = None
+    crit_below: float | None = None
+    ok_values: str = Field(default="", max_length=100)
+    warn_values: str = Field(default="", max_length=100)
+    platform: str = Field(default="", max_length=50)
+    site: str = Field(default="", max_length=100)
+    device_ids: list[int] = Field(default_factory=list, max_length=1000)
+    notes: str = Field(default="", max_length=2000)
+    enabled: bool = True
+
+
+def _check_sensor(body: SensorIn) -> dict:
+    """The sensor as the poller uses it; 422 with plain words when something is wrong."""
+    from app.core.platforms import PLATFORMS
+    from app.tools.monitoring import sensors as sn
+
+    try:
+        oid = sn.clean_oid(body.oid)
+        label = sn.clean_oid(body.label_oid) if body.label_oid.strip() else ""
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+    if body.mode not in sn.MODES:
+        raise HTTPException(422, "Choose value, rate or state")
+    if body.mode == "state" and not sn.codes(body.ok_values):
+        raise HTTPException(422, "A state sensor needs the codes that are fine (e.g. 1)")
+    if body.platform and body.platform not in PLATFORMS:
+        raise HTTPException(422, "Unknown platform")
+    if body.scale == 0:
+        raise HTTPException(422, "The scale can't be 0 (1 keeps the value as it is)")
+    return {**body.model_dump(), "name": body.name.strip(), "oid": oid, "label_oid": label,
+            "unit": body.unit.strip(), "site": body.site.strip(), "id": 0}
+
+
+def _sensor_out(x, counts: dict) -> dict:
+    import json
+
+    return {"id": x.id, "name": x.name, "oid": x.oid, "mode": x.mode, "table": x.table,
+            "label_oid": x.label_oid, "unit": x.unit, "scale": x.scale, "warn_above": x.warn_above,
+            "crit_above": x.crit_above, "warn_below": x.warn_below, "crit_below": x.crit_below,
+            "ok_values": x.ok_values, "warn_values": x.warn_values, "platform": x.platform,
+            "site": x.site, "device_ids": json.loads(x.device_ids or "[]"), "notes": x.notes,
+            "enabled": x.enabled, "devices": counts.get(x.id, 0), "updated_by": x.updated_by}
+
+
+def _apply_sensor(x, v: dict, user: User) -> None:
+    import json
+
+    for k in ("name", "oid", "mode", "table", "label_oid", "unit", "scale", "warn_above", "crit_above",
+              "warn_below", "crit_below", "ok_values", "warn_values", "platform", "site", "notes", "enabled"):
+        setattr(x, k, v[k])
+    x.device_ids = json.dumps(sorted(set(v["device_ids"])))
+    x.updated_by = user.username
+
+
+@router.get("/sensors")
+def list_sensors(db: Session = Depends(get_db), _: User = Depends(VIEW)):
+    """The custom SNMP sensors, how many devices each applies to, and the examples."""
+    from app.core.platforms import PLATFORMS
+    from app.tools.monitoring import sensors as sn
+    from app.tools.monitoring.models import Sensor
+    from app.tools.monitoring.poller import load_jobs, load_sensors
+
+    defs = {d["id"]: d for d in load_sensors(db)}
+    jobs = [j for j in load_jobs(db, None) if j.snmp is not None or "secrets" in j.snmp_note]
+    counts = {i: sum(sn.applies(d, j.device_id, j.platform, j.site) for j in jobs) for i, d in defs.items()}
+    return {"sensors": [_sensor_out(x, counts) for x in db.scalars(select(Sensor).order_by(Sensor.name))],
+            "modes": sn.MODES, "examples": sn.EXAMPLES,
+            "platforms": {k: p.label for k, p in PLATFORMS.items()}}
+
+
+@router.post("/sensors", status_code=201)
+def add_sensor(body: SensorIn, db: Session = Depends(get_db), user: User = Depends(MANAGE)):
+    from app.tools.monitoring.models import Sensor
+
+    x = Sensor()
+    _apply_sensor(x, _check_sensor(body), user)
+    db.add(x)
+    try:
+        db.flush()
+    except IntegrityError:
+        raise HTTPException(409, "A sensor with that name already exists") from None
+    audit(db, user.username, "monitoring.sensor_add", f"{x.name}: {x.oid} ({x.mode})")
+    return _sensor_out(x, {})
+
+
+@router.put("/sensors/{sensor_id}")
+def change_sensor(sensor_id: int, body: SensorIn, db: Session = Depends(get_db), user: User = Depends(MANAGE)):
+    from app.tools.monitoring.models import Sensor
+
+    x = db.get(Sensor, sensor_id)
+    if x is None:
+        raise HTTPException(404, "Sensor not found")
+    _apply_sensor(x, _check_sensor(body), user)
+    try:
+        db.flush()
+    except IntegrityError:
+        raise HTTPException(409, "A sensor with that name already exists") from None
+    audit(db, user.username, "monitoring.sensor_change", f"{x.name}: {x.oid} ({x.mode}), {'on' if x.enabled else 'off'}")
+    return _sensor_out(x, {})
+
+
+@router.delete("/sensors/{sensor_id}")
+def delete_sensor(sensor_id: int, db: Session = Depends(get_db), user: User = Depends(MANAGE)):
+    from app.tools.monitoring.models import Sensor
+
+    x = db.get(Sensor, sensor_id)
+    if x is None:
+        raise HTTPException(404, "Sensor not found")
+    db.delete(x)
+    audit(db, user.username, "monitoring.sensor_delete", x.name)
+    return {"ok": True}
+
+
+class SensorTestIn(SensorIn):
+    test_device_id: int
+
+
+@router.post("/sensors/test")
+def test_sensor(body: SensorTestIn, request: Request, db: Session = Depends(get_db),
+                user: User = Depends(MANAGE)):
+    """Read the sensor (saved or not) from one device now, with the device's SNMP profile."""
+    import asyncio
+
+    from app.tools.monitoring import sensors as sn
+    from app.tools.monitoring.poller import load_jobs
+
+    v = _check_sensor(body)
+    d = db.get(Device, body.test_device_id)
+    if d is None:
+        raise HTTPException(404, "Device not found")
+    job = next((j for j in load_jobs(db, request.app.state.cipher) if j.device_id == d.id), None)
+    if job is None or job.snmp is None:
+        raise HTTPException(422, f"{d.name} isn't polled with SNMP" + (f": {job.snmp_note}" if job and job.snmp_note else ""))
+    client = request.app.state.snmp_client
+    if client is None:
+        from app.tools.monitoring.snmp import SnmpClient
+        client = SnmpClient()
+    try:
+        readings = asyncio.run(sn.read(client, job.snmp, [v], time.time(), {}))
+    except SnmpError as exc:
+        audit(db, user.username, "monitoring.sensor_test", f"{v['name']} on {d.name}: failed: {exc}")
+        return {"ok": False, "message": str(exc), "readings": []}
+    audit(db, user.username, "monitoring.sensor_test", f"{v['name']} on {d.name}: {len(readings)} reading(s)")
+    got = [r for r in readings if r.value is not None or r.source.startswith("first read")]
+    msg = (f"{d.name} answered: {len(readings)} reading{'s' if len(readings) != 1 else ''}" if got
+           else readings[0].source if readings else "No answer")
+    return {"ok": bool(got), "message": msg, "readings": [r.as_dict() for r in readings]}
 
 
 @router.get("/howto")

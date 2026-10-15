@@ -208,6 +208,10 @@ minute with ping and SNMP; the server only asks, it never changes anything.
   **Hardware problems** tile and list show every device with one.
 * **Health**, in the device window: CPU and memory with their graph, and every temperature,
   fan and power supply with its status.
+* **Sensors** your admins added (a UPS, BGP peers, firewall sessions…) are in the same
+  Health table (Part: *Sensor*); click one for its graph. One past its threshold makes the
+  device a warning, like a failed fan. With Monitoring *manage* you can add them yourself:
+  **Sensors** on the Monitoring page, with a step-by-step guide in the window.
 * **Interfaces**, in the device window: every port with its description, status, speed, how
   full it is, traffic in and out, and errors and discards a minute. You can sort it busiest
   first, errors first or down first. Click a port for its traffic graph (the dashed red line
@@ -218,6 +222,11 @@ minute with ping and SNMP; the server only asks, it never changes anything.
 * **Network map:** the devices coloured green (up), orange (warning) and red (down). The
   lines are coloured by load: orange from 50%, red from 80%. Click a line for the traffic at
   both ends.
+* **Meraki** (if your admin connected it): every Meraki device with its status from the
+  Meraki dashboard (**online**, **alerting**, **offline**, **dormant**), its network, model,
+  addresses and firmware, and each MX's internet uplinks. Firmware upgrades scheduled in
+  Meraki are listed under it and on the **Calendar** ("Meraki upgrade"; change them in the
+  Meraki dashboard). **Add to the inventory** puts the Meraki devices in the inventory.
 * With *manage*: switch monitoring, ping or SNMP off for a device (its window, or tick
   several and use the bar above the list). **SNMP profiles** and **Help: set up devices**
   (the SNMP config for each platform) are for admins; see [monitoring.md](../monitoring.md).

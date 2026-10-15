@@ -7,7 +7,7 @@ poller's own files (store.py), written only by the poller service.
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base, utcnow
@@ -55,5 +55,53 @@ class MonitorTarget(Base):
     snmp: Mapped[bool] = mapped_column(Boolean, default=True)
     profile_id: Mapped[int | None] = mapped_column(
         ForeignKey("mon_profiles.id", ondelete="SET NULL"), nullable=True)  # None: the default
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by: Mapped[str] = mapped_column(String(200), default="")
+
+
+class MerakiOrg(Base):
+    """A Meraki organisation read through the Dashboard API (meraki.py). The API key is
+    encrypted with the credential key and never shown again."""
+
+    __tablename__ = "mon_meraki"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True)  # what the page calls it
+    base_url: Mapped[str] = mapped_column(String(200), default="https://api.meraki.com/api/v1")
+    org_id: Mapped[str] = mapped_column(String(50), default="")
+    org_name: Mapped[str] = mapped_column(String(200), default="")
+    api_key_enc: Mapped[str] = mapped_column(Text, default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by: Mapped[str] = mapped_column(String(200), default="")
+
+
+class Sensor(Base):
+    """A custom SNMP sensor (sensors.py): one OID (or a table column) read from the devices it
+    is for, with thresholds or the status codes that are fine."""
+
+    __tablename__ = "mon_sensors"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(60), unique=True)
+    oid: Mapped[str] = mapped_column(String(200))
+    mode: Mapped[str] = mapped_column(String(10), default="value")  # value, rate, state
+    table: Mapped[bool] = mapped_column(Boolean, default=False)  # walk the column: a reading per row
+    label_oid: Mapped[str] = mapped_column(String(200), default="")  # names the rows of a table
+    unit: Mapped[str] = mapped_column(String(20), default="")
+    scale: Mapped[float] = mapped_column(Float, default=1.0)
+    warn_above: Mapped[float | None] = mapped_column(Float, nullable=True)
+    crit_above: Mapped[float | None] = mapped_column(Float, nullable=True)
+    warn_below: Mapped[float | None] = mapped_column(Float, nullable=True)
+    crit_below: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ok_values: Mapped[str] = mapped_column(String(100), default="")  # state: e.g. "1" or "2, 3"
+    warn_values: Mapped[str] = mapped_column(String(100), default="")
+    platform: Mapped[str] = mapped_column(String(50), default="")  # "" = any
+    site: Mapped[str] = mapped_column(String(100), default="")  # "" = any
+    device_ids: Mapped[str] = mapped_column(Text, default="[]")  # JSON; set = only these devices
+    notes: Mapped[str] = mapped_column(Text, default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
     updated_by: Mapped[str] = mapped_column(String(200), default="")

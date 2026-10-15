@@ -158,7 +158,7 @@ async function showApp(user) {
     if (document.hidden) return;
     if (state.view === "backups") loadBackups();
     else if (state.view === "firmware" && fw.tab === "versions") loadFwVersions();
-    else if (state.view === "monitoring" && !$("#mon-dialog").open && !$("#mon-p-dialog").open && !$("#mon-if-dialog").open) loadMonitoring();
+    else if (state.view === "monitoring" && !$("#mon-dialog").open && !$("#mon-p-dialog").open && !$("#mon-if-dialog").open && !$("#mk-dialog").open && !$("#sn-dialog").open) loadMonitoring();
   }, 15000);
 }
 
@@ -1339,7 +1339,7 @@ function openSiteCircuits(id) {
 
 const cal = { month: null, mode: "month", site: "", items: [], kinds: {}, devices: null, siteNames: [] };
 const CAL_LEGEND = [["upgrade", "Upgrade (live)"], ["dry_run", "Upgrade (dry run)"], ["change", "Change"],
-  ["maintenance", "Maintenance"], ["outage", "Outage"], ["freeze", "Change freeze"]];
+  ["maintenance", "Maintenance"], ["outage", "Outage"], ["freeze", "Change freeze"], ["meraki", "Meraki upgrade"]];
 const utcDate = (v) => new Date(v.endsWith("Z") || v.includes("+") ? v : v + "Z");
 const dayStart = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
@@ -1430,7 +1430,7 @@ function calOpen(x) {
   const byKey = new Map(cal.items.map((i) => [i.key, i]));
   const row = (label, value) => value ? h("p", {}, h("strong", {}, `${label}: `), value) : null;
   $("#cal-dialog-title").textContent = `${x.kind_label}: ${x.title}`;
-  $("#cal-dialog-body").replaceChildren(
+  $("#cal-dialog-body").replaceChildren(...[
     row("When", `${fmtTime(x.start)} – ${fmtTime(x.end)}`),
     row("Sites", x.sites.join(", ") || "Every site"),
     row("Devices", x.devices.map((d) => d.name).join(", ")),
@@ -1439,13 +1439,13 @@ function calOpen(x) {
     x.clashes.length ? h("p", { class: "notice" }, "⚠ Clashes with: ", ...x.clashes.map((k) => byKey.get(k)).filter(Boolean)
       .flatMap((o, i) => [i ? "; " : "", h("span", { class: "link", onclick: () => calOpen(o) }, `${o.kind_label}: ${o.title} (${fmtTime(o.start)})`)])) : null,
     h("p", { class: "muted" }, `Added by ${x.created_by}${x.updated_by && x.updated_by !== x.created_by ? `, last changed by ${x.updated_by}` : ""}`),
-    can("inventory", "manage") ? h("div", { class: "dialog-actions" },
+    x.source === "event" && can("inventory", "manage") ? h("div", { class: "dialog-actions" },
       h("button", { class: "danger", onclick: async () => {
         if (!confirm(`Delete "${x.title}" from the calendar?`)) return;
         try { await api(`/api/calendar/events/${x.id}`, { method: "DELETE" }); $("#cal-dialog").close(); loadCalendar(); } catch (e) { toast(e.message); }
       } }, "Delete"),
       h("button", { title: "A new item like this one", onclick: () => calEdit(x) }, "Copy"),
-      h("button", { class: "primary", onclick: () => calEdit(x, true) }, "Edit")) : null);
+      h("button", { class: "primary", onclick: () => calEdit(x, true) }, "Edit")) : null].filter(Boolean));
   if (!$("#cal-dialog").open) $("#cal-dialog").showModal();
 }
 
@@ -3426,6 +3426,7 @@ async function loadMonitoring() {
     monEvents(ev.events);
     monPorts();
     monHardware();
+    loadMeraki();
   } catch (e) {
     toast(e.message);
   }
@@ -3822,6 +3823,297 @@ $("#mon-bulk").addEventListener("pointerenter", async () => {
   if (mon.profiles && !$("#mon-bulk-profile").options.length) monProfileOptions($("#mon-bulk-profile"), null);
 });
 
+// --- Meraki (Dashboard API)
+
+const MK_PRODUCTS = { appliance: "MX security appliance", switch: "MS switch", wireless: "MR access point",
+  camera: "MV camera", cellularGateway: "MG cellular", sensor: "MT sensor" };
+const MK_STATUS = { online: "mon-up", alerting: "mon-warning", offline: "mon-down", dormant: "mon-off" };
+
+async function loadMeraki() {
+  const r = await api("/api/monitoring/meraki").catch(() => null);
+  mon.meraki = r;
+  $("#mk-box").hidden = !r || !r.connections.length;
+  if (!r || !r.connections.length) return;
+  const c = r.counts;
+  const errors = r.connections.filter((x) => x.error);
+  const last = Math.max(0, ...r.connections.map((x) => x.read_at || 0));
+  $("#mk-note").textContent = [`${c.online} online`, c.alerting ? `${c.alerting} alerting` : "", c.offline ? `${c.offline} offline` : "",
+    c.dormant ? `${c.dormant} dormant` : "", last ? `read ${fmtAgo(tsIso(last))}, every ${Math.round(r.interval / 60)} min` : "not read yet",
+    ...errors.map((x) => `${x.name}: ${x.error}`)].filter(Boolean).join(" · ");
+  $("#mk-note").classList.toggle("bad-text", errors.length > 0 || c.offline > 0);
+  $("#mk-table tbody").replaceChildren(...r.devices.map((d) => h("tr", {},
+    h("td", {}, h("span", { class: `badge ${MK_STATUS[d.status] || "mon-unknown"}` }, d.status_label)),
+    h("td", {}, h("b", {}, d.name), r.connections.length > 1 ? h("small", { class: "muted" }, ` ${d.org}`) : null),
+    h("td", {}, siteLink(d.network)), h("td", {}, d.model), h("td", { class: "muted" }, d.lan_ip || "—"),
+    h("td", { class: "muted" }, d.public_ip || "—"), h("td", {}, d.firmware || "—"),
+    h("td", {}, d.uplinks.map((u) => h("span", { class: `badge ${u.status === "active" ? "mon-up" : u.status === "ready" ? "mon-off" : "mon-down"}`, title: u.status }, `${u.interface} ${u.status}`))),
+    h("td", { class: "muted", title: d.last_reported || "" }, d.since ? fmtAgo(tsIso(d.since)) : "—"))));
+  const upg = r.upgrades.filter((u) => u.next_time);
+  $("#mk-upgrades-box").hidden = !upg.length;
+  $("#mk-upgrades tbody").replaceChildren(...upg.map((u) => h("tr", {},
+    h("td", {}, fmtTime(u.next_time)), h("td", {}, siteLink(u.network)), h("td", {}, MK_PRODUCTS[u.product] || u.product),
+    h("td", {}, u.current), h("td", {}, h("b", {}, u.next_version)))));
+}
+
+async function mkConnections() {
+  const r = await api("/api/monitoring/meraki").catch((e) => toast(e.message));
+  if (!r) return;
+  mon.meraki = r;
+  const f = $("#mk-form");
+  if (!f.base_url.options.length) f.base_url.replaceChildren(...Object.entries(r.bases).map(([k, v]) => h("option", { value: k }, v)));
+  $("#mk-conn-table tbody").replaceChildren(...r.connections.map((c) => h("tr", {},
+    h("td", {}, h("b", {}, c.name), c.enabled ? null : h("span", { class: "badge mon-off" }, "off")),
+    h("td", {}, `${c.org_name || ""} (${c.org_id})`), h("td", { class: "muted" }, c.base_label),
+    h("td", { class: c.error ? "bad-text" : "muted" }, c.error || (c.read_at ? `${fmtAgo(tsIso(c.read_at))}: ${c.devices} devices in ${c.networks} networks` : "not yet")),
+    h("td", { class: "actions" }, h("button", { class: "small", onclick: () => mkForm(c) }, "Edit"),
+      h("button", { class: "small danger", onclick: () => mkDelete(c) }, "Delete")))));
+  if (!r.connections.length) $("#mk-conn-table tbody").append(h("tr", {}, h("td", { colspan: 5, class: "muted" }, "No Meraki connections yet.")));
+  f.hidden = true;
+  if (!$("#mk-dialog").open) $("#mk-dialog").showModal();
+}
+
+function mkForm(c = null) {
+  const f = $("#mk-form");
+  mon.mkEditing = c;
+  f.reset();
+  $("#mk-form-title").textContent = c ? `Change ${c.name}` : "Add connection";
+  f.name.value = c ? c.name : "";
+  f.base_url.value = c ? c.base_url : Object.keys(mon.meraki.bases)[0];
+  f.org_id.value = c ? c.org_id : "";
+  f.enabled.checked = c ? c.enabled : true;
+  f.org_pick.replaceChildren(h("option", { value: "" }, c ? `${c.org_name || c.org_id}` : "Find them with the API key →"));
+  $("#mk-keep").hidden = !c;
+  $("#mk-find-result").hidden = true;
+  f.querySelector(".error").hidden = true;
+  f.hidden = false;
+  f.name.focus();
+}
+
+async function mkDelete(c) {
+  if (!confirm(`Delete the Meraki connection ${c.name}? Its devices leave the Monitoring page (inventory rows stay).`)) return;
+  try {
+    await api(`/api/monitoring/meraki/connections/${c.id}`, { method: "DELETE" });
+    await Promise.all([mkConnections(), loadMeraki()]);
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+$("#mk-find").addEventListener("click", async () => {
+  const f = $("#mk-form"), out = $("#mk-find-result");
+  out.hidden = false;
+  out.className = "muted";
+  out.textContent = "Asking the Dashboard API…";
+  try {
+    const r = await api("/api/monitoring/meraki/organizations", { method: "POST", body: {
+      base_url: f.base_url.value, api_key: f.api_key.value || null, connection_id: mon.mkEditing ? mon.mkEditing.id : null } });
+    out.className = r.ok ? "ok-text" : "bad-text";
+    out.textContent = r.message;
+    if (r.ok) {
+      f.org_pick.replaceChildren(...r.organizations.map((o) => h("option", { value: o.id, "data-name": o.name }, `${o.name} (${o.id})`)));
+      if (r.organizations.length) { f.org_id.value = r.organizations[0].id; if (!f.name.value) f.name.value = r.organizations[0].name; }
+    }
+  } catch (e) {
+    out.className = "bad-text";
+    out.textContent = e.message;
+  }
+});
+$("#mk-form").org_pick.addEventListener("change", (ev) => { if (ev.target.value) $("#mk-form").org_id.value = ev.target.value; });
+$("#mk-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target, c = mon.mkEditing;
+  const picked = f.org_pick.selectedOptions[0];
+  const body = { name: f.name.value, base_url: f.base_url.value, api_key: f.api_key.value || (c ? null : ""),
+    org_id: f.org_id.value, org_name: picked && picked.value === f.org_id.value ? picked.dataset.name || "" : (c && c.org_id === f.org_id.value ? c.org_name : ""),
+    enabled: f.enabled.checked };
+  try {
+    await api(c ? `/api/monitoring/meraki/connections/${c.id}` : "/api/monitoring/meraki/connections", { method: c ? "PUT" : "POST", body });
+    toast("Saved. It is read within a few minutes.");
+    await mkConnections();
+  } catch (e) {
+    f.querySelector(".error").textContent = e.message;
+    f.querySelector(".error").hidden = false;
+  }
+});
+$("#mk-add").addEventListener("click", () => mkForm());
+$("#mk-cancel").addEventListener("click", () => { $("#mk-form").hidden = true; });
+$("#mk-close").addEventListener("click", () => { $("#mk-dialog").close(); loadMeraki(); });
+$("#mk-connections").addEventListener("click", mkConnections);
+$("#mk-inventory").addEventListener("click", async () => {
+  try {
+    const r = await api("/api/monitoring/meraki/inventory", { method: "POST" });
+    toast(`Inventory: ${r.added} added, ${r.updated} brought up to date (of ${r.total} Meraki devices)`);
+  } catch (e) {
+    toast(e.message);
+  }
+});
+
+// --- custom SNMP sensors
+
+const sn = { data: null, editing: null };
+const SN_NUM = ["warn_above", "crit_above", "warn_below", "crit_below"];
+
+function snFineWhen(x) {
+  if (x.mode === "state") return `code ${x.ok_values}${x.warn_values ? ` (warning: ${x.warn_values})` : ""}`;
+  const u = x.unit ? ` ${x.unit}` : "";
+  const parts = [x.warn_above !== null ? `warn > ${x.warn_above}${u}` : "", x.crit_above !== null ? `critical > ${x.crit_above}${u}` : "",
+    x.warn_below !== null ? `warn < ${x.warn_below}${u}` : "", x.crit_below !== null ? `critical < ${x.crit_below}${u}` : ""].filter(Boolean);
+  return parts.join(", ") || "no thresholds (graph only)";
+}
+
+function snFor(x) {
+  if (x.device_ids.length) return x.device_ids.map((id) => (mon.rows.find((r) => r.id === id) || {}).name || `#${id}`).join(", ");
+  return [x.platform ? sn.data.platforms[x.platform] || x.platform : "", x.site].filter(Boolean).join(" · ") || "every SNMP device";
+}
+
+async function snOpen() {
+  try {
+    sn.data = await api("/api/monitoring/sensors");
+  } catch (e) {
+    return toast(e.message);
+  }
+  const d = sn.data, f = $("#sn-form");
+  if (!f.mode.options.length) {
+    f.mode.replaceChildren(...Object.entries(d.modes).map(([k, v]) => h("option", { value: k }, v)));
+    f.platform.replaceChildren(h("option", { value: "" }, "any platform"),
+      ...Object.entries(d.platforms).map(([k, v]) => h("option", { value: k }, v)));
+    const groups = [...new Set(d.examples.map((x) => x.group))];
+    $("#sn-example").replaceChildren(h("option", { value: "" }, "Start from an example…"),
+      ...groups.map((g) => h("optgroup", { label: g }, ...d.examples.map((x, i) => [x, i]).filter(([x]) => x.group === g)
+        .map(([x, i]) => h("option", { value: String(i) }, x.name)))));
+  }
+  f.device_ids.replaceChildren(...mon.rows.filter((r) => r.snmp).map((r) => h("option", { value: String(r.id) }, `${r.name}${r.site ? ` (${r.site})` : ""}`)));
+  $("#sn-test-device").replaceChildren(...mon.rows.filter((r) => r.snmp).map((r) => h("option", { value: String(r.id) }, r.name)));
+  $("#sn-sites").replaceChildren(...[...new Set(mon.rows.map((r) => r.site).filter(Boolean))].map((s) => h("option", { value: s })));
+  const manage = can("monitoring", "manage");
+  $("#sn-table tbody").replaceChildren(...d.sensors.map((x) => h("tr", {},
+    h("td", {}, h("b", {}, x.name), x.enabled ? null : h("span", { class: "badge mon-off" }, "off"),
+      x.notes ? h("div", { class: "muted small" }, x.notes) : null),
+    h("td", {}, h("code", {}, x.oid), x.table ? h("small", { class: "muted" }, " table") : null),
+    h("td", {}, x.mode === "rate" ? "rate /s" : x.mode, x.scale !== 1 && x.mode !== "state" ? h("small", { class: "muted" }, ` ×${x.scale}`) : null),
+    h("td", {}, snFineWhen(x)), h("td", {}, snFor(x)), h("td", {}, String(x.devices)),
+    h("td", { class: "actions" }, manage ? [h("button", { class: "small", onclick: () => snForm(x) }, "Edit"),
+      h("button", { class: "small danger", onclick: () => snDelete(x) }, "Delete")] : null))));
+  if (!d.sensors.length) $("#sn-table tbody").append(h("tr", {}, h("td", { colspan: 7, class: "muted" }, "No sensors yet. Open “How to set up a sensor”, or start from an example.")));
+  $("#sn-help").open = !d.sensors.length;
+  f.hidden = true;
+  if (!$("#sn-dialog").open) $("#sn-dialog").showModal();
+}
+
+function snShowFields() {
+  const f = $("#sn-form"), state = f.mode.value === "state";
+  f.querySelectorAll("[data-sn=num]").forEach((el) => { el.hidden = state; });
+  f.querySelectorAll("[data-sn=state]").forEach((el) => { el.hidden = !state; });
+  f.querySelectorAll("[data-sn=table]").forEach((el) => { el.hidden = !f.table.checked; });
+}
+
+function snForm(x = null, copy = false) {
+  const f = $("#sn-form");
+  sn.editing = x && !copy ? x : null;
+  f.reset();
+  $("#sn-form-title").textContent = sn.editing ? `Change ${x.name}` : "Add sensor";
+  const v = x || {};
+  for (const k of ["name", "oid", "unit", "label_oid", "ok_values", "warn_values", "site", "notes"]) f[k].value = v[k] ?? "";
+  f.mode.value = v.mode || "value";
+  f.scale.value = v.scale ?? 1;
+  for (const k of SN_NUM) f[k].value = v[k] ?? "";
+  f.table.checked = !!v.table;
+  f.enabled.checked = v.enabled ?? true;
+  f.platform.value = v.platform || "";
+  const ids = new Set((v.device_ids || []).map(String));
+  [...f.device_ids.options].forEach((o) => { o.selected = ids.has(o.value); });
+  $("#sn-test-result").hidden = true;
+  f.querySelector(".error").hidden = true;
+  snShowFields();
+  f.hidden = false;
+  f.name.focus();
+}
+
+function snBody() {
+  const f = $("#sn-form"), num = (el) => (el.value.trim() === "" ? null : Number(el.value));
+  return { name: f.name.value, oid: f.oid.value, mode: f.mode.value, table: f.table.checked, label_oid: f.label_oid.value,
+    unit: f.unit.value, scale: num(f.scale) ?? 1, ...Object.fromEntries(SN_NUM.map((k) => [k, f.mode.value === "state" ? null : num(f[k])])),
+    ok_values: f.ok_values.value, warn_values: f.warn_values.value, platform: f.platform.value, site: f.site.value,
+    device_ids: [...f.device_ids.selectedOptions].map((o) => Number(o.value)), notes: f.notes.value, enabled: f.enabled.checked };
+}
+
+async function snDelete(x) {
+  if (!confirm(`Delete the sensor ${x.name}? Its readings stop; the graphs already kept stay until they age out.`)) return;
+  try {
+    await api(`/api/monitoring/sensors/${x.id}`, { method: "DELETE" });
+    snOpen();
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+$("#sn-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  try {
+    await api(sn.editing ? `/api/monitoring/sensors/${sn.editing.id}` : "/api/monitoring/sensors",
+      { method: sn.editing ? "PUT" : "POST", body: snBody() });
+    toast("Saved. It is read with the next health read (within a few minutes).");
+    snOpen();
+  } catch (e) {
+    f.querySelector(".error").textContent = e.message;
+    f.querySelector(".error").hidden = false;
+  }
+});
+$("#sn-test").addEventListener("click", async () => {
+  const out = $("#sn-test-result");
+  out.hidden = false;
+  out.replaceChildren(h("p", { class: "muted" }, "Reading it now…"));
+  try {
+    const r = await api("/api/monitoring/sensors/test", { method: "POST", body: { ...snBody(), name: $("#sn-form").name.value || "Test", test_device_id: Number($("#sn-test-device").value) } });
+    out.replaceChildren(h("p", { class: r.ok ? "ok-text" : "bad-text" }, r.message),
+      r.readings.length ? h("div", { class: "table-wrap" }, h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "Reading"), h("th", {}, "Value"), h("th", {}, "Status"), h("th", {}, "Note"))),
+        h("tbody", {}, ...r.readings.slice(0, 20).map((x) => {
+          const [cls, lab] = HW_STATUS[x.status] || HW_STATUS.unknown;
+          return h("tr", {}, h("td", {}, x.name), h("td", {}, x.value === null ? "—" : `${x.value}${x.unit ? ` ${x.unit}` : ""}`),
+            h("td", {}, h("span", { class: `badge ${cls}` }, x.status === "critical" ? "critical" : lab)), h("td", { class: "muted" }, x.source));
+        })))) : null);
+  } catch (e) {
+    out.replaceChildren(h("p", { class: "bad-text" }, e.message));
+  }
+});
+$("#sn-form").mode.addEventListener("change", snShowFields);
+$("#sn-form").table.addEventListener("change", snShowFields);
+$("#sn-add").addEventListener("click", () => snForm());
+$("#sn-example").addEventListener("change", (ev) => {
+  const x = sn.data.examples[Number(ev.target.value)];
+  ev.target.value = "";
+  if (!x) return;
+  snForm({ scale: 1, warn_above: null, crit_above: null, warn_below: null, crit_below: null, ok_values: "", warn_values: "",
+    unit: "", device_ids: [], table: false, platform: "", ...x, notes: x.help }, true);
+});
+$("#sn-cancel").addEventListener("click", () => { $("#sn-form").hidden = true; });
+$("#sn-close").addEventListener("click", () => $("#sn-dialog").close());
+$("#mon-sensors").addEventListener("click", snOpen);
+
+/** One custom sensor's graph in the device window (min to max of what was read). */
+function monSensorGraph(r, name) {
+  const box = $("#mon-d-sensor-graph");
+  const pts = (r.graph[`s:${name}`] || []).filter((p) => p.value !== null);
+  box.hidden = false;
+  if (!pts.length) return box.replaceChildren(h("p", { class: "muted" }, `${name}: no readings to graph yet.`));
+  const W = 520, H = 150, L = 50, B = 22;
+  let lo = Math.min(...pts.map((p) => p.value)), hi = Math.max(...pts.map((p) => p.max ?? p.value));
+  if (lo === hi) { lo -= 1; hi += 1; }
+  if (lo > 0 && lo < hi * 0.5) lo = 0;
+  const pad = (hi - lo) * 0.1;
+  lo -= lo === 0 ? 0 : pad; hi += pad;
+  const { x, kids } = monAxis(r, W, H, L, B, 1, () => "");
+  const y = (v) => 10 + (1 - (v - lo) / (hi - lo)) * (H - 10 - B);
+  const label = kids.filter((k) => k.tagName !== "text" || k.getAttribute("text-anchor") !== "end");
+  const fmt = (v) => (Math.abs(v) >= 100 ? Math.round(v) : Number(v.toFixed(2)));
+  for (const v of [lo, (lo + hi) / 2, hi]) label.push(svgEl("text", { x: L - 6, y: y(v) + 4, "text-anchor": "end" }, String(fmt(v))));
+  label.push(...monLine(pts, "value", x, y, "line in"));
+  const unit = (r.readings.find((q) => q.name === name) || {}).unit || "";
+  label.push(svgEl("text", { x: W - 10, y: 22, "text-anchor": "end", class: "key" }, `${name}${unit ? `, ${unit}` : ""}`));
+  box.replaceChildren(svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `${name} graph` }, label));
+}
+
 // --- hardware health
 
 const HW_STATUS = { ok: ["mon-up", "OK"], warning: ["mon-warning", "warning"], critical: ["mon-down", "failed"],
@@ -3861,11 +4153,21 @@ async function monHealth(d) {
     first("memory") ? gauge("Memory", first("memory").value, r.mem_warn) : null].filter(Boolean));
   sizeBars($("#mon-d-gauges"));
   const parts = r.readings.filter((x) => x.kind !== "cpu" && x.kind !== "memory");
+  $("#mon-d-sensor-graph").hidden = true;
   $("#mon-d-health tbody").replaceChildren(...parts.map((x) => {
     const [cls, label] = HW_STATUS[x.status] || HW_STATUS.unknown;
-    const reading = x.value === null || x.value === undefined ? "" : x.kind === "temperature" ? `${x.value} °C` : x.kind === "fan" ? `${Math.round(x.value)} rpm` : x.value;
-    return h("tr", {}, h("td", {}, x.kind_label), h("td", {}, x.name), h("td", {}, reading),
-      h("td", {}, h("span", { class: `badge ${cls}` }, label)));
+    const reading = x.value === null || x.value === undefined ? (x.kind === "sensor" ? h("small", { class: "muted" }, x.source) : "")
+      : x.kind === "temperature" ? `${x.value} °C` : x.kind === "fan" ? `${Math.round(x.value)} rpm`
+      : x.kind === "sensor" ? `${x.value}${x.unit ? ` ${x.unit}` : ""}` : x.value;
+    const sensor = x.kind === "sensor";
+    const row = h("tr", sensor ? { class: "sensor-row", title: "Click for its graph" } : {}, h("td", {}, x.kind_label), h("td", {}, x.name), h("td", {}, reading),
+      h("td", {}, h("span", { class: `badge ${cls}` }, sensor && x.status === "critical" ? "critical" : label)));
+    if (sensor) row.addEventListener("click", () => {
+      $("#mon-d-health").querySelectorAll("tr.picked").forEach((el) => el.classList.remove("picked"));
+      row.classList.add("picked");
+      monSensorGraph(r, x.name);
+    });
+    return row;
   }));
   $("#mon-d-health-empty").hidden = parts.length > 0;
   $("#mon-d-health-empty").textContent = r.read_at ? "The device gives no temperatures, fans or power supplies over SNMP." : "Not read yet (every few minutes, with SNMP).";

@@ -240,6 +240,7 @@ dialog::backdrop { background: rgb(0 0 0 / .45); }
   border-color: var(--idle); }
 .cal-item.k-upgrade { background: var(--accent); color: var(--accent-text); }
 .cal-item.k-dry_run { background: var(--surface); border-color: var(--accent); color: var(--accent); }
+.cal-item.k-meraki { background: var(--surface); border-color: var(--accent); border-style: dashed; }
 .cal-item.clash { box-shadow: 0 0 0 2px var(--fail); }
 .pre-wrap { white-space: pre-wrap; }
 .cal-legend .cal-item { display: inline-block; width: auto; cursor: default; }
@@ -547,6 +548,12 @@ dl.facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px;
 dl.facts dt { color: var(--muted); }
 dl.facts dd { margin: 0; overflow-wrap: anywhere; }
 .test-row { display: inline-flex; gap: 6px; align-items: center; }
+.help-box { border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; margin: 8px 0; background: var(--surface); }
+.help-box summary { cursor: pointer; font-weight: 600; }
+.help-box ol { padding-left: 20px; }
+.help-box li { margin: 6px 0; }
+#mon-d-health tr.sensor-row { cursor: pointer; }
+#mon-d-health tr.sensor-row.picked td { background: var(--idle-bg); }
 .topo-node.mon-up rect { stroke: var(--ok); stroke-width: 2; }
 .topo-node.mon-warning rect { stroke: var(--warn); stroke-width: 2.5; }
 .topo-node.mon-down rect { stroke: var(--fail); stroke-width: 3; fill: var(--fail-bg); }

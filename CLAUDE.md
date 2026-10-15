@@ -156,6 +156,17 @@ remote); never sync the two automatically.
   Suggested SNMP configs per platform are in `howto.py`: add one for every new platform (a
   test checks). Calendar windows and upgrades under way mark devices "maintenance" (events
   kept, not emailed). The wall display shows names and statuses only, never reasons.
+  Custom SNMP sensors (`sensors.py`, table `mon_sensors`, area `monitoring:manage`): read
+  with the health read as `Reading(kind="sensor")`, so history (`s:<name>` in `hx`/`hh`),
+  problems, events and alerts come for free; the wall shows only the sensor's name
+  (`display._wall_problems`), never a row label or value. Examples in `sensors.EXAMPLES`
+  (a test adds each); the simulator answers extra OIDs per device (`SimMonitor.extra`).
+  Cisco Meraki (`meraki.py`): the poller reads each `mon_meraki` organisation through the
+  Dashboard API (GET only, read-only key encrypted like credentials, only to `meraki.BASES`,
+  redirects only within Meraki's domain) into `meraki_*` tables in `state.db`; the only
+  internet connection the product makes, optional (firewall `MERAKI_HOSTS` or `https_proxy`).
+  Injectable (`Poller(meraki_fetch=)`, `create_app(meraki_fetch=)`); tests and the demo use
+  `app/demo/meraki.py` (`FakeDashboard`). Connections need `inventory:credentials`.
 * Inventory (`tools/inventory/`): table `assets`, one row per thing; a row with `device_id`
   is managed and every device gets one (`fields.sync_devices`, which also links an existing
   row by name or address). Built-in columns are `fields.STANDARD` (page, import and export

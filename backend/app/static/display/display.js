@@ -57,8 +57,8 @@ function overview(d) {
   const m = d.monitoring;
   const tiles = h("div", { class: "tiles" },
     m ? tile("Devices down", m.counts.down,
-      `${m.counts.up} up · ${m.counts.warning} warning${m.counts.hardware ? ` · ${m.counts.hardware} hardware` : ""}${m.counts.maintenance ? ` · ${m.counts.maintenance} in maintenance` : ""}${m.running ? "" : " · NOT CHECKING"}`,
-      m.down.some((x) => !x.maintenance) || !m.running ? "bad" : m.counts.warning || m.counts.down ? "warn" : "") : null,
+      `${m.counts.up} up · ${m.counts.warning} warning${m.counts.hardware ? ` · ${m.counts.hardware} hardware` : ""}${m.counts.maintenance ? ` · ${m.counts.maintenance} in maintenance` : ""}${m.meraki && m.meraki.counts.offline ? ` · ${m.meraki.counts.offline} Meraki offline` : ""}${m.running ? "" : " · NOT CHECKING"}`,
+      m.down.some((x) => !x.maintenance) || !m.running ? "bad" : m.counts.warning || m.counts.down || (m.meraki && m.meraki.counts.offline) ? "warn" : "") : null,
     tile("Failing backups", b.failing,
       `${b.ok} OK · ${b.never} never backed up${b.disabled ? ` · ${b.disabled} off` : ""}`,
       b.failing ? "bad" : b.never ? "warn" : ""),
@@ -129,6 +129,18 @@ function monitoringPage(d) {
         h("span", {}, h("span", { class: "what" }, e.device), h("span", { class: "dim" }, ` · ${e.label}`)),
         h("span", { class: e.kind === "down" && !e.maintenance ? "why" : "dim" }, hhmm(when(e.at))))))
         : h("div", { class: "empty" }, "Nothing went down or restarted"))];
+  if (m.meraki) {
+    const mc = m.meraki.counts;
+    panels.push(h("div", { class: "panel" }, h("h2", {}, "Meraki"),
+      h("div", { class: "sevs" },
+        h("div", { class: `sev ${mc.offline ? "s0" : "zero"}` }, h("div", { class: "num" }, mc.offline), h("div", { class: "sub" }, "offline")),
+        h("div", { class: `sev ${mc.alerting ? "s3" : "zero"}` }, h("div", { class: "num" }, mc.alerting), h("div", { class: "sub" }, "alerting")),
+        h("div", { class: "sev ok" }, h("div", { class: "num" }, mc.online), h("div", { class: "sub" }, "online"))),
+      m.meraki.problems.length ? h("ul", { class: "list" }, m.meraki.problems.map((x) => h("li", {},
+        h("span", {}, h("span", { class: "what" }, x.device), h("span", { class: "dim" }, ` · ${x.network}`)),
+        h("span", { class: x.status === "offline" ? "why" : "warn-text" }, `${x.status}${x.since ? ` · ${ago(x.since)}` : ""}`))))
+        : h("div", { class: "empty" }, "Every Meraki device online")));
+  }
   if (m.hardware && m.hardware.length) {
     panels.push(h("div", { class: "panel" }, h("h2", {}, `Hardware (${m.counts.hardware})`),
       h("ul", { class: "list" }, m.hardware.map((x) => h("li", {},
@@ -245,7 +257,7 @@ function pagesToShow(d) {
     if (!chosen.includes(key)) return false;
     if (key === "upgrades") return d.upgrades.under_way.length || d.upgrades.coming_up.length; // nothing on it
     if (key === "network") return d.syslog || d.changes || d.circuits;
-    if (key === "monitoring") return d.monitoring && d.monitoring.monitored;
+    if (key === "monitoring") return d.monitoring && (d.monitoring.monitored || d.monitoring.meraki);
     return true;
   }).map(([, i]) => i);
   return show.length ? show : [0];

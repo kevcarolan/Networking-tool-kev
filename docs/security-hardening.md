@@ -186,6 +186,16 @@ sudo systemctl stop nft-undo.timer     # it works: cancel the undo
 sudo systemctl disable --now ufw 2>/dev/null; sudo systemctl enable --now nftables
 ```
 
+**Cisco Meraki (optional).** The Monitoring page can read Meraki organisations through the
+Dashboard API. That is the only outbound connection to the internet the product makes, and
+only if you add a Meraki connection. Either allow HTTPS (443) to the Dashboard API addresses
+listed in the Meraki dashboard under *Help › Firewall info* (the commented `MERAKI_HOSTS`
+lines), or send it through your HTTPS proxy: add `https_proxy=http://proxy.example:3128` to
+`/etc/netops/netops.env` and allow the proxy instead. DNS must resolve `api.meraki.com` (or
+your region's address). The API key is read-only, kept encrypted, sent only to the Meraki
+address chosen for the connection, and redirects are followed only within Meraki's domain.
+An air-gapped site can't use it.
+
 Dropped traffic is logged: `journalctl -k | grep nft-`. **An `nft-out-drop` line means
 something on the server tried to connect somewhere it shouldn't.** Investigate every one.
 
