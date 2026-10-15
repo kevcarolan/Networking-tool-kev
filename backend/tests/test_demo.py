@@ -17,7 +17,7 @@ def quick(monkeypatch):
 def test_first_run_fills_every_page(tmp_path, quick):
     app, net, _worker = demo.build(tmp_path, 8799, scheduler=False)
     info = demo.first_run(app, net)
-    assert len(info["ids"]) == len(seed.DEVICES) and info["display_key"]
+    assert len(info["ids"]) == len(seed.DEVICES) + len(seed.SNMP_DEVICES) and info["display_key"]
     from fastapi.testclient import TestClient
 
     with TestClient(app) as c:
@@ -32,6 +32,11 @@ def test_first_run_fills_every_page(tmp_path, quick):
         assert statuses.count("moved") == 1 and statuses.count("not_seen") == 1
         assert circuits["scan"]["last_full"]["devices_failed"] == 0
         assert c.get("/api/licence").json()["mode"] == "development"
+        # the SNMP-only devices: no backups, read with SNMP and their sensors
+        rows = {r["device"]["name"]: r for r in c.get("/api/backup/devices").json()}
+        assert all(rows[n]["backup"] is None for n, _, _ in seed.SNMP_DEVICES)
+        ups = c.get(f"/api/monitoring/devices/{info['ids']['hq-ups1']}/health").json()
+        assert {r["name"]: r["value"] for r in ups["readings"]}["UPS battery charge"] == 100
         # every address is a documentation address, never routed
         assert all(d["address"].startswith(("192.0.2.", "198.51.100.", "203.0.113."))
                    for d in c.get("/api/devices").json())

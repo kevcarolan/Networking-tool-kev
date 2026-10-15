@@ -14,6 +14,7 @@ import math
 import random
 import re
 import time
+import types
 
 from app.tools.monitoring import ifaces as ifm
 from app.tools.monitoring.ping import PingResult
@@ -29,12 +30,16 @@ DESCR = {
     "mikrotik_routeros": "RouterOS CCR2004-16G-2S+ {v}",
     "allied_awplus": "Allied Telesis router/switch, AW+ v{v}",
     "dell_os10": "Dell SmartFabric OS10 Enterprise, version {v}",
+    "snmp_ups": "APC Web/SNMP Management Card (MB:v4.2.1 PF:v2.2.0.6 PN:apc_hw21_aos_2.2.0.6.bin)",
+    "snmp_pdu": "APC Web/SNMP Management Card (MB:v4.2.1 PF:v2.2.0.6 PN:apc_hw21_rpdu2g_2.2.0.6.bin)",
+    "snmp_env": "NetBotz Rack Monitor 250",
 }
 OBJECT_ID = {"cisco_ios": "1.3.6.1.4.1.9.1.2694", "cisco_nxos": "1.3.6.1.4.1.9.12.3.1.3.1812",
              "cisco_asa": "1.3.6.1.4.1.9.1.2313", "arista_eos": "1.3.6.1.4.1.30065.1.3011.7050.3741.48",
              "juniper_junos": "1.3.6.1.4.1.2636.1.1.1.4.132.2", "aruba_osswitch": "1.3.6.1.4.1.11.2.3.7.11.181.1",
              "mikrotik_routeros": "1.3.6.1.4.1.14988.1", "allied_awplus": "1.3.6.1.4.1.207.1.14.112",
-             "dell_os10": "1.3.6.1.4.1.674.11000.5000.100.2.1.12"}
+             "dell_os10": "1.3.6.1.4.1.674.11000.5000.100.2.1.12", "snmp_ups": "1.3.6.1.4.1.318.1.3.27",
+             "snmp_pdu": "1.3.6.1.4.1.318.1.3.4.6", "snmp_env": "1.3.6.1.4.1.5528.100.20.10.2014"}
 
 
 class SimMonitor:
@@ -44,7 +49,8 @@ class SimMonitor:
         self.clock = clock
         self.down: set[str] = set()
         self.no_ping: set[str] = set()
-        self.extra: dict[str, dict[str, object]] = {}  # name -> more OIDs it answers (tests)
+        self.extra: dict[str, dict | object] = {}  # name -> more OIDs it answers (or a function giving them)
+        self.others: dict[str, object] = {}  # devices outside the SSH network (SNMP only)
         self.snmp_error: dict[str, str] = {}
         self.rtt: dict[str, float] = {}
         self.boot: dict[str, float] = {}
@@ -59,7 +65,7 @@ class SimMonitor:
 
     def _device(self, address: str):
         name = self.by_address.get(address)
-        return (name, self.net.devices.get(name)) if name else (None, None)
+        return (name, self.net.devices.get(name) or self.others.get(name)) if name else (None, None)
 
     def _alive(self, name, dev) -> bool:
         if dev is None or name in self.down:
@@ -97,8 +103,9 @@ class SimMonitor:
 
     def mib(self, name: str, platform: str) -> dict[str, object]:
         """The device's hardware health values (instance OID -> value), as its vendor's MIBs give them."""
+        extra = self.extra.get(name, {})
         return {**health_mib(name, platform, self.clock(), self.faults.get(name, set()), self.cpu.get(name)),
-                **self.extra.get(name, {})}
+                **(extra() if callable(extra) else extra)}
 
     async def walk(self, target, oid: str, max_rows: int = 20000) -> list:
         await self.get(target, [SYS_NAME])
@@ -212,6 +219,7 @@ HOT = {("hq-core1", "Ethernet1/48"): 0.55, ("bs-sw1", "port1.0.1"): 0.45}  # bus
 ERRORS = {("hq-acc-sw3", "GigabitEthernet1/0/12"): 0.3}  # CRC errors a second (a bad cable)
 DISCARDS = {("wh-sw1", "ethernet1/1/52"): 2.5}  # discards a second (a congested uplink)
 ACCESS = {  # (how to name an access port, how many)
+    "snmp_ups": ("eth{}", 1), "snmp_pdu": ("eth{}", 1), "snmp_env": ("eth{}", 1),
     "cisco_ios": ("GigabitEthernet1/0/{}", 24), "cisco_nxos": ("Ethernet1/{}", 12),
     "arista_eos": ("Ethernet{}", 16), "aruba_osswitch": ("{}", 24), "mikrotik_routeros": ("ether{}", 6),
     "allied_awplus": ("port1.0.{}", 24), "dell_os10": ("ethernet1/1/{}", 24),
@@ -236,7 +244,8 @@ def _speed(port: str, platform: str) -> int:
 def _platform_of(name: str) -> str:
     from app.demo import seed
 
-    return next((d.platform for d in seed.DEVICES if d.name == name), "")
+    return next((d.platform for d in seed.DEVICES if d.name == name),
+                next((p for n, _, p in seed.SNMP_DEVICES if n == name), ""))
 
 
 class SimPort:
@@ -249,8 +258,8 @@ class SimPort:
                 self.name = self.name.replace(long, short)
         self.type = {"vlan": 53, "loopback": 24}.get(kind, 6)
         self.speed = 0 if kind in ("vlan", "loopback") else _speed(port, platform)
-        self.up = kind in ("link", "vlan", "loopback") or rand.random() < 0.65 or \
-            (device, port) in ERRORS or (device, port) in DISCARDS
+        self.up = kind in ("link", "vlan", "loopback") or platform.startswith("snmp_") or \
+            rand.random() < 0.65 or (device, port) in ERRORS or (device, port) in DISCARDS
         if kind == "link":  # the same load at both ends, as much as the slower port takes
             n, rp = peer
             pair = random.Random("|".join(sorted([f"{device} {port}", f"{n} {rp}"])))
@@ -258,6 +267,8 @@ class SimPort:
             self.avg = min(self.speed, _speed(rp, _platform_of(n) or platform)) * load
         else:
             self.avg = (2 + 28 * rand.random()) * 1e6 if self.up and kind == "access" else 0.0
+            if platform.startswith("snmp_"):
+                self.avg = (20 + 60 * rand.random()) * 1e3  # a management card: a few kb/s
         self.amp = self.avg * (0.6 if (device, port) in HOT else 0.8)
         self.ratio = 0.3 + 0.9 * rand.random()  # out against in
         self.err = ERRORS.get((device, port), 0.0)
@@ -308,7 +319,8 @@ def ports_of(name: str, platform: str) -> list[SimPort]:
         ports += [(p, "access", "", None) for p in access if p not in used]
         if platform in ("cisco_ios", "cisco_nxos", "arista_eos"):
             ports.append(("Vlan10", "vlan", "management", None))
-        ports.append(("Loopback0" if platform.startswith("cisco") else "lo0", "loopback", "", None))
+        if not platform.startswith("snmp_"):
+            ports.append(("Loopback0" if platform.startswith("cisco") else "lo0", "loopback", "", None))
         _PORTS[name] = [SimPort(i, name, p, platform, kind, alias, rand, peer)
                         for i, (p, kind, alias, peer) in enumerate(ports, 1)]
     return _PORTS[name]
@@ -327,12 +339,30 @@ RTT = {"HQ": 1.2, "DC1": 0.6, "Branch-North": 14.0, "Branch-South": 18.0, "Wareh
 HISTORY_DAYS = 3
 
 
+def snmp_only_mib(clock=time.time) -> dict[str, dict]:
+    """The demo's SNMP-only devices: a UPS on mains with a full battery, a PDU's phase load,
+    and a data-centre room probe running warm in the afternoon (a sensor warning)."""
+    def day():
+        return math.sin(2 * math.pi * clock() / DAY + math.pi / 2 - 2 * math.pi * PEAK_HOUR / 24)
+    return {  # name -> a function giving its values now
+        "hq-ups1": lambda: {"1.3.6.1.2.1.33.1.4.1.0": 3, "1.3.6.1.2.1.33.1.2.4.0": 100,
+                            "1.3.6.1.2.1.33.1.2.3.0": 38},
+        "dc1-pdu1": lambda: {"1.3.6.1.4.1.318.1.1.12.2.3.1.1.2.1": int(84 + 12 * max(day(), 0))},
+        "dc1-env1": lambda: {"1.3.6.1.4.1.318.1.1.10.2.3.2.1.4.1": round(26.4 + 2 * max(day(), 0), 1)},
+    }
+
+
 def sim_for(net, clock=time.time) -> SimMonitor:
     """The demo network's ping and SNMP answers (also the profile Test button's)."""
     from app.demo import seed
 
     addresses = {d.name: seed.address(i) for i, d in enumerate(seed.DEVICES)}
+    addresses |= {n: seed.snmp_address(k) for k, (n, _, _) in enumerate(seed.SNMP_DEVICES)}
     sim = SimMonitor(net, addresses, clock=clock)
+    for name, site, platform in seed.SNMP_DEVICES:
+        sim.others[name] = types.SimpleNamespace(up=True, platform=platform, version="")
+        sim.rtt[name] = RTT.get(site, 2.0)
+    sim.extra.update(snmp_only_mib(clock))
     sim.down |= DOWN
     sim.no_ping |= NO_PING
     sim.snmp_error.update(SNMP_ERROR)
@@ -366,7 +396,7 @@ def history(poller, now: float | None = None) -> None:
     with session_scope() as db:
         ids = dict(db.execute(select(Device.name, Device.id)).all())
     rand = random.Random(11)
-    site = {d.name: d.site for d in seed.DEVICES}
+    site = {d.name: d.site for d in seed.DEVICES} | {n: st for n, st, _ in seed.SNMP_DEVICES}
     step = 60
     start = now - HISTORY_DAYS * 86400
     flap = (now - 86400 - 3 * 3600, now - 86400 - 3 * 3600 + 14 * 60)
@@ -403,7 +433,7 @@ def history(poller, now: float | None = None) -> None:
     # the first live reading already has rates
     from app.tools.monitoring import ifaces as ifm
 
-    platform = {d.name: d.platform for d in seed.DEVICES}
+    platform = {d.name: d.platform for d in seed.DEVICES} | {n: p for n, _, p in seed.SNMP_DEVICES}
     t0 = now - 300
     for name, device_id in ids.items():
         if name in DOWN or name in SNMP_ERROR:
@@ -437,7 +467,7 @@ def history(poller, now: float | None = None) -> None:
         for name, device_id in ids.items():
             if name in DOWN or name in SNMP_ERROR:
                 continue
-            target = SnmpTarget(seed.address(next(i for i, d in enumerate(seed.DEVICES) if d.name == name)))
+            target = SnmpTarget(seed.address_of(name))
             hsamples, record = [], None
             t = start - start % 900
             while t <= t0:

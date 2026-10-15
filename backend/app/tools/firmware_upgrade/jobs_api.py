@@ -13,7 +13,7 @@ from app.core.audit import audit
 from app.core.auth import User, require, require_upgrader
 from app.core.db import get_db
 from app.core.models import Credential, Device
-from app.core.platforms import PLATFORMS
+from app.core.platforms import PLATFORMS, uses_ssh
 from app.core.ssh import DeviceError
 from app.tools.firmware_upgrade import drivers
 from app.tools.firmware_upgrade import jobs as jb
@@ -180,7 +180,8 @@ def create_job(body: JobIn, request: Request, db: Session = Depends(get_db),
         raise HTTPException(422, "Device or image not found")
     driver = drivers.for_platform(device.platform)
     if driver is None:
-        raise HTTPException(422, f"No upgrade driver for {device.platform}")
+        raise HTTPException(422, f"{device.name} is an SNMP-only device: it can't be upgraded from here"
+                            if not uses_ssh(device.platform) else f"No upgrade driver for {device.platform}")
     if image.platform != device.platform:
         raise HTTPException(422, f"{image.filename} is for {image.platform}, "
                                  f"not {device.platform}")

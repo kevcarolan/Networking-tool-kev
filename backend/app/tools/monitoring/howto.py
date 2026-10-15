@@ -263,6 +263,49 @@ save""", "v2c": """\
  snmp-agent sys-info version v2c v3
  snmp-agent community read cipher <COMMUNITY> acl 2001""",
      "notes": "Check with: display snmp-agent usm-user"},
+    {"platform": "snmp_ups", "title": "UPS network card (APC/Schneider NMC, Eaton Network-M2, Vertiv)", "kind": "gui", "text": f"""\
+In the card's web page (menu names from APC's Network Management Card 2/3; Eaton and
+Vertiv cards have the same settings under Network or SNMP):
+1. Configuration > Network > SNMPv3 > Access: enable SNMPv3.
+2. SNMPv3 > User Profiles: a profile named {USER}, authentication SHA <AUTH-PASSWORD>,
+   privacy AES <PRIV-PASSWORD>.
+3. SNMPv3 > Access Control: the {USER} profile, NMS IP/Host Name {{server}}, access enabled.
+4. SNMPv1 (if you use v2c instead): disable it, or allow only {{server}} with read access.""",
+     "v2c": """\
+Configuration > Network > SNMPv1 > Access Control: community <COMMUNITY>,
+NMS IP {server}, access type Read.""",
+     "notes": "UPS-MIB (RFC 1628) and the vendor's MIB (APC PowerNet-MIB, Eaton XUPS-MIB) give the "
+              "battery, load and on-battery status: add them as sensors (Monitoring > Sensors, "
+              "examples under UPS). Older cards may offer only SHA-1/DES or v1: update the card's firmware."},
+    {"platform": "snmp_pdu", "title": "PDU network card (APC/Schneider, Raritan, ServerTech, Eaton)", "kind": "gui", "text": f"""\
+In the PDU's web page:
+1. SNMP or Network > SNMP: enable SNMPv3, read only (leave SNMPv1 off).
+2. Add a user {USER}: authentication SHA <AUTH-PASSWORD>, privacy AES <PRIV-PASSWORD>,
+   read only.
+3. Allow only this server, {{server}}, where the card has an access list.""",
+     "v2c": """\
+SNMPv1/v2c: a read-only community <COMMUNITY>, allowed only from {server}.""",
+     "notes": "Load per outlet bank and per phase is in the vendor's MIB (APC PowerNet-MIB rPDU2, "
+              "Raritan PDU2-MIB, Sentry4-MIB): add the values you want as sensors."},
+    {"platform": "snmp_env", "title": "Environment probe (APC NetBotz, AKCP, Geist, HWg)", "kind": "gui", "text": f"""\
+In the probe's web page:
+1. SNMP settings: enable SNMPv3, user {USER}, authentication SHA <AUTH-PASSWORD>,
+   privacy AES <PRIV-PASSWORD>, read only.
+2. Allow only this server, {{server}}, where the probe has an access list.""",
+     "v2c": """\
+A read-only community <COMMUNITY>, allowed only from {server}.""",
+     "notes": "Temperature and humidity are in the vendor's MIB: add them as sensors with warning "
+              "and critical levels (Monitoring > Sensors, example: Room temperature)."},
+    {"platform": "snmp_other", "title": "Other SNMP devices", "kind": "gui", "text": f"""\
+In the device's web page or console:
+1. Enable SNMPv3 with a read-only user {USER}: authentication SHA <AUTH-PASSWORD>,
+   privacy AES <PRIV-PASSWORD>.
+2. Allow only this server, {{server}}, to read it.
+3. Leave SNMP SET (changes) and traps off.""",
+     "v2c": """\
+A read-only community <COMMUNITY>, allowed only from {server}.""",
+     "notes": "Ping, uptime, interfaces and the standard health MIBs are read if the device has "
+              "them; anything else in its MIB can be added as a sensor."},
     {"platform": "", "title": "Linux and others (net-snmp)", "kind": "cli", "text": f"""\
 # apt install snmpd
 systemctl stop snmpd

@@ -48,7 +48,7 @@ class BackupStatus(BaseModel):
 
 class DeviceBackupRow(BaseModel):
     device: DeviceOut
-    backup: BackupStatus
+    backup: BackupStatus | None  # None: an SNMP-only device (no config to back up)
 
 
 class SettingsIn(BaseModel):
@@ -56,7 +56,9 @@ class SettingsIn(BaseModel):
     enabled: bool = True
 
 
-def _row(device: Device, state: BackupState, svc: BackupService) -> DeviceBackupRow:
+def _row(device: Device, state: BackupState | None, svc: BackupService) -> DeviceBackupRow:
+    if state is None:
+        return DeviceBackupRow(device=device_out(device), backup=None)
     return DeviceBackupRow(device=device_out(device), backup=BackupStatus(
         frequency_minutes=state.frequency_minutes, enabled=state.enabled,
         status=state.last_status, busy=svc.is_busy(device.id),
@@ -71,7 +73,10 @@ def _load(db: Session, device_id: int, svc: BackupService) -> tuple[Device, Back
     if device is None:
         raise HTTPException(404, "Device not found")
     ensure_states(db, svc.settings.default_frequency_minutes)
-    return device, db.get(BackupState, device_id)
+    state = db.get(BackupState, device_id)
+    if state is None:
+        raise HTTPException(422, f"{device.name} is an SNMP-only device: it has no config to back up")
+    return device, state
 
 
 @router.get("/devices", response_model=list[DeviceBackupRow])
@@ -79,8 +84,8 @@ def list_backup_devices(request: Request, db: Session = Depends(get_db),
                         _: User = Depends(BACKUPS_VIEW)):
     svc = _service(request)
     ensure_states(db, svc.settings.default_frequency_minutes)
-    rows = db.execute(select(Device, BackupState)
-                      .join(BackupState, BackupState.device_id == Device.id)
+    rows = db.execute(select(Device, BackupState)  # SNMP-only devices too, without a backup
+                      .outerjoin(BackupState, BackupState.device_id == Device.id)
                       .order_by(Device.site, Device.name)).all()
     return [_row(d, s, svc) for d, s in rows]
 
@@ -104,7 +109,11 @@ def summary(request: Request, db: Session = Depends(get_db), _: User = Depends(B
 def get_backup_device(device_id: int, request: Request, db: Session = Depends(get_db),
                       _: User = Depends(BACKUPS_VIEW)):
     svc = _service(request)
-    return _row(*_load(db, device_id, svc), svc)
+    device = db.get(Device, device_id)
+    if device is None:
+        raise HTTPException(404, "Device not found")
+    ensure_states(db, svc.settings.default_frequency_minutes)
+    return _row(device, db.get(BackupState, device_id), svc)
 
 
 @router.put("/devices/{device_id}/settings", response_model=DeviceBackupRow)

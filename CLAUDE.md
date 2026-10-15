@@ -128,6 +128,14 @@ remote); never sync the two automatically.
   * tests drive every path against the network simulator `app/demo/simnet.py` (also the demo's
     network; `tests/fake_network.py` is kept as an alias). Extend the simulator with any new
     command a driver sends.
+* SNMP-only device types (`platforms.SNMP_ONLY`: `snmp_ups`, `snmp_pdu`, `snmp_env`,
+  `snmp_other`; `Platform.ssh=False`, `platforms.uses_ssh()`): no credential, never reached
+  over SSH. `ensure_states`/`ensure_facts` give them no BackupState/DeviceFacts rows (and
+  remove them when a device changes type), so backups, version checks, upgrades, reports
+  and the wall skip them; the backups list returns them with `backup: null`. Monitoring,
+  sensors (examples scoped by platform) and syslog treat them like any device. Any new
+  per-device SSH feature must check `uses_ssh`. The demo has a UPS, a PDU and a room probe
+  (`seed.SNMP_DEVICES`, `monitor.snmp_only_mib`).
 * SSH host keys: `core/ssh.py` records a device's key on first use (`<data>/known_hosts`) and
   every SSH or SCP connection then checks it (`ssh.trust_on_first_use`, `ssh.strict_params()`);
   any new way of reaching a device must do the same. CSV/XLSX exports go through

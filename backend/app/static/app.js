@@ -396,13 +396,17 @@ async function openCircuit(c) {
 
 // ---------- config backups ----------
 
+const snmpOnly = (platform) => (state.platforms || []).some((p) => p.key === platform && p.ssh === false);
+
 function effectiveStatus(row) {
+  if (!row.backup) return row.device.enabled ? "snmp" : "disabled";
   if (row.backup.busy) return "running";
   if (!row.device.enabled || !row.backup.enabled) return "disabled";
   return row.backup.status;
 }
 
-const STATUS_LABEL = { success: "OK", failed: "Failed", running: "Running", never: "Never", disabled: "Disabled" };
+const STATUS_LABEL = { success: "OK", failed: "Failed", running: "Running", never: "Never", disabled: "Disabled",
+  snmp: "SNMP only" };
 
 async function loadBackups() {
   try {
@@ -470,12 +474,13 @@ function deviceRow(r) {
   } else {
     result = h("span", { class: `badge ${st}` }, STATUS_LABEL[st] || st);
   }
+  if (st === "snmp") result = h("span", { class: "badge snmp", title: "Monitored with SNMP only: no config to back up" }, "SNMP only");
   const actions = [];
-  if (hasModule("backups")) actions.push(h("button", { class: "small", onclick: () => openDetail(r) }, "History"));
-  if (can("backups", "run") && hasModule("backups")) {
+  if (b && hasModule("backups")) actions.push(h("button", { class: "small", onclick: () => openDetail(r) }, "History"));
+  if (b && can("backups", "run") && hasModule("backups")) {
     actions.push(h("button", { class: "small", disabled: b.busy, onclick: () => runNow(d) }, "Backup now"));
   }
-  if (can("circuits", "view") && hasModule("circuits")) {
+  if (b && can("circuits", "view") && hasModule("circuits")) {
     actions.push(h("button", { class: "small", title: "What is on each port", onclick: () => openPorts(d) }, "Ports"));
   }
   if (can("syslog", "view") && hasModule("syslog")) {
@@ -493,9 +498,9 @@ function deviceRow(r) {
     h("td", {}, d.address),
     h("td", {}, siteLink(d.site)),
     h("td", {}, d.platform_label),
-    h("td", {}, fmtFreq(b.frequency_minutes)),
-    h("td", { title: fmtTime(b.last_success) }, fmtAgo(b.last_success)),
-    h("td", { title: fmtTime(b.last_change) }, b.last_change ? fmtAgo(b.last_change) : "—"),
+    h("td", {}, b ? fmtFreq(b.frequency_minutes) : "—"),
+    h("td", b ? { title: fmtTime(b.last_success) } : {}, b ? fmtAgo(b.last_success) : "—"),
+    h("td", b ? { title: fmtTime(b.last_change) } : {}, b && b.last_change ? fmtAgo(b.last_change) : "—"),
     h("td", { class: "result" }, result,
       state.cpFailing && state.cpFailing.get(d.id) ? h("small", { class: "sub" }, h("span", { class: "link errtext", title: "Compliance rules this config fails",
         onclick: () => { openDetail(r); selectDetailTab("compliance"); } }, `⚠ ${state.cpFailing.get(d.id)} compliance rule(s)`)) : null),
@@ -551,12 +556,14 @@ async function openDeviceDialog(row = null) {
     form.credential_id.value = d.credential_id ?? "";
     form.notes.value = d.notes;
     form.enabled.checked = d.enabled;
-    form.backup_enabled.checked = row.backup.enabled;
-    const freq = String(row.backup.frequency_minutes);
-    if (![...form.frequency_minutes.options].some((o) => o.value === freq)) {
-      form.frequency_minutes.append(h("option", { value: freq }, fmtFreq(row.backup.frequency_minutes)));
+    if (row.backup) {
+      form.backup_enabled.checked = row.backup.enabled;
+      const freq = String(row.backup.frequency_minutes);
+      if (![...form.frequency_minutes.options].some((o) => o.value === freq)) {
+        form.frequency_minutes.append(h("option", { value: freq }, fmtFreq(row.backup.frequency_minutes)));
+      }
+      form.frequency_minutes.value = freq;
     }
-    form.frequency_minutes.value = freq;
   } else if (state.credentials.length === 1) {
     form.credential_id.value = state.credentials[0].id;
   }
@@ -566,9 +573,19 @@ async function openDeviceDialog(row = null) {
   form.address.title = form.credential_id.title = where ? "" :
     "Changing the address or credential profile needs the 'addresses' level for Devices and credentials";
   dlg.dataset.deviceId = row ? row.device.id : "";
-  showSshKey(row);
+  deviceFormKind();
+  if (!row || !snmpOnly(row.device.platform)) showSshKey(row);
   dlg.showModal();
 }
+
+/** An SNMP-only type has no credential, backups or SSH key: hide those fields. */
+function deviceFormKind() {
+  const form = $("#device-form"), snmp = snmpOnly(form.platform.value);
+  form.querySelectorAll("[data-ssh]").forEach((el) => { el.hidden = snmp; });
+  $("#device-snmp-only").hidden = !snmp;
+  if (snmp) $("#device-ssh-key").hidden = true;
+}
+$("#device-form").platform.addEventListener("change", deviceFormKind);
 
 /** The device's recorded SSH host key, and (admins) forgetting it after a replacement. */
 async function showSshKey(row) {
@@ -598,14 +615,16 @@ $("#device-form").addEventListener("submit", async (ev) => {
   const body = {
     name: form.name.value, address: form.address.value, platform: form.platform.value,
     site: form.site.value, notes: form.notes.value, enabled: form.enabled.checked,
-    credential_id: form.credential_id.value ? Number(form.credential_id.value) : null,
+    credential_id: form.credential_id.value && !snmpOnly(form.platform.value) ? Number(form.credential_id.value) : null,
   };
   try {
     const device = await api(id ? `/api/devices/${id}` : "/api/devices", { method: id ? "PUT" : "POST", body });
-    await api(`/api/backup/devices/${device.id}/settings`, {
-      method: "PUT",
-      body: { frequency_minutes: Number(form.frequency_minutes.value), enabled: form.backup_enabled.checked },
-    });
+    if (!snmpOnly(device.platform)) {
+      await api(`/api/backup/devices/${device.id}/settings`, {
+        method: "PUT",
+        body: { frequency_minutes: Number(form.frequency_minutes.value), enabled: form.backup_enabled.checked },
+      });
+    }
     dlg.close();
     toast(`${device.name} saved`);
     loadBackups();

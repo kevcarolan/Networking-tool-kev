@@ -17,7 +17,7 @@ from app.core.auth import User, require
 from app.core.db import get_db, session_scope
 from app.core.inventory import DeviceOut, device_out
 from app.core.models import Device
-from app.core.platforms import PLATFORMS
+from app.core.platforms import PLATFORMS, SNMP_ONLY, uses_ssh
 from app.tools.firmware_upgrade.facts import (AHEAD, BEHIND, COMPLIANT, NO_STANDARD, UNKNOWN,
                                               best_standard, compliance, vendor_for)
 from app.tools.firmware_upgrade.images import (ImageError, ImageWriter, check_expected_hash,
@@ -168,6 +168,8 @@ def check_now(device_id: int, request: Request, db: Session = Depends(get_db),
     device = db.get(Device, device_id)
     if device is None:
         raise HTTPException(404, "Device not found")
+    if not uses_ssh(device.platform):
+        raise HTTPException(422, f"{device.name} is an SNMP-only device: it has no version check")
     queued = _service(request).submit(device_id)
     if queued:
         audit(db, user.username, "firmware.check", device.name)
@@ -179,7 +181,8 @@ def check_now(device_id: int, request: Request, db: Session = Depends(get_db),
 def check_all(request: Request, db: Session = Depends(get_db),
               user: User = Depends(FIRMWARE_MANAGE)):
     svc = _service(request)
-    ids = db.scalars(select(Device.id).where(Device.enabled.is_(True))).all()
+    ids = db.scalars(select(Device.id).where(Device.enabled.is_(True),
+                                             Device.platform.not_in(SNMP_ONLY))).all()
     queued = sum(svc.submit(i) for i in ids)
     audit(db, user.username, "firmware.check_all", f"{queued} device(s)")
     return {"queued": queued, "message": f"{queued} version check(s) queued"}

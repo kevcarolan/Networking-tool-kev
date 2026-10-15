@@ -3,7 +3,7 @@ platform added after Cisco and Allied Telesis. Sample output: tests/vendor_sampl
 
 import pytest
 
-from app.core.platforms import PLATFORMS
+from app.core.platforms import PLATFORMS, SNMP_ONLY
 from app.tools.circuits import live
 from app.tools.circuits.importer import normalize_port
 from app.tools.config_backup.collector import clean_config
@@ -18,6 +18,9 @@ from tests import vendor_samples as s
 
 def test_every_platform_has_version_checks_and_a_vendor():
     for key, p in PLATFORMS.items():
+        if not p.ssh:  # SNMP only: no version check
+            assert key not in FACT_COMMANDS, key
+            continue
         assert key in FACT_COMMANDS and key in _PARSERS, key
         assert p.vendor and vendor_for(key) == p.vendor
     assert vendor_for("allied_awplus") == "Allied Telesis" and vendor_for("cisco_xr") == "Cisco"
@@ -33,7 +36,9 @@ def test_platforms_without_an_upgrade_driver_yet():
     # AOS-CX and Cisco small business would have to pull the image (not wanted: backups and
     # versions only); Check Point upgrades stay in SmartConsole (decided). A job
     # can't be created for them.
-    assert set(PLATFORMS) - set(drivers.DRIVERS) == {"checkpoint_gaia", "aruba_aoscx", "cisco_smb"}
+    # SNMP-only devices are never upgraded from here either.
+    assert set(PLATFORMS) - set(drivers.DRIVERS) - SNMP_ONLY == {"checkpoint_gaia", "aruba_aoscx", "cisco_smb"}
+    assert not SNMP_ONLY & set(drivers.DRIVERS)
 
 
 # --- backups -------------------------------------------------------------------

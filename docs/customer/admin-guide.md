@@ -242,6 +242,11 @@ their results, overrides, and changes to devices, users and settings. Export it 
    sudo netops-cli import-csv /tmp/devices.csv
    ```
    The columns are `name,address,platform,site,credential,frequency_minutes,notes`.
+
+   UPS cards, PDUs and room probes are added with an **SNMP only** platform (*UPS (SNMP
+   only)*, *PDU*, *Environment probe*, *Other SNMP device*), with no credential: they are
+   monitored with ping, SNMP and sensors, and have no backups or upgrades
+   ([monitoring.md](../monitoring.md#snmp-only-devices-ups-pdu-probes)).
    There is an example in `docs/devices-example.csv`.
 3. Check each new platform with one device first: **Backup now**, then **Firmware › Check now**.
 4. **SSH host keys.** The first time the server connects to a device it records the

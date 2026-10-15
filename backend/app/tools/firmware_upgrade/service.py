@@ -6,7 +6,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
@@ -15,6 +15,7 @@ from app.core.config import Settings
 from app.core.crypto import CredentialCipher
 from app.core.db import session_scope, utcnow
 from app.core.models import Device
+from app.core.platforms import SNMP_ONLY
 from app.core.ssh import (COMMAND, SETUP, DeviceError, Target, classify_error, run_commands,
                           target_for)
 from app.tools.firmware_upgrade.facts import FACT_COMMANDS, parse_facts
@@ -27,9 +28,13 @@ Collector = Callable[[Target, tuple[str, ...]], list[str]]
 
 
 def ensure_facts(db: Session) -> None:
-    """Create an empty DeviceFacts row for any device that doesn't have one."""
+    """Create an empty DeviceFacts row for any device that doesn't have one (SNMP-only
+    devices have none: nothing is read from them over SSH)."""
+    db.execute(delete(DeviceFacts).where(DeviceFacts.device_id.in_(
+        select(Device.id).where(Device.platform.in_(SNMP_ONLY)))))
     missing = db.scalars(
-        select(Device.id).where(~Device.id.in_(select(DeviceFacts.device_id)))
+        select(Device.id).where(~Device.id.in_(select(DeviceFacts.device_id)),
+                                Device.platform.not_in(SNMP_ONLY))
     ).all()
     if missing:
         insert = sqlite_insert if db.get_bind().dialect.name == "sqlite" else pg_insert
@@ -124,6 +129,8 @@ class FirmwareService:
                 return None
             ensure_facts(db)
             facts_row = db.get(DeviceFacts, device_id)
+            if facts_row is None:  # an SNMP-only device
+                return None
             facts_row.last_attempt, facts_row.last_status = utcnow(), RUNNING
             platform, name = device.platform, device.name
             target, setup_error = None, None
