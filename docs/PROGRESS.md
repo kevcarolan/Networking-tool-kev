@@ -285,3 +285,4 @@ install test on Ubuntu, then clearing the name and the licence terms.
 | 2026-10-15 | Networking-tool-kev | Licensing for selling: editions and the Monitoring add-on in the product and on the Settings page, Meraki organisations as 25-device blocks, licence_tool editions, device bands, ledger and renewals; docs/selling.md (Stripe, OneDrive ledger and downloads, renewals, upgrades); VERSION 2.2.0 |
 | 2026-10-15 | Networking-tool-kev | Automatic releases (release.yml + deploy/release.py; v2.1.0 is made on merge); the workflow builds each release's bundle on Ubuntu 26.04 and attaches it; a script on the owner's PC copies the newest into OneDrive and removes the older ones |
 | 2026-10-15 | Networking-tool-kev | The owner's licence public key committed (made on the owner's PC; the private key stays there and in the password vault) |
+| 2026-10-15 | Networking-tool-kev | Release 2.2.0 (first version that accepts the owner's licences) |
