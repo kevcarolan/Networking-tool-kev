@@ -35,6 +35,11 @@ needs. Every command in this page is read-only (`show` or the vendor's equivalen
 | Ubiquiti | EdgeRouter, EdgeOS (`ubiquiti_edgeos`) | yes | yes | no | yes | lab test first |
 | Huawei | VRP: S series, CloudEngine, AR (`huawei_vrp`) | yes | yes | yes | yes | lab test first |
 
+| SNMP only | UPS, PDU, environment probe, other (`snmp_ups`, `snmp_pdu`, `snmp_env`, `snmp_other`) | no | no | no | no | no |
+
+The SNMP-only types are never reached over SSH: they are monitored with ping, SNMP and
+sensors only ([monitoring.md](monitoring.md#snmp-only-devices-ups-pdu-probes)).
+
 Not supported yet: Ubiquiti EdgeSwitch and UniFi (UniFi is managed through its controller,
 not SSH), and the Check Point management server (policy lives there, not on the gateway).
 

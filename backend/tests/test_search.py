@@ -33,7 +33,8 @@ def test_finds_devices_items_and_sites(demo_app):
     r = demo_app.get("/api/search", params={"q": "branch"}).json()
     assert "Branch North" in _names(r, "sites") and "bn-sw1" in _names(r, "devices")
     r = demo_app.get("/api/search", params={"q": "ups"}).json()
-    assert _names(r, "items") and "devices" not in r["groups"]
+    # the UPS card monitored with SNMP is a device; the branch UPS is an inventory item only
+    assert "hq-ups1" in _names(r, "devices") and "bn-ups1" in _names(r, "items")
     d = demo_app.get("/api/search", params={"q": "hq-acc-sw3"}).json()["groups"]["devices"]["items"][0]
     assert d["address"] and d["asset_id"]  # the inventory row, for people without other tabs
 

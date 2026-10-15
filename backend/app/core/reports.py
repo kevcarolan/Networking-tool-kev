@@ -17,6 +17,7 @@ from app.core import licence
 from app.core.auth import User, require_admin
 from app.core.db import get_db, utcnow
 from app.core.models import Device
+from app.core.platforms import uses_ssh
 
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 LIST = 15  # names listed per line of the report
@@ -67,7 +68,8 @@ def _backups(db, devices, since) -> dict:
 
     states = {s.device_id: s for s in db.scalars(select(BackupState))}
     failing = [d for d in devices if states.get(d.id) and states[d.id].last_status == "failed"]
-    never = [d for d in devices if not states.get(d.id) or states[d.id].last_success is None]
+    never = [d for d in devices if uses_ssh(d.platform)  # SNMP-only devices have no backups
+             and (not states.get(d.id) or states[d.id].last_success is None)]
     runs = list(db.scalars(select(BackupRun).where(BackupRun.changed.is_(True),
                                                    BackupRun.status == SUCCESS,
                                                    BackupRun.finished_at >= since)))

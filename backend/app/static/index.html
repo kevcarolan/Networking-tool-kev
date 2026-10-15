@@ -599,8 +599,8 @@
         <label>IP address / hostname <input name="address" required placeholder="10.0.0.1"></label>
         <label>Platform <select name="platform" required></select></label>
         <label>Site <input name="site" maxlength="100" list="site-list" placeholder="HQ"></label>
-        <label>Credential <select name="credential_id"></select></label>
-        <label>Backup frequency
+        <label data-ssh>Credential <select name="credential_id"></select></label>
+        <label data-ssh>Backup frequency
           <select name="frequency_minutes">
             <option value="15">Every 15 minutes</option>
             <option value="60">Hourly</option>
@@ -614,8 +614,11 @@
       <label>Notes <textarea name="notes" rows="2" maxlength="5000"></textarea></label>
       <div class="checks">
         <label class="check"><input type="checkbox" name="enabled" checked> Device enabled</label>
-        <label class="check"><input type="checkbox" name="backup_enabled" checked> Scheduled backups on</label>
+        <label class="check" data-ssh><input type="checkbox" name="backup_enabled" checked> Scheduled backups on</label>
       </div>
+      <p id="device-snmp-only" class="muted" hidden>An SNMP-only device (a UPS, PDU or probe): it is monitored
+        with ping, SNMP and sensors (Monitoring page) and has no config backups, version checks or upgrades.
+        Set up SNMP on it with <i>Help: set up devices</i> on the Monitoring page.</p>
       <p id="device-ssh-key" class="muted" hidden></p>
       <p class="error" hidden></p>
       <div class="dialog-actions">

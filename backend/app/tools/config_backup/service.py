@@ -15,6 +15,7 @@ from app.core.config import Settings
 from app.core.crypto import CredentialCipher
 from app.core.db import session_scope, utcnow
 from app.core.models import Device
+from app.core.platforms import SNMP_ONLY
 from app.tools.config_backup.collector import (SETUP, BackupError, Target, classify_error,
                                                clean_config, fetch_config)
 from app.tools.config_backup.models import (FAILED, NEVER, RUNNING, SUCCESS, BackupRun,
@@ -27,11 +28,16 @@ Fetcher = Callable[[Target], str]
 
 
 def ensure_states(db: Session, default_frequency: int) -> None:
-    """Create a BackupState row for any device that doesn't have one yet.
+    """Create a BackupState row for any device that doesn't have one yet (SNMP-only
+    devices have none: they have no config to back up; a device changed to one loses its
+    row, while its backup history stays).
 
     Safe to call concurrently (API requests and backup workers both do)."""
+    db.execute(delete(BackupState).where(BackupState.device_id.in_(
+        select(Device.id).where(Device.platform.in_(SNMP_ONLY)))))
     missing = db.scalars(
-        select(Device.id).where(~Device.id.in_(select(BackupState.device_id)))
+        select(Device.id).where(~Device.id.in_(select(BackupState.device_id)),
+                                Device.platform.not_in(SNMP_ONLY))
     ).all()
     if missing:
         insert = sqlite_insert if db.get_bind().dialect.name == "sqlite" else pg_insert
@@ -152,6 +158,8 @@ class BackupService:
                 return None
             ensure_states(db, self.settings.default_frequency_minutes)
             state = db.get(BackupState, device_id)
+            if state is None:  # an SNMP-only device
+                return None
             run = BackupRun(device_id=device_id, trigger=trigger, status=RUNNING)
             db.add(run)
             state.last_attempt = utcnow()

@@ -422,6 +422,9 @@ PLATFORM_PROBES: dict[str, list[str]] = {
     "mikrotik_routeros": ["mikrotik"],
     "ubiquiti_edgeos": ["ucd_mem"],
     "allied_awplus": [],
+    # SNMP only: the standard readers (HOST-RESOURCES, ENTITY-SENSOR) where the card has them;
+    # the rest through custom sensors (sensors.EXAMPLES has the UPS-MIB and APC ones)
+    "snmp_ups": [], "snmp_pdu": [], "snmp_env": [], "snmp_other": [],
 }
 
 

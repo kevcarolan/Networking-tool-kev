@@ -162,6 +162,21 @@ system-view
  info-center timestamp log date precision-time millisecond
  quit
 save""", "notes": "Check with: display info-center"},
+    {"platform": "snmp_ups", "title": "UPS network card (APC/Schneider NMC, Eaton, Vertiv)", "kind": "gui", "text": """\
+In the card's web page: Configuration > Logs > Syslog > Settings (APC NMC; others
+under Logging or Notifications):
+1. Enable syslog. Server {server}, port 514, protocol UDP.
+2. Severity: Informational, so power events (on battery, back on line) are sent.""",
+     "notes": "UPS cards send their power events as syslog messages: they appear on the Syslog page."},
+    {"platform": "snmp_pdu", "title": "PDU network card", "kind": "gui", "text": """\
+In the PDU's web page, Logging or Syslog settings: server {server}, port 514, UDP,
+level Informational.""", "notes": ""},
+    {"platform": "snmp_env", "title": "Environment probe", "kind": "gui", "text": """\
+In the probe's web page, Syslog or Notifications: server {server}, port 514, UDP.""",
+     "notes": "Not every probe can send syslog; the sensors on the Monitoring page cover them."},
+    {"platform": "snmp_other", "title": "Other SNMP devices", "kind": "gui", "text": """\
+In the device's settings, Syslog or Remote logging: server {server}, port 514, UDP,
+level Informational.""", "notes": ""},
     {"platform": "", "title": "Linux and others (rsyslog)", "kind": "cli", "text": """\
 # /etc/rsyslog.d/90-netops.conf   (then: systemctl restart rsyslog)
 *.info @{server}:514""", "notes": "One @ is UDP, @@ is TCP."},

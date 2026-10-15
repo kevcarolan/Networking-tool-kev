@@ -184,6 +184,10 @@ def sync_devices(db: Session) -> int:
 
 
 def _guess_type(platform: str) -> str:
+    if platform in ("snmp_ups", "snmp_pdu"):
+        return "UPS" if platform == "snmp_ups" else "PDU"
+    if platform in ("snmp_env", "snmp_other"):
+        return "other"
     if platform in ("cisco_asa", "cisco_ftd", "fortinet_fortios", "paloalto_panos",
                     "checkpoint_gaia"):
         return "firewall"
@@ -200,7 +204,8 @@ def device_values(device, facts) -> dict:
     from app.tools.firmware_upgrade.facts import vendor_for
 
     p = PLATFORMS.get(device.platform)
-    return {"vendor": vendor_for(device.platform), "platform": p.label if p else device.platform,
+    vendor = vendor_for(device.platform) if not p or p.ssh else None  # SNMP only: the row says
+    return {"vendor": vendor, "platform": p.label if p else device.platform,
             "address": device.address, "site": device.site,
             "facts.model": facts.model if facts else None,
             "facts.serial": facts.serial if facts else None,

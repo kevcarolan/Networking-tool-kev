@@ -47,7 +47,9 @@ The device list shows each device's backup status:
 * **Failing**, with the reason (wrong password, unreachable, timeout, a command the device
   refused, no credential set);
 * **Never backed up**;
-* **Disabled**.
+* **Disabled**;
+* **SNMP only**: a UPS, PDU or probe that is only monitored (Monitoring page); it has no
+  config to back up.
 
 The tiles at the top count each status.
 

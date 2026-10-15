@@ -337,11 +337,10 @@ MIB documentation: check each with **Test** on your own devices.
 | Errors on one port | `1.3.6.1.2.1.2.2.1.14.<ifIndex>` | Rate, /s | warning above 1, critical above 10 |
 | APC room temperature probe | `1.3.6.1.4.1.318.1.1.10.2.3.2.1.4.1` | Value, °C | warning above 27, critical above 32 |
 
-Sensors are read from devices in the inventory's device list. A UPS or environment probe
-with its own network card isn't one of the supported platforms yet, so the UPS and probe
-examples work today only where a supported device answers them (for example a UPS-MIB
-agent on a server you added). An "SNMP only" device type for UPSs, probes and PDUs is on
-the to-do list.
+Sensors are read from the devices in the device list. A UPS, PDU or environment probe with
+its own network card is added as an **SNMP-only device** (see below); the UPS examples are
+already set to the *UPS (SNMP only)* platform and the room probe to *Environment probe*,
+so they apply to those devices as soon as you save them.
 
 Notes:
 
@@ -360,6 +359,34 @@ Notes:
 | *first read: the rate is shown from the next one* | Normal for a Rate sensor; it appears 5 minutes later |
 | A value 10 or 100 times too big | Set *Scale* to 0.1 or 0.01 |
 | Every device shows the sensor as unknown | It is for every device: choose a platform, a site or the devices |
+
+## SNMP-only devices (UPS, PDU, probes)
+
+Devices that only answer SNMP, and that you don't log in to, are added with one of these
+platforms:
+
+| Platform | For |
+|---|---|
+| UPS (SNMP only) | UPS network cards: APC/Schneider NMC, Eaton Network-M2, Vertiv |
+| PDU (SNMP only) | Rack PDUs: APC/Schneider, Raritan, ServerTech, Eaton |
+| Environment probe (SNMP only) | Room and rack probes: APC NetBotz, AKCP, Geist, HWg |
+| Other SNMP device | Anything else with SNMP: printers, cameras, building controllers… |
+
+They need no credential: nothing is read from them over SSH. So they have **no config
+backups, version checks, circuit scans or upgrade jobs**; on the Config backups page they
+show as *SNMP only*. They are monitored like any other device: ping, SNMP uptime and
+interfaces, events and alerts, the map and the wall display. What makes them useful is the
+**sensors** for their type (battery, load, on battery, temperature): start from the
+examples in Monitoring › Sensors.
+
+1. Set up SNMPv3 on the card: Monitoring › **Help: set up devices** has the steps for each
+   type (and Syslog's help, to send the card's own event log to the Syslog page).
+2. **Config backups › Add device**: the name, its address, the platform (*UPS (SNMP only)*
+   …) and the site. The credential and backup fields disappear for these platforms.
+3. Monitoring › **Sensors**: add the readings you want, from the examples or your own.
+
+Changing an existing device to an SNMP-only platform stops its backups and version checks;
+its backup history stays. They count towards the licence's device number like any device.
 
 ## Permissions
 

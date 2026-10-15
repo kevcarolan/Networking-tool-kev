@@ -71,9 +71,41 @@ SERVICES = [("CCTV", 40), ("Access control", 42), ("Building management", 50),
             ("Wireless APs", 60)]
 
 
+# SNMP-only devices (no SSH: monitored with ping, SNMP and sensors): name, site, platform
+SNMP_DEVICES = [("hq-ups1", "HQ", "snmp_ups"), ("dc1-pdu1", "DC1", "snmp_pdu"),
+                ("dc1-env1", "DC1", "snmp_env")]
+
+
+DEMO_SENSORS = [
+    ("UPS on battery", "1.3.6.1.2.1.33.1.4.1.0", {"mode": "state", "ok_values": "3", "warn_values": "4",
+                                                   "platform": "snmp_ups", "notes": "upsOutputSource: 3 = normal, 5 = on battery"}),
+    ("UPS battery charge", "1.3.6.1.2.1.33.1.2.4.0", {"unit": "%", "warn_below": 80, "crit_below": 50,
+                                                       "platform": "snmp_ups"}),
+    ("UPS runtime", "1.3.6.1.2.1.33.1.2.3.0", {"unit": "min", "warn_below": 15, "crit_below": 5,
+                                                "platform": "snmp_ups"}),
+    ("PDU load", "1.3.6.1.4.1.318.1.1.12.2.3.1.1.2.1", {"unit": "A", "scale": 0.1, "warn_above": 12,
+                                                         "crit_above": 16, "platform": "snmp_pdu",
+                                                         "notes": "APC rPDULoadStatusLoad, phase 1 (tenths of an amp)"}),
+    ("Room temperature", "1.3.6.1.4.1.318.1.1.10.2.3.2.1.4.1", {"unit": "°C", "warn_above": 27, "crit_above": 32,
+                                                                 "platform": "snmp_env"}),
+]
+
+
+def snmp_address(k: int) -> str:
+    return f"192.0.2.{200 + k}"
+
+
 def address(i: int) -> str:
     nets = ("192.0.2", "198.51.100", "203.0.113")
     return f"{nets[i // 80]}.{10 + i % 80}"
+
+
+def address_of(name: str) -> str:
+    """A demo device's address by name (SSH devices and SNMP-only ones)."""
+    for i, d in enumerate(DEVICES):
+        if d.name == name:
+            return address(i)
+    return snmp_address(next(k for k, (n, _, _) in enumerate(SNMP_DEVICES) if n == name))
 
 
 # --- the simulated network -------------------------------------------------------------
@@ -233,6 +265,11 @@ def seed(client, settings, net) -> dict:
                          content=circuit_workbook())).json()
     _ok(client.post(f"/api/circuits/imports/{imp['id']}/commit"))
     inventory(client)
+    # SNMP-only devices, after the inventory so hq-ups1 takes over the HQ-UPS1 row (its rack
+    # place, model and serial); no credential: nothing is read over SSH
+    for k, (name, site, platform) in enumerate(SNMP_DEVICES):
+        ids[name] = _ok(client.post("/api/devices", json={
+            "name": name, "address": snmp_address(k), "platform": platform, "site": site})).json()["id"]
     sites(client)
     calendar(client, ids)
     _ok(client.post("/api/compliance/examples"))  # checked at each device's first backup
@@ -249,6 +286,8 @@ def seed(client, settings, net) -> dict:
     _ok(client.post("/api/monitoring/sensors", json={
         "name": "IPsec tunnels", "oid": "1.3.6.1.4.1.9.9.171.1.3.1.1.0", "unit": "tunnels",
         "warn_below": 1, "platform": "cisco_asa"}))
+    for name, oid, extra in DEMO_SENSORS:  # the SNMP-only devices' readings (app.demo.monitor answers)
+        _ok(client.post("/api/monitoring/sensors", json={"name": name, "oid": oid, **extra}))
     from app.demo import meraki as demo_meraki
     _ok(client.post("/api/monitoring/meraki/connections", json={  # answered by app.demo.meraki
         "name": demo_meraki.ORG["name"], "api_key": demo_meraki.KEY, "org_id": demo_meraki.ORG["id"],

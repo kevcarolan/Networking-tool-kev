@@ -30,6 +30,8 @@ from pathlib import Path
 
 from sqlalchemy import select
 
+from app.core.platforms import uses_ssh
+
 
 def _totp_secret(_args) -> int:
     from app.core import totp
@@ -113,8 +115,9 @@ def _import_csv(args) -> int:
                 device = Device(**data.model_dump())
                 db.add(device)
                 db.flush()
-                freq = int(row.get("frequency_minutes") or settings.default_frequency_minutes)
-                db.add(BackupState(device_id=device.id, frequency_minutes=max(15, freq)))
+                if uses_ssh(device.platform):  # SNMP-only devices have no backups
+                    freq = int(row.get("frequency_minutes") or settings.default_frequency_minutes)
+                    db.add(BackupState(device_id=device.id, frequency_minutes=max(15, freq)))
                 existing.add(data.name)
                 created += 1
             except Exception as exc:  # noqa: BLE001
@@ -142,6 +145,10 @@ def _backup(args) -> int:
         if device is None:
             print(f"No device named {args.name}", file=sys.stderr)
             return 1
+        if not uses_ssh(device.platform):
+            print(f"{args.name} is an SNMP-only device: nothing is read from it over SSH",
+                  file=sys.stderr)
+            return 1
         device_id = device.id
     svc = BackupService(settings, CredentialCipher(settings.credential_key_file),
                         GitConfigStore(settings.configs_dir))
@@ -166,6 +173,10 @@ def _firmware_check(args) -> int:
         device = db.scalar(select(Device).where(Device.name == args.name))
         if device is None:
             print(f"No device named {args.name}", file=sys.stderr)
+            return 1
+        if not uses_ssh(device.platform):
+            print(f"{args.name} is an SNMP-only device: nothing is read from it over SSH",
+                  file=sys.stderr)
             return 1
         platform = device.platform
         try:
@@ -214,6 +225,10 @@ def _capture(args) -> int:
         device = db.scalar(select(Device).where(Device.name == args.name))
         if device is None:
             print(f"No device named {args.name}", file=sys.stderr)
+            return 1
+        if not uses_ssh(device.platform):
+            print(f"{args.name} is an SNMP-only device: nothing is read from it over SSH",
+                  file=sys.stderr)
             return 1
         cred, account = None, "backup"
         s = db.get(DeviceUpgradeSettings, device.id)

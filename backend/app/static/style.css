@@ -147,14 +147,14 @@ tr.disabled td { opacity: .55; }
 .dot.success { background: var(--ok); }
 .dot.failed { background: var(--fail); }
 .dot.running { background: var(--warn); animation: pulse 1s infinite alternate; }
-.dot.never, .dot.disabled { background: var(--idle); }
+.dot.never, .dot.disabled, .dot.snmp { background: var(--idle); }
 @keyframes pulse { to { opacity: .3; } }
 
 .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; white-space: nowrap; }
 .badge.success { background: var(--ok-bg); color: var(--ok); }
 .badge.failed { background: var(--fail-bg); color: var(--fail); }
 .badge.running, .badge.changed { background: var(--warn-bg); color: var(--warn); }
-.badge.never, .badge.disabled { background: var(--idle-bg); color: var(--idle); }
+.badge.never, .badge.disabled, .badge.snmp { background: var(--idle-bg); color: var(--idle); }
 .errtext { display: block; color: var(--muted); font-size: 12px; margin-top: 3px; }
 
 /* Firmware */
@@ -279,7 +279,7 @@ dialog.topo-dialog[open] { display: flex; }
 .no-ports .topo-edge text.port { display: none; }
 .topo-site { fill: var(--text); font-size: 14px; font-weight: 700; }
 .form { display: grid; gap: 12px; }
-.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }  /* minmax: inputs never push a dialog wider */
 .checks { display: flex; gap: 20px; flex-wrap: wrap; }
 label.check { display: flex; align-items: center; gap: 6px; color: var(--text); }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
@@ -334,7 +334,6 @@ ol.steps li small { color: var(--muted); font-weight: normal; }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .chip { font-size: 11px; padding: 1px 6px; border-radius: 4px; background: var(--idle-bg); white-space: nowrap; }
 .chip.off { opacity: 0.5; text-decoration: line-through; }
-#user-form .grid2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 #user-form select, #user-form input:not([type=checkbox]), #user-form textarea { width: 100%; min-width: 0; box-sizing: border-box; }
 #user-form fieldset { min-width: 0; }
 

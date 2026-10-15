@@ -18,6 +18,9 @@ class Platform:
     # (pattern, replacement) for values the device shows differently on every run,
     # e.g. FortiOS re-encrypts each secret with a new salt each time it is shown.
     masks: tuple[tuple[str, str], ...] = field(default_factory=tuple)
+    # False for the "SNMP only" types (UPS cards, PDUs, probes): never reached over SSH, so
+    # no backups, version checks, port scans or upgrades; monitored with ping and SNMP only.
+    ssh: bool = True
 
     def volatile_regex(self) -> re.Pattern | None:
         if not self.volatile_lines:
@@ -115,4 +118,20 @@ PLATFORMS: dict[str, Platform] = {p.key: p for p in (
     Platform("huawei_vrp", "Huawei VRP (S, CloudEngine, AR)", "huawei", vendor="Huawei",
              needs_enable=False, backup_commands=("display current-configuration",),
              volatile_lines=(r"^!Last configuration was (?:updated|saved) at",)),
+    # SNMP only: monitored with ping, SNMP and custom sensors; nothing is read over SSH.
+    Platform("snmp_ups", "UPS (SNMP only)", "", vendor="SNMP only", backup_commands=(),
+             needs_enable=False, ssh=False),
+    Platform("snmp_pdu", "PDU (SNMP only)", "", vendor="SNMP only", backup_commands=(),
+             needs_enable=False, ssh=False),
+    Platform("snmp_env", "Environment probe (SNMP only)", "", vendor="SNMP only",
+             backup_commands=(), needs_enable=False, ssh=False),
+    Platform("snmp_other", "Other SNMP device", "", vendor="SNMP only", backup_commands=(),
+             needs_enable=False, ssh=False),
 )}
+
+SNMP_ONLY = frozenset(k for k, p in PLATFORMS.items() if not p.ssh)
+
+
+def uses_ssh(platform: str) -> bool:
+    """False for the SNMP-only types: no backups, version checks, scans or upgrades."""
+    return platform not in SNMP_ONLY
