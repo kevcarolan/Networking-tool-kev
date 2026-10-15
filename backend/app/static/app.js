@@ -4178,10 +4178,12 @@ async function monHealth(d) {
     const [cls, label] = HW_STATUS[x.status] || HW_STATUS.unknown;
     const reading = x.value === null || x.value === undefined ? (x.kind === "sensor" ? h("small", { class: "muted" }, x.source) : "")
       : x.kind === "temperature" ? `${x.value} °C` : x.kind === "fan" ? `${Math.round(x.value)} rpm`
-      : x.kind === "sensor" ? `${x.value}${x.unit ? ` ${x.unit}` : ""}` : x.value;
+      : ["sensor", "optic", "poe"].includes(x.kind) ? `${x.value}${x.unit ? ` ${x.unit}` : ""}` : x.value;
+    const role = ["stack", "ha"].includes(x.kind) ? x.unit : "";
     const sensor = x.kind === "sensor";
-    const row = h("tr", sensor ? { class: "sensor-row", title: "Click for its graph" } : {}, h("td", {}, x.kind_label), h("td", {}, x.name), h("td", {}, reading),
-      h("td", {}, h("span", { class: `badge ${cls}` }, sensor && x.status === "critical" ? "critical" : label)));
+    const row = h("tr", sensor ? { class: "sensor-row", title: "Click for its graph" } : {}, h("td", {}, x.kind_label), h("td", {}, x.name),
+      h("td", {}, role || reading, x.note ? h("small", { class: "muted" }, ` ${x.note}`) : null),
+      h("td", {}, h("span", { class: `badge ${cls}` }, (sensor || ["optic", "poe", "ha", "stack"].includes(x.kind)) && x.status === "critical" ? "critical" : label)));
     if (sensor) row.addEventListener("click", () => {
       $("#mon-d-health").querySelectorAll("tr.picked").forEach((el) => el.classList.remove("picked"));
       row.classList.add("picked");
@@ -4190,7 +4192,7 @@ async function monHealth(d) {
     return row;
   }));
   $("#mon-d-health-empty").hidden = parts.length > 0;
-  $("#mon-d-health-empty").textContent = r.read_at ? "The device gives no temperatures, fans or power supplies over SNMP." : "Not read yet (every few minutes, with SNMP).";
+  $("#mon-d-health-empty").textContent = r.read_at ? "The device gives no temperatures, fans, power supplies, stack, HA, optics or PoE over SNMP." : "Not read yet (every few minutes, with SNMP).";
   const mibs = [...new Set(r.readings.map((x) => x.source).filter(Boolean))];
   const src = mibs.length ? `from ${mibs.join(", ")}` : "";
   $("#mon-d-health-note").textContent = r.error ? `Can't read it: ${r.error}` : [

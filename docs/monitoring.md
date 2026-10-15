@@ -55,6 +55,25 @@ whoever gets *Devices down or up*:
 
 A power supply that isn't fitted ("not present") isn't a problem.
 
+**Stacks, HA pairs, optics and PoE** are part of the same read:
+
+* **Stacks** (Cisco StackWise): every switch in the stack with its role (active, standby,
+  member). A switch removed from the stack, configured but not there, or with a software
+  version or feature mismatch is a problem. A stack of one switch isn't shown.
+* **HA pairs**: Cisco ASA failover (primary and secondary unit: active or standby), FortiGate
+  HA clusters (each member, primary or secondary, configuration in sync) and Palo Alto HA
+  (this unit and its peer). A peer that is down, missing or not in sync is a problem.
+* **Failover**: when the active switch of a stack, or the active (primary) unit of an HA
+  pair, changes from one read to the next, that is a **Failover** event, emailed with
+  *Devices down or up*, even if nothing is broken afterwards.
+* **Optics** (Cisco IOS-XE, NX-OS, IOS-XR, from CISCO-ENTITY-SENSOR-MIB): each transceiver's
+  light levels in dBm. A level past the **transceiver's own** warning or alarm threshold is a
+  problem (warning or critical), but only on a port that is up: a switched-off port has no
+  light by design. Other vendors' optics are not read yet.
+* **PoE** (POWER-ETHERNET-MIB, any vendor that has it): the power drawn against each PoE
+  supply's budget. At the device's own usage threshold (else 90%), it is a warning; a PoE
+  supply the switch reports as faulty is critical.
+
 **Where the readings come from.** Each platform has readers for its vendor's own MIBs. Every
 device is then also asked the standard MIBs: HOST-RESOURCES-MIB for CPU and memory, and
 ENTITY-SENSOR-MIB for temperatures and fans. The first read tries them all and remembers
@@ -63,12 +82,13 @@ reader that gets nothing back adds nothing: it never makes a device look down.
 
 | Platform | Readers |
 |---|---|
-| Cisco IOS / IOS-XE | CISCO-PROCESS-MIB (CPU, memory), CISCO-MEMORY-POOL-MIB, CISCO-ENVMON-MIB (temperatures, fans, power supplies with their state), CISCO-ENTITY-SENSOR-MIB, CISCO-ENTITY-FRU-CONTROL-MIB |
-| Cisco NX-OS, IOS-XR | CISCO-PROCESS-MIB, CISCO-ENTITY-SENSOR-MIB, CISCO-ENTITY-FRU-CONTROL-MIB (power supplies, fan trays) |
-| Cisco ASA, FTD | CISCO-PROCESS-MIB, CISCO-MEMORY-POOL-MIB, CISCO-ENTITY-SENSOR-MIB |
+| Cisco IOS / IOS-XE | CISCO-PROCESS-MIB (CPU, memory), CISCO-MEMORY-POOL-MIB, CISCO-ENVMON-MIB (temperatures, fans, power supplies with their state), CISCO-ENTITY-SENSOR-MIB (also optics), CISCO-ENTITY-FRU-CONTROL-MIB, CISCO-STACKWISE-MIB (stacks) |
+| Cisco NX-OS, IOS-XR | CISCO-PROCESS-MIB, CISCO-ENTITY-SENSOR-MIB (also optics), CISCO-ENTITY-FRU-CONTROL-MIB (power supplies, fan trays) |
+| Cisco ASA | CISCO-PROCESS-MIB, CISCO-MEMORY-POOL-MIB, CISCO-ENTITY-SENSOR-MIB, CISCO-FIREWALL-MIB (failover) |
+| Cisco FTD | CISCO-PROCESS-MIB, CISCO-MEMORY-POOL-MIB, CISCO-ENTITY-SENSOR-MIB |
 | Cisco small business | CISCOSB CPU, then the standard MIBs |
 | Juniper Junos | JUNIPER-MIB jnxOperatingTable (routing engine CPU, memory and temperature; every fan and power supply's state; board temperatures) |
-| Fortinet FortiGate | FORTINET-FORTIGATE-MIB (CPU, memory, hardware sensors with their alarm) |
+| Fortinet FortiGate | FORTINET-FORTIGATE-MIB (CPU, memory, hardware sensors with their alarm; HA cluster members) |
 | HPE ArubaOS-Switch | HP STATISTICS-MIB (CPU), NETSWITCH-MIB (memory), HP-ICF-CHASSIS sensors (fans, power, over-temperature) |
 | HPE Aruba Mobility Controller | WLSX-SYSTEMEXT-MIB (processor load, memory) |
 | Extreme EXOS | EXTREME-SYSTEM-MIB and EXTREME-SOFTWARE-MONITOR-MIB (CPU, memory, temperature, fans, power supplies) |
@@ -76,7 +96,9 @@ reader that gets nothing back adds nothing: it never makes a device look down.
 | MikroTik RouterOS | MIKROTIK-MIB gauges (temperatures, fan speeds), then the standard MIBs |
 | Check Point | CHECKPOINT-MIB (CPU, memory), UCD-SNMP-MIB |
 | Ubiquiti EdgeOS | UCD-SNMP-MIB (memory), then the standard MIBs |
-| Arista, Palo Alto, Aruba AOS-CX, Dell OS10, AlliedWare Plus | The standard MIBs |
+| Palo Alto | PAN-COMMON-MIB (HA state of this unit and its peer), then the standard MIBs |
+| Arista, Aruba AOS-CX, Dell OS10, AlliedWare Plus | The standard MIBs |
+| Every device | HOST-RESOURCES-MIB, ENTITY-SENSOR-MIB and POWER-ETHERNET-MIB (PoE) |
 
 The readers were written from the vendors' MIB documentation. Confirm each platform on a
 real device before relying on it, the same way as the upgrade drivers: open the device's

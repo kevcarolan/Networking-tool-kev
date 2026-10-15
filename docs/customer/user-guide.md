@@ -209,7 +209,11 @@ minute with ping and SNMP; the server only asks, it never changes anything.
   failed, a temperature is too high, or CPU or memory is over the threshold. The
   **Hardware problems** tile and list show every device with one.
 * **Health**, in the device window: CPU and memory with their graph, and every temperature,
-  fan and power supply with its status.
+  fan and power supply with its status. Also the switches in a **stack** and the units of an
+  **HA pair** (firewalls) with their role, the **optics'** light levels and the **PoE**
+  power used. A switch dropping out of its stack, an HA peer lost, an optic's light past its
+  limit or a PoE budget nearly used up shows as a hardware problem. A change of active
+  switch or firewall is a **Failover** event, emailed like a device going down.
 * **Sensors** your admins added (a UPS, BGP peers, firewall sessions…) are in the same
   Health table (Part: *Sensor*); click one for its graph. One past its threshold makes the
   device a warning, like a failed fan. With Monitoring *manage* you can add them yourself:

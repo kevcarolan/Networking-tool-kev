@@ -230,7 +230,7 @@ def due(db: Session, cfg: Config, now: datetime | None = None, syslog_dir=None,
     return out
 
 
-MONITOR_KINDS = ("down", "up", "restarted", "port_down", "port_up", "health_problem", "health_ok")
+MONITOR_KINDS = ("down", "up", "restarted", "port_down", "port_up", "health_problem", "health_ok", "failover")
 MONITOR_LIMIT = 50  # events listed in one email
 
 
@@ -279,7 +279,8 @@ def _monitoring(db, since, now, done, monitor_dir) -> list[Alert]:
     rows.sort(key=lambda e: e["ts"])
     names = {d.id: d for d in db.scalars(select(Device))}
     label = {"down": "DOWN", "up": "back up", "restarted": "restarted", "port_down": "PORT DOWN",
-             "port_up": "port back up", "health_problem": "HARDWARE", "health_ok": "hardware OK"}
+             "port_up": "port back up", "health_problem": "HARDWARE", "health_ok": "hardware OK",
+             "failover": "FAILOVER"}
     lines = []
     for e in rows[:MONITOR_LIMIT]:
         d = names.get(e["device_id"])
@@ -304,6 +305,10 @@ def _monitoring(db, since, now, done, monitor_dir) -> list[Alert]:
         parts.append(f"{len(restarted)} restarted: {short(restarted)}")
     elif restarted:
         parts.append(f"{len(restarted)} restarted")
+    failed_over = sorted({names[e["device_id"]].name for e in rows
+                          if e["kind"] == "failover" and e["device_id"] in names})
+    if failed_over:
+        parts.append(f"failover: {short(failed_over)}")
     hardware = sorted({names[e["device_id"]].name for e in rows
                        if e["kind"] == "health_problem" and e["device_id"] in names})
     if hardware:

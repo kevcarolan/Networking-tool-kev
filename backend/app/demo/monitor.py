@@ -197,6 +197,36 @@ def health_mib(name: str, platform: str, t: float, faults: set[str], cpu: float 
         for k, n, kind, v, st in sensors:
             m[f"{e}.1.{k}"], m[f"{e}.2.{k}"], m[f"{e}.3.{k}"] = kind, 9, 0
             m[f"{e}.4.{k}"], m[f"{e}.5.{k}"], m[f"{ENT_NAME}.{k}"] = v, st, n
+    # stacks, HA, optics and PoE (health.py's cisco_stack, asa_failover, optics, poe)
+    if name in STACKS:
+        active = 2 if "stack_failover" in faults else 1
+        for n in range(1, STACKS[name] + 1):
+            k = 1000 * n
+            gone = n == STACKS[name] and "stack" in faults
+            s_ = "1.3.6.1.4.1.9.9.500.1.2.1.1"
+            m[f"{s_}.1.{k}"], m[f"{s_}.3.{k}"], m[f"{s_}.6.{k}"] = n, 1 if n == active else 2, 11 if gone else 4
+            m.setdefault(f"{ENT_NAME}.{k}", f"Switch {n}")
+    if platform == "cisco_ios":  # PoE: a 740 W budget per switch
+        p_ = "1.3.6.1.2.1.105.1.3.1.1"
+        draw = 700 if "poe" in faults else int(150 + seed % 200 + 40 * max(day, 0))
+        m[f"{p_}.2.1"], m[f"{p_}.3.1"], m[f"{p_}.4.1"], m[f"{p_}.5.1"] = 740, 1, draw, 90
+    if platform == "cisco_asa":  # failover: primary active, secondary standby (or swapped / peer lost)
+        f_ = "1.3.6.1.4.1.9.9.147.1.2.1.1.1"
+        swapped = "failover" in faults
+        m[f"{f_}.3.6"], m[f"{f_}.4.6"] = (10, "Standby unit") if swapped else (9, "Active unit")
+        m[f"{f_}.3.7"], m[f"{f_}.4.7"] = ((3, "Failed") if "peer" in faults else
+                                          (9, "Active unit") if swapped else (10, "Standby unit"))
+    if platform in ("cisco_ios", "cisco_nxos"):  # the uplinks' optics: receive light, with thresholds
+        e_, th = "1.3.6.1.4.1.9.9.91.1.1.1.1", "1.3.6.1.4.1.9.9.91.1.2.1.1"
+        links = [p for p in ports_of(name, platform) if p.kind == "link"][:2]
+        for i, p in enumerate(links):
+            k = 5000 + i
+            low = "optic" in faults and i == 0
+            m[f"{e_}.1.{k}"], m[f"{e_}.2.{k}"], m[f"{e_}.3.{k}"] = 14, 9, 1
+            m[f"{e_}.4.{k}"], m[f"{e_}.5.{k}"] = (-151 if low else -23 - seed % 20 - 4 * i), 1
+            m[f"{ENT_NAME}.{k}"] = f"{p.name} Receive Power Sensor"
+            m[f"{th}.2.{k}.1"], m[f"{th}.5.{k}.1"] = 10, 1 if low else 2  # low warning (minor)
+            m[f"{th}.2.{k}.2"], m[f"{th}.5.{k}.2"] = 20, 2  # low alarm (major)
     # for the custom sensors in the demo (Monitoring › Sensors): BGP peers on the routers,
     # connections and VPN tunnels on the ASA
     if name in BGP_PEERS:
@@ -332,7 +362,9 @@ DOWN = {"bn-sw3"}  # unplugged at the branch (its backups fail too)
 NO_PING = {"hq-fw1"}  # the firewall drops ping; SNMP answers
 SNMP_ERROR = {"bn-rtr1": "The device doesn't know this SNMPv3 user"}  # not set up for SNMP yet
 # a failed power supply, a stopped fan, a BGP peer down (the custom sensor in the demo)
-FAULTS = {"hq-core2": {"psu2"}, "wh-sw3": {"fan2"}, "hq-core1": {"bgp"}}
+FAULTS = {"hq-core2": {"psu2"}, "wh-sw3": {"fan2"}, "hq-core1": {"bgp"},
+          "hq-acc-sw2": {"stack"}, "hq-acc-sw3": {"optic"}, "hq-acc-sw5": {"poe"}}
+STACKS = {"hq-acc-sw1": 2, "hq-acc-sw2": 2, "hq-acc-sw3": 3}  # switches in each stack
 BGP_PEERS = {"hq-core1": ["192.0.2.66", "198.51.100.1"], "hq-core2": ["192.0.2.65", "198.51.100.5"]}
 CPU_HIGH = {"dc1-leaf2": 92.0}  # a busy control plane
 RTT = {"HQ": 1.2, "DC1": 0.6, "Branch-North": 14.0, "Branch-South": 18.0, "Warehouse": 26.0}
@@ -502,6 +534,10 @@ def history(poller, now: float | None = None) -> None:
         {"ts": fault_since["wh-sw3"], "device_id": ids["wh-sw3"], "kind": "health_problem",
          "detail": "Fan 2/1 failed"},
         {"ts": now - 2 * 3600, "device_id": ids["dc1-leaf2"], "kind": "health_problem", "detail": "CPU 92%"},
+        {"ts": now - 20 * 3600, "device_id": ids["hq-fw1"], "kind": "failover",
+         "detail": "HA failover: Primary unit is now active (was Secondary unit)"},
+        {"ts": now - 3 * 3600, "device_id": ids["hq-acc-sw2"], "kind": "health_problem",
+         "detail": "Stack member Switch 2: removed from the stack"},
     ], [])
     poller.store.rollup(now, back_hours=HISTORY_DAYS * 24 + 2)
     poller.if_prev = {}
