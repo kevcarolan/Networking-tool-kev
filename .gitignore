@@ -13,3 +13,6 @@ venv/
 
 # Offline bundles built by deploy/airgap/build-bundle.sh
 dist/
+
+# The public website: built from website/, never in the install bundle
+website/public/

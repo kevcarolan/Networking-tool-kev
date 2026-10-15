@@ -64,7 +64,10 @@ install test on Ubuntu, then clearing the name and the licence terms.
 - [x] SNMP-only device types (owner, 2026-10-15; built 2026-10-15): UPS, PDU, environment probe and other SNMP device platforms with no credential, no backups, version checks, scans or upgrades; monitored with ping, SNMP and sensors (the UPS and room probe examples scoped to them); SNMP and syslog setup help for each; demo UPS, PDU and a warm room probe. Lab: an APC NMC and an Eaton card
 - [x] Licence editions and selling (owner, 2026-10-15): Essentials (backups, syslog), Professional (+ firmware, upgrades, circuits), Complete, Monitoring add-on; per device per year in bands 50/250/1,000/unlimited; UPS cards, PDUs and probes count as one device each; each Meraki organisation counts as 25 devices; Stripe for payment; the ledger and the download bundles in the owner's OneDrive; licence_tool editions, ledger and renew `--from` (docs/selling.md)
 - [ ] Owner: set up the Stripe products and prices (per edition and band, Stripe Tax, Invoicing); signing key and OneDrive folders done (2026-10-15). 2.2.0 is the first version that accepts licences
-- [ ] Owner: on the PC, a GitHub read-only token and the release sync script (`deploy/windows/Sync-NetCairnRelease.ps1 -SetToken`, then `-Register`; docs/releasing.md)
+- [x] Owner: on the PC, a GitHub read-only token and the release sync script (done 2026-10-15)
+- [x] Website built (`website/`, 2026-10-15)
+- [ ] Owner: website live: mailbox for site.json `email`, netcairn.ie on the existing host with HTTPS, upload website/public/ (website/README.md); prices and Stripe Payment Links in site.json when ready; solicitor check of the privacy notice
+- [ ] Owner: 3–5 friendly sites trialling it (own work environment first)
 - [ ] Check the first automatic bundle build (ubuntu:26.04 container on GitHub) and install it on a lab server
 - [ ] Later: a customer portal (Stripe payment makes the licence, the key in a key vault; customers download licences and bundles)
 - [ ] Built-in UPS health (UPS-MIB and APC PowerNet readers as hardware health, so a UPS on battery is a problem without adding sensors), if the sensors prove too manual
@@ -286,3 +289,4 @@ install test on Ubuntu, then clearing the name and the licence terms.
 | 2026-10-15 | Networking-tool-kev | Automatic releases (release.yml + deploy/release.py; v2.1.0 is made on merge); the workflow builds each release's bundle on Ubuntu 26.04 and attaches it; a script on the owner's PC copies the newest into OneDrive and removes the older ones |
 | 2026-10-15 | Networking-tool-kev | The owner's licence public key committed (made on the owner's PC; the private key stays there and in the password vault) |
 | 2026-10-15 | Networking-tool-kev | Release 2.2.0 (first version that accepts the owner's licences) |
+| 2026-10-15 | Networking-tool-kev | Website (`website/`): home, features with vendor table, security, pricing from site.json, free-trial request, draft privacy notice; screenshots from the demo; built with website/build.py for the owner's existing web host |

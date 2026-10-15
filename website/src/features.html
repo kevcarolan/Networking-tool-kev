@@ -1,0 +1,133 @@
+<!-- title: Features -->
+<!-- description: Config backups, compliance, syslog, monitoring, firmware upgrades, circuits, inventory, sites and racks, a wall display and reports, on one self-hosted server. -->
+<section class="hero page-hero">
+  <div class="wrap">
+    <h1>Everything it does, tool by tool</h1>
+    <p class="lede">Each tool works on its own and shares one device inventory, one login and one activity log with the others.</p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <div class="feature">
+      <div class="feature-text">
+        <p class="eyebrow">Config backups and compliance</p>
+        <h2>Backups you can rely on, and the reason when one fails</h2>
+        <ul>
+          <li>Scheduled SSH backups per device, daily or more often</li>
+          <li>Every version kept, with side-by-side differences</li>
+          <li>Compliance rules for the lines a config must have, or must never have, checked after every backup and exported to Excel for an audit</li>
+          <li>An email when a config changes, naming who changed it from the device's syslog</li>
+          <li>Secret-looking lines are never shown in emails or on screens without permission</li>
+          <li>Each device's SSH host key is recorded on first use and checked every time after</li>
+        </ul>
+      </div>
+      <figure class="shot"><img src="assets/img/backups.jpg" width="2160" height="1020" loading="lazy" alt="The config backups list with the status of each device."></figure>
+    </div>
+
+    <div class="feature flip">
+      <div class="feature-text">
+        <p class="eyebrow">Syslog</p>
+        <h2>One place for every device's log messages</h2>
+        <ul>
+          <li>A receiver on port 514 (UDP and TCP), one file per day, kept as long as you choose</li>
+          <li>Search by text or message code such as <code>%LINEPROTO</code>, or watch messages arrive live</li>
+          <li>The setup commands for each platform, ready to paste</li>
+        </ul>
+      </div>
+      <figure class="shot"><img src="assets/img/syslog.jpg" width="2160" height="1020" loading="lazy" alt="The syslog page: messages by severity with a timeline of the last 24 hours."><figcaption>Syslog, searchable by device, severity and message code</figcaption></figure>
+    </div>
+
+    <div class="feature">
+      <div class="feature-text">
+        <p class="eyebrow">Monitoring</p>
+        <h2>Up and down, traffic and hardware health</h2>
+        <ul>
+          <li>Ping and SNMP (v2c or v3) every 30 seconds, read-only</li>
+          <li>Interfaces and traffic history, busiest ports, link load on the network map</li>
+          <li>Power supplies, fans, temperature, Cisco stacks, ASA, FortiGate and Palo Alto HA pairs, optic light levels, PoE</li>
+          <li>Your own sensors from any OID, with thresholds and graphs</li>
+          <li>UPS cards, PDUs and room probes as devices of their own</li>
+          <li>Cisco Meraki organisations through the read-only Dashboard API (optional; the one internet connection the product can make)</li>
+        </ul>
+      </div>
+      <figure class="shot"><img src="assets/img/map.jpg" width="2160" height="1290" loading="lazy" alt="The network map, built from what the devices see of each other, with link load on each line and a device that is down in red."><figcaption>The network map, coloured by status and link load</figcaption></figure>
+    </div>
+
+    <div class="feature flip">
+      <div class="feature-text">
+        <p class="eyebrow">Firmware and upgrades</p>
+        <h2>A version report, and upgrades you can check before they run</h2>
+        <ul>
+          <li>Versions, models and serial numbers read from every device, against the standards you set</li>
+          <li>An image library; images are sent from the server, devices never fetch them</li>
+          <li>Upgrade jobs need an admin, a maintenance window and passing pre-checks, and you type the device's name to start one</li>
+          <li>A dry run follows exactly the same steps as the real upgrade</li>
+          <li>Stacks, vPC, ASA failover pairs and Firepower HA, each in the right order</li>
+        </ul>
+      </div>
+      <figure class="shot"><img src="assets/img/firmware.jpg" width="2160" height="1020" loading="lazy" alt="The firmware page: each device's version against its standard, with flash space and HA mode."></figure>
+    </div>
+
+    <div class="feature">
+      <div class="feature-text">
+        <p class="eyebrow">Inventory, sites and racks</p>
+        <h2>Every switch, server, UPS and patch panel, and where it sits</h2>
+        <ul>
+          <li>One inventory with your own columns; import and export to Excel</li>
+          <li>Sites, buildings, floors and rooms</li>
+          <li>Rack elevations, front, rear and zero-U; drag to move, with overlap checks</li>
+          <li>Circuits: find where each CCTV camera, door controller or access point is plugged in, from the switches' MAC and ARP tables</li>
+        </ul>
+      </div>
+      <figure class="shot"><img src="assets/img/rack.jpg" width="795" height="705" loading="lazy" alt="A 42U rack elevation with patch panels, switches and a firewall."></figure>
+    </div>
+
+    <div class="feature flip">
+      <div class="feature-text">
+        <p class="eyebrow">Wall display and reports</p>
+        <h2>A screen for the NOC, a report for the manager</h2>
+        <ul>
+          <li>A wall display on its own port with its own key; it shows names and statuses, never configs or addresses</li>
+          <li>A report of backups, compliance, firmware and monitoring, emailed on the day and time you choose</li>
+          <li>A shared calendar of maintenance windows, exported to Outlook</li>
+        </ul>
+      </div>
+      <figure class="shot"><img src="assets/img/wall.jpg" width="1920" height="1080" loading="lazy" alt="The wall display in dark colours for a NOC screen."></figure>
+    </div>
+  </div>
+</section>
+
+<section class="section alt" id="vendors">
+  <div class="wrap">
+    <div class="trail">
+      <p class="eyebrow">Supported platforms</p>
+      <h2>The vendors you already run</h2>
+      <p class="lead">Every command it sends to read a device is read-only. Upgrade jobs marked "being lab-tested" run as dry runs until we've signed them off on real hardware.</p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">Vendor and platform</th><th scope="col">Backups</th><th scope="col">Versions</th><th scope="col">Upgrade jobs</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Cisco IOS and IOS-XE, NX-OS, ASA, Firepower (FDM)</th><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td></tr>
+          <tr><th scope="row">Allied Telesis AlliedWare Plus</th><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td></tr>
+          <tr><th scope="row">Arista EOS, Juniper Junos, Dell OS10, Extreme EXOS, Huawei VRP</th><td class="yes">Yes</td><td class="yes">Yes</td><td class="lab">Being lab-tested</td></tr>
+          <tr><th scope="row">Fortinet FortiGate, Palo Alto PAN-OS</th><td class="yes">Yes</td><td class="yes">Yes</td><td class="lab">Being lab-tested</td></tr>
+          <tr><th scope="row">HPE Aruba ArubaOS-Switch, AOS 8 controllers, Cisco IOS-XR</th><td class="yes">Yes</td><td class="yes">Yes</td><td class="lab">Being lab-tested</td></tr>
+          <tr><th scope="row">MikroTik RouterOS, Ubiquiti EdgeOS</th><td class="yes">Yes</td><td class="yes">Yes</td><td class="lab">Being lab-tested</td></tr>
+          <tr><th scope="row">HPE Aruba AOS-CX, Cisco small business, Check Point Gaia</th><td class="yes">Yes</td><td class="yes">Yes</td><td class="no">No</td></tr>
+          <tr><th scope="row">UPS cards, PDUs, room probes (SNMP only)</th><td class="no">No</td><td class="no">No</td><td class="no">No</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Monitoring and syslog work with any device that speaks SNMP or syslog.</p>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap">
+    <h2>See it on your own devices</h2>
+    <p>The trial has every feature switched on for 60 days.</p>
+    <div class="actions"><a class="btn primary" href="trial.html">Start the free trial</a></div>
+  </div>
+</section>

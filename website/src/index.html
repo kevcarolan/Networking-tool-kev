@@ -1,0 +1,124 @@
+<!-- title: Network operations on your own server -->
+<!-- description: Config backups, compliance, syslog, monitoring, firmware upgrades and a full network inventory on one self-hosted server. Works without an internet connection. -->
+<section class="hero">
+  <div class="wrap">
+    <div class="hero-text">
+      <h1>Every network, <em>mapped and kept.</em></h1>
+      <p class="lede">Config backups, compliance, syslog, monitoring, firmware upgrades and your whole inventory, on one server you own. It runs inside your network and works with no internet connection at all.</p>
+      <div class="actions">
+        <a class="btn primary" href="trial.html">Start the free 60-day trial</a>
+        <a class="btn ghost" href="features.html">See what it does</a>
+      </div>
+      <p class="syslog-line" aria-label="Example: a link goes down and the backup that follows records the change"><b>hq-acc-sw3</b> %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet1/0/33, changed state to down · <b>hq-core1</b> config changed by jsmith · backup taken, 2 lines changed</p>
+    </div>
+    <figure class="hero-shot">
+      <img src="assets/img/wall.jpg" width="1920" height="1080" alt="The wall display: devices down, failing backups, compliance, config changes, firmware and each site's status at a glance.">
+    </figure>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <div class="trail">
+      <p class="eyebrow">One server, one login</p>
+      <h2>The tools a network team uses every day, sharing one inventory</h2>
+      <p class="lead">Add a device once. Backups, version checks, syslog, monitoring and the rack drawings all know about it.</p>
+    </div>
+    <div class="points">
+      <div class="point">
+        <h3>Know what changed</h3>
+        <p>Every config backed up on a schedule, with the differences between versions. When a config changes, you get an email naming who changed it, taken from the device's own syslog.</p>
+      </div>
+      <div class="point">
+        <h3>See what's down</h3>
+        <p>Ping and SNMP every 30 seconds: up and down, response times, interfaces and traffic, CPU, fans, power supplies, stacks, HA pairs, optics and PoE. Cisco Meraki too.</p>
+      </div>
+      <div class="point">
+        <h3>Keep it on standard</h3>
+        <p>A firmware report against the versions you've chosen, and upgrade jobs with pre-checks, a maintenance window and a dry run that follows the same steps as the real one.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section alt">
+  <div class="wrap">
+    <div class="feature">
+      <div class="feature-text">
+        <p class="eyebrow">Config backups and compliance</p>
+        <h2>Twenty-five devices, two failing. You know which, and why.</h2>
+        <p class="lead">Scheduled SSH backups for Cisco, Arista, Juniper, Fortinet, Palo Alto, Aruba, Allied Telesis and more. Each backup is checked against your compliance rules.</p>
+        <ul>
+          <li>History and side-by-side differences for every device</li>
+          <li>Rules such as "no telnet" or "NTP points at our servers", checked after every backup</li>
+          <li>Email when a config changes, a backup fails or a rule breaks</li>
+        </ul>
+      </div>
+      <figure class="shot"><img src="assets/img/backups.jpg" width="2160" height="1020" loading="lazy" alt="The config backups page: 25 devices, 23 backed up, 2 failing, with the reason for each failure."><figcaption>Config backups, on a simulated network</figcaption></figure>
+    </div>
+
+    <div class="feature flip">
+      <div class="feature-text">
+        <p class="eyebrow">Monitoring</p>
+        <h2>The failed fan before the failed switch</h2>
+        <p class="lead">Read-only SNMP and ping. It never changes a device's settings, and needs no agent on it.</p>
+        <ul>
+          <li>Hardware health: power supplies, fans, temperature, stack members, HA failovers, optic light levels, PoE budget</li>
+          <li>Your own SNMP sensors: UPS battery, BGP peers, tunnels, anything with an OID</li>
+          <li>Maintenance windows from the calendar keep planned work quiet</li>
+        </ul>
+      </div>
+      <figure class="shot"><img src="assets/img/monitoring.jpg" width="2160" height="1020" loading="lazy" alt="The monitoring page: one device down, nine warnings with the reason for each, such as a failed power supply or a stack member removed."><figcaption>Monitoring, with the reason for every warning</figcaption></figure>
+    </div>
+
+    <div class="feature">
+      <div class="feature-text">
+        <p class="eyebrow">Inventory, sites and racks</p>
+        <h2>What's where, down to the U</h2>
+        <p class="lead">One list of everything: switches and firewalls, and the racks, servers, UPSs, PDUs and patch panels around them.</p>
+        <ul>
+          <li>Buildings, floors, rooms and rack elevations, front and rear; drag to move</li>
+          <li>Your own columns, import and export to Excel</li>
+          <li>A network map drawn from what the devices see of each other</li>
+        </ul>
+      </div>
+      <figure class="shot"><img src="assets/img/rack.jpg" width="795" height="705" loading="lazy" alt="A rack elevation of a 42U rack: patch panels at the top, six access switches, two cores and a firewall below."><figcaption>A rack elevation, front and rear</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <div class="trail">
+      <p class="eyebrow">Built for networks that stay inside</p>
+      <h2>No cloud. No agent. No call home.</h2>
+      <p class="lead">The whole product is one Ubuntu server inside your network. Installs come as an offline bundle with a checksum and a list of every package in it, so air-gapped and regulated sites can approve it like any other change.</p>
+    </div>
+    <div class="points">
+      <div class="point">
+        <h3>Offline licence</h3>
+        <p>The licence is a signed file you paste in. It's checked on the server itself, so nothing needs to reach the internet.</p>
+      </div>
+      <div class="point">
+        <h3>Your login</h3>
+        <p>Active Directory over LDAPS or local users, with two-factor sign-in and a permission level per area.</p>
+      </div>
+      <div class="point">
+        <h3>Everything recorded</h3>
+        <p>Every change made through it is written to an activity log, and it can forward its own logs to your SIEM.</p>
+      </div>
+    </div>
+    <p class="more"><a href="security.html">How it keeps your network safe →</a></p>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap">
+    <h2>Try it on your own network for 60 days</h2>
+    <p>Every feature is switched on during the trial. If you don't buy, nothing on your devices has changed.</p>
+    <div class="actions">
+      <a class="btn primary" href="trial.html">Start the free trial</a>
+      <a class="btn ghost" href="pricing.html">See pricing</a>
+    </div>
+  </div>
+</section>
