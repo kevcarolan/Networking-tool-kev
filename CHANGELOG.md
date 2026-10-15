@@ -6,7 +6,7 @@ Each version in plain words, newest first. Versions are MAJOR.MINOR.PATCH
 which). Upgrading: install the new bundle as in the install guide; the database updates
 itself, and the installer refuses to go back to an older version.
 
-## 2.2.0 (not released yet)
+## 2.2.0 (2026-10-15)
 
 **New**
 - **Licences**: this version accepts licences from your supplier (earlier versions run
