@@ -282,3 +282,8 @@ def test_alerts_follow_the_licence(app, admin):
                               host="x", started_at=utcnow() - datetime.timedelta(days=1)))
     app.state.alert_service.tick()
     assert not any("upgrade worker" in m["Subject"] for m in box)  # Upgrades isn't licensed
+
+
+def test_the_shipped_signing_key_loads():
+    # The owner's public key ships in every bundle; a broken line would refuse every licence.
+    assert len(licence.public_keys()) >= 1

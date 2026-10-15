@@ -2,3 +2,4 @@
 # Make the key pair once with:  python -m app.licence_tool keygen --out ~/licence-signing.key
 # and paste the line it prints below. Keep the private .key file out of this repository.
 # More than one line is allowed, e.g. while moving to a new signing key.
+OvXKpm38QlqWYFPb80FbvqdzsmWYOztotSwjTL6xwX8

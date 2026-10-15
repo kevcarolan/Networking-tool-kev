@@ -9,6 +9,8 @@ itself, and the installer refuses to go back to an older version.
 ## 2.2.0 (not released yet)
 
 **New**
+- **Licences**: this version accepts licences from your supplier (earlier versions run
+  only the 60-day trial).
 - **Editions**: the Settings page shows the licence's edition (Essentials, Professional or
   Complete, and the Monitoring add-on).
 - **Meraki in the device count**: each Cisco Meraki organisation that is read counts as a
