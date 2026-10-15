@@ -18,6 +18,9 @@ is no telemetry and no update check.
 
 * **The server can reach the internet** (at least while installing): one command on the
   server. See [install-online.md](../install-online.md).
+* **From the download you were sent** (connected or air-gapped servers): the install bundle
+  (`netops-bundle-<version>.tar.gz`) and its SHA-256 come with your licence email. Check the
+  SHA-256, unpack and run `install.sh`. See [install-airgap.md](../install-airgap.md).
 * **No internet (air-gapped):** build an offline bundle on another machine, check its
   SHA-256, carry it across and install it. See [install-airgap.md](../install-airgap.md).
 

@@ -6,6 +6,15 @@ Each version in plain words, newest first. Versions are MAJOR.MINOR.PATCH
 which). Upgrading: install the new bundle as in the install guide; the database updates
 itself, and the installer refuses to go back to an older version.
 
+## 2.2.0 (not released yet)
+
+**New**
+- **Editions**: the Settings page shows the licence's edition (Essentials, Professional or
+  Complete, and the Monitoring add-on).
+- **Meraki in the device count**: each Cisco Meraki organisation that is read counts as a
+  block of 25 devices of the licence (a licence can set another number). Adding one is
+  refused when the licence has no room.
+
 ## 2.1.0 (2026-10-15)
 
 **New**

@@ -48,9 +48,26 @@ Settings, email alerts for whatever is unlocked, and the wall display.
 * A module left out at renewal keeps its data. Nothing is deleted, and an upgrade job
   already under way still finishes or rolls back.
 
-Editions are only names for a set of modules, for example *Essentials* = backups + syslog,
-*Professional* = + firmware and upgrades, *Complete* = everything. You can rename or
-re-bundle them at any time without changing the software.
+### Editions and what counts as a device
+
+Editions are names for a set of modules (owner, 2026-10-15). The licence keeps the modules
+themselves, so an edition can be re-bundled later without touching licences already sold.
+
+| Edition | Modules | Includes |
+|---|---|---|
+| **Essentials** | `backups`, `syslog` | Config backups with compliance and change alerts, syslog, inventory, sites and racks, the report, the wall display |
+| **Professional** | Essentials + `firmware`, `upgrades`, `circuits` | Firmware report, upgrade jobs, circuit locations |
+| **Complete** | every module | Everything |
+| **Monitoring add-on** | + `monitoring` | Ping and SNMP, interfaces, health, stacks and HA, sensors, Meraki. Adds to Essentials or Professional |
+
+* **Price per device per year**, in bands: **50, 250, 1,000 and unlimited** devices.
+* **What counts:** every device in the device list, including SNMP-only devices (each UPS
+  card, PDU and probe is one device). Each **Cisco Meraki organisation** that is read uses a
+  block of **25** devices (a licence can set its own number, `--meraki-devices`). The
+  Settings page shows the total, for example "37 of 50 (12 devices + 1 Meraki
+  organisation × 25)".
+* When the licence is full, no device (and no Meraki organisation) can be added; nothing
+  already there stops.
 
 When the trial or licence has ended, everyone sees a notice at the top of the page.
 During the trial, and when a licence is ending, only admins see one.
@@ -91,7 +108,24 @@ To move to a new signing key later:
 
 ## Make a licence
 
+The whole selling process (Stripe, the ledger on OneDrive, downloads) is in
+[selling.md](selling.md). The commands:
+
 ```bash
+# An edition, an add-on, a device band, with a ledger record
+python -m app.licence_tool sign --key ~/licence-signing.key \
+    --customer "Acme Ltd" --edition professional --add monitoring --devices 250 \
+    --expires 2027-10-31 --install-id 1CED-A204-C5AB-0B11 \
+    --email it@acme.example --stripe sub_1Q2w3E --ledger ~/OneDrive/NetCairn/licences.csv \
+    --out acme-2027.lic
+
+# Renew or upgrade from the ledger (everything else is kept)
+python -m app.licence_tool sign --key ~/licence-signing.key --from 3F2A91C0 \
+    --expires 2028-10-31 --devices 1000 --out acme-2028.lic
+
+# What has been sold
+python -m app.licence_tool ledger --customer acme
+
 # A customer: end date, number of devices
 python -m app.licence_tool sign --key ~/licence-signing.key \
     --customer "Acme Ltd" --expires 2027-10-31 --devices 500 --out acme-2027.lic
@@ -114,14 +148,17 @@ python -m app.licence_tool show acme-2027.lic
 ```
 
 * `--expires` is the **last day** the licence works.
-* `--devices` counts every device in the inventory.
+* `--devices` counts every device in the device list (a number, or `unlimited`); each Meraki
+  organisation uses 25 of them.
+* `--edition` `essentials`, `professional` or `complete`; `--add monitoring` adds the add-on.
 * `--modules`: `backups`, `firmware`, `upgrades`, `circuits`, `syslog`, `monitoring`, comma separated.
   Leave it out for all of them. `show` lists what a licence unlocks.
 * Send the `.lic` file, or its text, to the customer. It is not secret.
 
 ## Renewing
 
-Make a new licence with a later end date and send it. The admin pastes it on the Settings
+Make a new licence with a later end date (`--from <licence ID>` takes everything else from
+the ledger) and send it. The admin pastes it on the Settings
 page, and it replaces the old one straight away.
 
 **Adding a tool** works the same way. Make a new licence listing *all* the modules the
