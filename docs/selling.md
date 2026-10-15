@@ -55,12 +55,13 @@ you or OneDrive by themselves: the licence is checked offline, so air-gapped sit
 
 ## Downloads (OneDrive)
 
-* **Each release**: build the bundle from its tag (`git checkout v2.1.0`, then
-  `sudo deploy/airgap/build-bundle.sh` on an Ubuntu server of the release your customers use)
-  and upload the `.tar.gz`, `.sha256` and `MANIFEST.txt` to `NetCairn/releases/2.1.0/`.
-  Write the SHA-256 in the release notes on GitHub too.
-* **Share links**: share the release folder with **people you choose** (their email
-  addresses), or a link that **expires**; not "anyone with the link" without an end date.
+* **Each release** arrives by itself: GitHub builds the bundle when the release is made,
+  and the sync script on your PC puts the `.tar.gz`, `.sha256`, `MANIFEST.txt` and the
+  release notes in `NetCairn/releases/<version>/` and removes the older version
+  ([releasing.md](releasing.md#the-bundles-in-onedrive) has the one-time set-up).
+* **Share links**: share the `releases` folder (so the link survives new versions) with
+  **people you choose** (their email addresses), or a link that **expires**; not "anyone
+  with the link" without an end date.
   The customer checks the SHA-256 against the one you sent, which proves the file wasn't
   changed on the way ([install-airgap.md](install-airgap.md)).
 * The customer installs the bundle the same way on a connected or an air-gapped server:

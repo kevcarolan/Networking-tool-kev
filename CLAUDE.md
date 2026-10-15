@@ -220,6 +220,10 @@ remote); never sync the two automatically.
   file (the next release; `app/version.py` reads it). Every PR that changes what people see
   adds a plain-words line to the "(not released yet)" section of `CHANGELOG.md`. No version
   numbers in branch names. The version is never shown before sign-in (health, sign-in page).
+  Merging a "Release x.y.z" PR (the changelog heading dated) publishes the tag and GitHub
+  release by itself (`.github/workflows/release.yml`, `deploy/release.py`) and attaches the
+  bundle built on Ubuntu 26.04; the owner's PC copies it into OneDrive
+  (`deploy/windows/Sync-NetCairnRelease.ps1`). Never tag by hand.
 * **At the end of every session, update `docs/PROGRESS.md`:** tick finished items, add a
   line to the session log, and record new decisions and open questions.
 * Keep the docs in plain language. The users are network engineers, not developers.

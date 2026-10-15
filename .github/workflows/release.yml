@@ -1,0 +1,89 @@
+# Publishes a release when a "Release x.y.z" pull request is merged: deploy/release.py tags
+# the commit that dated the version's changelog heading and makes the GitHub release with
+# that section as its notes. Every other push to main finds nothing to do.
+#
+# Then, for each release it made, the bundle job builds the install bundle on Ubuntu 26.04
+# (the customers' server release) and attaches it to the release: the .tar.gz, its .sha256
+# and the MANIFEST. The owner's PC copies it into OneDrive
+# (deploy/windows/Sync-NetCairnRelease.ps1, docs/releasing.md).
+#
+# Run by hand (Actions > Release > Run workflow) with a tag, e.g. v2.1.0, to build or
+# rebuild the bundle of a release that already exists.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Build the bundle for this existing release (e.g. v2.1.0); empty = only make new releases"
+        required: false
+        default: ""
+
+permissions:
+  contents: write  # tags, releases and their files
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      tags: ${{ steps.bundles.outputs.tags }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # the whole history and the tags
+      - id: make
+        run: python3 deploy/release.py
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - id: bundles
+        env:
+          MADE: ${{ steps.make.outputs.tags }}
+          ASKED: ${{ github.event.inputs.tag }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os, re
+          tags = json.loads(os.environ.get("MADE") or "[]")
+          asked = (os.environ.get("ASKED") or "").strip()
+          if asked:
+              if not re.fullmatch(r"v\d+\.\d+\.\d+", asked):
+                  raise SystemExit(f"'{asked}' is not a release tag such as v2.1.0")
+              tags.append(asked)
+          print("tags=" + json.dumps(sorted(set(tags))))
+          PY
+
+  bundle:
+    needs: release
+    if: needs.release.outputs.tags != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        tag: ${{ fromJSON(needs.release.outputs.tags) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.tag }}
+          fetch-depth: 0  # the tag, so the bundle is named for the release
+      - name: Build the bundle on Ubuntu 26.04
+        run: |
+          docker run --rm -v "$PWD":/src -w /src ubuntu:26.04 deploy/airgap/build-bundle.sh
+          ls -l dist
+          version="${TAG#v}"
+          test -f "dist/netops-bundle-$version.tar.gz" || { echo "expected dist/netops-bundle-$version.tar.gz"; exit 1; }
+        env:
+          TAG: ${{ matrix.tag }}
+      - name: Attach it to the release
+        run: |
+          version="${TAG#v}"
+          gh release upload "$TAG" --clobber \
+            "dist/netops-bundle-$version.tar.gz" \
+            "dist/netops-bundle-$version.tar.gz.sha256" \
+            "dist/netops-bundle-$version.MANIFEST.txt"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ matrix.tag }}
