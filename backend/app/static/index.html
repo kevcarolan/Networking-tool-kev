@@ -289,6 +289,11 @@
 
       <!-- Circuits -->
       <section id="view-circuits" class="view" hidden>
+        <div class="tabs" id="ct-tabs">
+          <button data-tab="list" class="active">Circuit list</button>
+          <button data-tab="found" title="Devices plugged into switch ports that aren't on the list">Found on the network <span id="ct-found-count" class="count"></span></button>
+        </div>
+        <div id="ct-pane-list" class="ct-pane">
         <div id="ct-summary" class="tiles"></div>
         <p id="ct-source" class="muted"></p>
         <p id="ct-scan-info" class="muted"></p>
@@ -324,6 +329,28 @@
         <div class="table-wrap">
           <table id="ct-table"><thead></thead><tbody></tbody></table>
           <p id="ct-empty" class="empty" hidden></p>
+        </div>
+        </div>
+        <div id="ct-pane-found" class="ct-pane" hidden>
+          <p class="muted">Devices the last network scan saw on switch ports (not on links between switches)
+            that aren't on the circuit list. Tick the ones to keep track of and add them: you see the
+            change first, like an upload. Or download them, fill in names in Excel and upload the sheet.</p>
+          <div class="toolbar">
+            <input id="ctf-search" type="search" placeholder="Search MAC, IP, switch, port, name…">
+            <select id="ctf-site" aria-label="Site"><option value="">All sites</option></select>
+            <select id="ctf-switch" aria-label="Switch"><option value="">All switches</option></select>
+            <select id="ctf-vlan" aria-label="VLAN"><option value="">All VLANs</option></select>
+            <span class="spacer"></span>
+            <a class="button" href="/api/circuits/discovered.xlsx" download title="In the list's column names, ready to fill in and upload">Download as spreadsheet</a>
+            <button id="ctf-add" class="primary" data-perm="circuits:manage" disabled>Add selected to the list</button>
+          </div>
+          <div class="table-wrap">
+            <table id="ctf-table">
+              <thead><tr><th><input type="checkbox" id="ctf-all" aria-label="Select all shown"></th><th>MAC</th><th>IP</th><th>VLAN</th><th>Switch</th><th>Port</th><th>Site</th><th>Says it is</th><th>Last seen</th></tr></thead>
+              <tbody></tbody>
+            </table>
+            <p id="ctf-empty" class="empty" hidden></p>
+          </div>
         </div>
       </section>
 
@@ -1085,12 +1112,14 @@ snmptranslate -On UPS-MIB::upsEstimatedChargeRemaining.0   # a name to numbers (
       <button id="ct-upload-close" class="ghost">Close</button>
     </div>
     <form id="ct-upload-form" class="form">
-      <p class="muted">Choose the master circuit list: an Excel workbook (.xlsx) or a CSV file, such as
-        a filled-in <b>Blank template</b>. It is checked and shown here first; the live list only
-        changes when you click <b>Make this the live list</b>.</p>
+      <p class="muted">Choose the circuit list: an Excel workbook (.xlsx) or a CSV file, such as a
+        filled-in <b>Blank template</b> or your own list in any layout (if its column names aren't
+        known, you say which column is which). It is checked and shown here first; the live list
+        only changes when you click <b>Make this the live list</b>.</p>
       <label>File <input name="file" type="file" accept=".xlsx,.xlsm,.csv" required></label>
       <p class="error" hidden></p>
       <div class="dialog-actions"><button class="primary" value="check">Check file</button></div>
+      <div id="ct-layouts"></div>
     </form>
     <div id="ct-preview" hidden></div>
   </dialog>

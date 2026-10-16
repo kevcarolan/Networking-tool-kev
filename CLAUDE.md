@@ -194,6 +194,9 @@ remote); never sync the two automatically.
   effective Site is the site's name or code, and renaming one rewrites `assets.site` and
   `devices.site`. Circuit custom columns (`ct_fields`, values in `ct_circuits.custom`) are
   text, read by header name on upload (`importer.parse_workbook`/`parse_csv`, `custom=`).
+  An unknown header gets `needs_mapping` (the person maps columns, `importer.Mapping`);
+  saved layouts are `ct_column_maps` keyed by `header_signature`. "Found on the network"
+  (`api.discovered`) is edge-port MACs not on the list; adopting makes a pending import.
   A circuit's site (`circuits/api.SiteIndex`): its Site column, else its switch's, else the
   switch it was found on; the GUI links any Site value with `siteLink()`.
   Site layout (`layout.py`, table `site_locations`: building > floor > room, or a room in a

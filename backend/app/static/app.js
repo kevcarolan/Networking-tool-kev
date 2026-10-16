@@ -1138,7 +1138,8 @@ async function loadDevicePorts() {
           h("td", {}, h("span", { class: `badge ${CT_LIVE_CLS[c.live_status] || "never"}` }, c.live_status_label || "—"), c.found ? h("small", { class: "sub" }, c.found) : null)))))
         : h("p", { class: "muted" }, "No circuit in the list for this port."),
       p.macs.length ? h("div", {}, h("h4", {}, `MAC addresses seen (${p.macs.length})`),
-        h("table", {}, h("tbody", {}, p.macs.slice(0, 50).map((m) => h("tr", {}, h("td", {}, h("code", {}, m.mac)), h("td", {}, `VLAN ${m.vlan || "—"}`), h("td", {}, m.ip ? h("code", {}, m.ip) : "")))))) : "");
+        h("table", {}, h("tbody", {}, p.macs.slice(0, 50).map((m) => h("tr", {}, h("td", {}, h("code", {}, m.mac)), h("td", {}, `VLAN ${m.vlan || "—"}`), h("td", {}, m.ip ? h("code", {}, m.ip) : ""),
+          h("td", {}, p.status === "unlisted" && can("circuits", "manage") ? h("button", { type: "button", class: "small", onclick: () => adoptFound([m.mac]) }, "Add to the circuit list") : "")))))) : "");
   };
   // Group ports by everything but their last number (gi1/0/, te1/1/...), odd numbers on top like a switch.
   const groups = new Map();
@@ -1854,7 +1855,7 @@ function templateDialog(dialog, base, seen, note) {
 
 // ---------- circuits ----------
 
-const ct = { rows: [], imp: null, pending: null, meta: null };
+const ct = { rows: [], imp: null, pending: null, meta: null, tab: "list", found: [], file: null };
 const ctColsKey = () => `circuit-columns:${state.user ? state.user.username : ""}`;
 const sub = (text) => (text ? h("small", { class: "sub" }, text) : null);
 const ctCode = (v) => h("code", {}, v || "—");
@@ -1917,6 +1918,7 @@ const CT_MATCH = { matched: "Linked", unmatched: "Switch not in inventory", ambi
 const CT_LIVE_CLS = { matches: "success", moved: "failed", found: "changed", not_seen: "never", several: "changed", no_address: "never" };
 
 async function loadCircuits() {
+  loadFound();
   try {
     const [data, meta] = await Promise.all([api("/api/circuits"), api("/api/circuits/meta")]);
     ct.meta = meta;
@@ -1947,9 +1949,9 @@ async function loadCircuits() {
     : "No circuit list has been uploaded yet.";
   const full = ct.scan && ct.scan.last_full;
   $("#ct-scan-info").textContent = full
-    ? `Network last read ${fmtTime(full.finished_at)} (${full.trigger.startsWith("schedule") ? "weekly scan" : full.trigger.replace("manual:", "by ")}): ` +
+    ? `Network last read ${fmtTime(full.finished_at)} (${full.trigger.startsWith("schedule") ? "scheduled scan" : full.trigger.replace("manual:", "by ")}): ` +
       `${full.devices_ok} device(s) read` + (full.devices_failed ? `, ${full.devices_failed} failed` : "") + "."
-    : "The network hasn't been scanned yet: the weekly scan or Scan network now fills in where each circuit is.";
+    : "The network hasn't been scanned yet: the scheduled scan (Settings) or Scan network now fills in where each circuit is.";
   $("#ct-scan-info").title = full && full.errors ? full.errors : "";
   const uniq = (key) => [...new Set(rows.map((r) => r[key]).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   fillSelect($("#ct-filter-service"), "All services", uniq("service").map((x) => [x, x]));
@@ -2073,8 +2075,38 @@ $("#ct-upload").addEventListener("click", () => {
   form.hidden = false;
   $("#ct-preview").hidden = true;
   $("#ct-upload-dialog").showModal();
+  loadLayouts();
 });
+
+/** Spreadsheet layouts people matched before: files laid out the same are read with them. */
+async function loadLayouts() {
+  const box = $("#ct-layouts");
+  let maps = [];
+  try { maps = await api("/api/circuits/column-maps"); } catch (e) { maps = []; }
+  if (!maps.length) return box.replaceChildren();
+  box.replaceChildren(h("details", {},
+    h("summary", {}, `Saved layouts (${maps.length})`),
+    h("p", { class: "muted" }, "A file whose column names match one of these is read with it, without asking. Delete one to choose its columns again."),
+    h("table", {}, h("tbody", {}, maps.map((m) => h("tr", {},
+      h("td", { class: "name" }, m.name, h("small", { class: "sub" }, `${m.created_by}, ${fmtTime(m.created_at)}`)),
+      h("td", {}, m.columns.map((c) => `${c.header} → ${c.label}`).join(", ")),
+      h("td", {}, can("circuits", "manage") ? h("button", { type: "button", class: "small", onclick: async () => {
+        try { await api(`/api/circuits/column-maps/${m.id}`, { method: "DELETE" }); loadLayouts(); } catch (e) { toast(e.message); }
+      } }, "Delete") : "")))))));
+}
 $("#ct-upload-close").addEventListener("click", () => $("#ct-upload-dialog").close());
+
+async function sendCircuitFile(file, mapping = null, save = false) {
+  let url = `/api/circuits/imports/upload?filename=${encodeURIComponent(file.name)}`;
+  if (mapping) url += `&map=${encodeURIComponent(JSON.stringify(mapping))}${save ? "&save=true" : ""}`;
+  const res = await fetch(url, {
+    method: "PUT", credentials: "same-origin", body: file, headers: { "Content-Type": "application/octet-stream" },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401) { showLogin(); throw new Error("Signed out"); }
+  if (!res.ok) throw new Error(data.detail || res.statusText);
+  return data;
+}
 
 $("#ct-upload-form").addEventListener("submit", async (ev) => {
   ev.preventDefault();
@@ -2084,14 +2116,10 @@ $("#ct-upload-form").addEventListener("submit", async (ev) => {
   btn.disabled = true;
   btn.textContent = "Checking…";
   try {
-    const res = await fetch(`/api/circuits/imports/upload?filename=${encodeURIComponent(file.name)}`, {
-      method: "PUT", credentials: "same-origin", body: file, headers: { "Content-Type": "application/octet-stream" },
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.status === 401) return showLogin();
-    if (!res.ok) throw new Error(data.detail || res.statusText);
-    ct.pending = data;
+    const data = await sendCircuitFile(file);
     form.hidden = true;
+    if (data.needs_mapping) return renderMapping(file, data);
+    ct.pending = data;
     renderPreview(data);
   } catch (e) {
     err.textContent = e.message;
@@ -2101,6 +2129,105 @@ $("#ct-upload-form").addEventListener("submit", async (ev) => {
     btn.textContent = "Check file";
   }
 });
+
+/** The file's column names aren't known: the person picks the header row and says what
+ * each column is. Only a MAC or an IP column is needed; the layout can be remembered. */
+function renderMapping(file, data) {
+  const pane = $("#ct-preview");
+  const fields = data.fields;
+  const NEW = "__new__";
+  let sheetIdx = Math.max(0, data.sheets.findIndex((sh) => Object.keys(sh.guess.columns).length));
+  let headerRow = data.sheets[sheetIdx].guess.header_row;
+  let choice = {};
+  const err = h("p", { class: "error", hidden: true });
+  const remember = h("input", { type: "checkbox", checked: true });
+  const grid = h("div", { class: "table-wrap map-grid" });
+
+  const resetChoice = () => {
+    const g = data.sheets[sheetIdx].guess;
+    choice = g.header_row === headerRow ? Object.fromEntries(Object.entries(g.columns).map(([c, f]) => [c, f])) : {};
+  };
+  const options = (col) => {
+    const sel = h("select", { "aria-label": `Column ${Number(col) + 1}`, onchange: () => { choice[col] = sel.value; } },
+      h("option", { value: "ignore" }, "Ignore this column"),
+      h("optgroup", { label: "List columns" }, fields.filter((f) => !f.custom).map((f) => h("option", { value: f.key }, f.label))),
+      fields.some((f) => f.custom) ? h("optgroup", { label: "Your columns" }, fields.filter((f) => f.custom).map((f) => h("option", { value: f.key }, f.label))) : null,
+      isAdmin() ? h("option", { value: NEW }, "New column (named as in the file)") : null);
+    sel.value = choice[col] || "ignore";
+    return sel;
+  };
+  const draw = () => {
+    const rows = data.sheets[sheetIdx].rows;
+    const header = rows[headerRow] || [];
+    const sample = rows.slice(headerRow + 1, headerRow + 6);
+    const cols = header.map((_, i) => String(i)).filter((i) => header[i] || sample.some((r) => r[i]));
+    grid.replaceChildren(h("table", {},
+      h("thead", {},
+        h("tr", {}, cols.map((c) => h("th", {}, options(c)))),
+        h("tr", { class: "map-head" }, cols.map((c) => h("th", {}, header[c] || `(column ${Number(c) + 1})`)))),
+      h("tbody", {}, sample.length ? sample.map((r) => h("tr", {}, cols.map((c) => h("td", {}, r[c] || "")))) :
+        h("tr", {}, h("td", { colspan: cols.length || 1, class: "muted" }, "No rows under this one.")))));
+  };
+  const rowPick = h("select", { "aria-label": "Row with the column names", onchange: () => { headerRow = Number(rowPick.value); resetChoice(); draw(); } });
+  const fillRows = () => {
+    rowPick.replaceChildren(...data.sheets[sheetIdx].rows.map((r, i) =>
+      h("option", { value: i }, `Row ${i + 1}: ${r.filter(Boolean).slice(0, 4).join(", ").slice(0, 70) || "(empty)"}`)));
+    rowPick.value = String(headerRow);
+  };
+  const sheetPick = data.sheets.length > 1 ? h("select", { "aria-label": "Sheet", onchange: () => {
+    sheetIdx = Number(sheetPick.value); headerRow = data.sheets[sheetIdx].guess.header_row; resetChoice(); fillRows(); draw();
+  } }, data.sheets.map((sh, i) => h("option", { value: i }, sh.name))) : null;
+  if (sheetPick) sheetPick.value = String(sheetIdx);
+
+  const go = async (btn) => {
+    err.hidden = true;
+    const used = Object.entries(choice).filter(([, f]) => f && f !== "ignore");
+    if (!used.some(([, f]) => f === "mac" || f === "ip")) {
+      err.textContent = "Choose the column with the MAC address or the IP address: it's how each device is found on the network.";
+      err.hidden = false;
+      return;
+    }
+    btn.disabled = true;
+    try {
+      const header = data.sheets[sheetIdx].rows[headerRow] || [];
+      const columns = {};
+      for (const [col, f] of used) {
+        if (f === NEW) {
+          const label = (header[col] || `Column ${Number(col) + 1}`).slice(0, 100);
+          const made = await api("/api/circuits/fields", { method: "POST", body: { label } });
+          columns[col] = made.key;
+        } else {
+          columns[col] = f;
+        }
+      }
+      const imp = await sendCircuitFile(file, { sheet: data.sheets[sheetIdx].name === "CSV" ? "" : data.sheets[sheetIdx].name,
+        header_row: headerRow, columns }, remember.checked);
+      ct.pending = imp;
+      renderPreview(imp);
+    } catch (e) {
+      err.textContent = e.message;
+      err.hidden = false;
+    } finally {
+      btn.disabled = false;
+    }
+  };
+
+  resetChoice();
+  fillRows();
+  draw();
+  const goBtn = h("button", { class: "primary", onclick: () => go(goBtn) }, "Continue");
+  pane.replaceChildren(
+    h("h3", {}, "Which column is which?"),
+    h("p", { class: "muted" }, `The column names in ${file.name} aren't ones the list knows. Pick the row that holds the column names, then choose what each column is. `,
+      "Only the ", h("b", {}, "MAC address"), " or the ", h("b", {}, "IP address"), " is needed; everything else is optional, and columns you leave as Ignore aren't read."),
+    h("div", { class: "toolbar" }, sheetPick ? h("label", {}, "Sheet ", sheetPick) : null, h("label", {}, "Column names are in ", rowPick)),
+    grid,
+    h("label", { class: "check" }, remember, " Remember this layout: the next file with the same column names is read without asking"),
+    err,
+    h("div", { class: "dialog-actions" },
+      h("button", { class: "ghost", onclick: () => $("#ct-upload-dialog").close() }, "Cancel"), goBtn));
+  pane.hidden = false;
+}
 
 function renderPreview(imp) {
   const s = imp.summary, d = s.diff;
@@ -2153,6 +2280,94 @@ async function discardPending() {
   } catch (e) { /* already gone */ }
   $("#ct-upload-dialog").close();
 }
+
+// Found on the network: on switch ports, not on the list
+
+function selectCtTab(tab) {
+  ct.tab = tab;
+  $$("#ct-tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
+  $$(".ct-pane").forEach((p) => (p.hidden = p.id !== `ct-pane-${tab}`));
+  if (tab === "found") loadFound();
+}
+$$("#ct-tabs button").forEach((b) => b.addEventListener("click", () => selectCtTab(b.dataset.tab)));
+
+async function loadFound() {
+  try {
+    const d = await api("/api/circuits/discovered");
+    ct.found = d.devices;
+    ct.foundScanned = !!(d.scan && d.scan.last_full);
+  } catch (e) {
+    return;
+  }
+  $("#ct-found-count").textContent = ct.found.length ? String(ct.found.length) : "";
+  const uniq = (key) => [...new Set(ct.found.map((r) => r[key]).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+  for (const [id, label, key] of [["#ctf-site", "All sites", "site"], ["#ctf-switch", "All switches", "switch"], ["#ctf-vlan", "All VLANs", "vlan"]]) {
+    const keep = $(id).value;
+    fillSelect($(id), label, uniq(key).map((x) => [x, x]));
+    $(id).value = keep;
+  }
+  renderFound();
+}
+
+function shownFound() {
+  const q = $("#ctf-search").value.trim().toLowerCase();
+  const site = $("#ctf-site").value, sw = $("#ctf-switch").value, vlan = $("#ctf-vlan").value;
+  return ct.found.filter((r) => (!site || r.site === site) && (!sw || r.switch === sw) && (!vlan || String(r.vlan) === vlan) &&
+    (!q || [r.mac, r.ip, r.switch, r.port, r.lldp_name, r.lldp_platform, r.site].some((x) => (x || "").toLowerCase().includes(q))));
+}
+
+function renderFound() {
+  const rows = shownFound();
+  const picked = () => $$("#ctf-table tbody input:checked").map((x) => x.value);
+  const sync = () => { $("#ctf-add").disabled = !picked().length; };
+  $("#ctf-all").checked = false;
+  $("#ctf-table tbody").replaceChildren(...rows.slice(0, 2000).map((r) => h("tr", {},
+    h("td", {}, h("input", { type: "checkbox", value: r.mac, "aria-label": `Select ${r.mac}`, onchange: sync })),
+    h("td", {}, h("code", {}, r.mac)), h("td", {}, r.ip ? h("code", {}, r.ip) : "—"), h("td", {}, r.vlan || "—"),
+    h("td", { class: "name" }, r.switch, r.also_on.length ? h("small", { class: "sub", title: r.also_on.join(", ") }, `also on ${r.also_on.length} other port(s)`) : null),
+    h("td", {}, r.port), h("td", {}, r.site ? siteLink(r.site) : "—"),
+    h("td", {}, r.lldp_name || "—", r.lldp_platform ? h("small", { class: "sub" }, r.lldp_platform) : null),
+    h("td", {}, fmtTime(r.seen_at)))));
+  const empty = $("#ctf-empty");
+  empty.hidden = rows.length > 0;
+  empty.textContent = !ct.foundScanned ? "The network hasn't been scanned yet: click Scan network now on the Circuit list tab."
+    : ct.found.length ? "Nothing matches the filters." : "Everything the last scan saw on switch ports is on the list.";
+  sync();
+}
+["#ctf-search", "#ctf-site", "#ctf-switch", "#ctf-vlan"].forEach((id) => $(id).addEventListener("input", renderFound));
+$("#ctf-all").addEventListener("change", (ev) => {
+  $$("#ctf-table tbody input").forEach((x) => { x.checked = ev.target.checked; });
+  $("#ctf-add").disabled = !ev.target.checked || !$$("#ctf-table tbody input").length;
+});
+
+/** Add found devices: a preview of the list with them added, made live like an upload. */
+async function adoptFound(macs, service = "") {
+  try {
+    const imp = await api("/api/circuits/discovered/adopt", { method: "POST", body: { macs, service } });
+    ct.pending = imp;
+    $("#ct-upload-form").hidden = true;
+    renderPreview(imp);
+    $("#ct-upload-dialog").showModal();
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+$("#ctf-add").addEventListener("click", () => {
+  const macs = $$("#ctf-table tbody input:checked").map((x) => x.value);
+  if (!macs.length) return;
+  const service = h("input", { type: "text", maxlength: 200, placeholder: "e.g. Printers (optional)" });
+  const body = $("#ct-dialog-body");
+  $("#ct-dialog-title").textContent = `Add ${macs.length} device(s) to the list`;
+  body.replaceChildren(
+    h("p", { class: "muted" }, "They are added with the switch, port, VLAN, IP and MAC from the scan, and the name they give over LLDP or CDP. You see the change before the list is updated."),
+    h("label", {}, "Service (for all of them) ", service),
+    h("div", { class: "dialog-actions" }, h("button", { class: "primary", onclick: async () => {
+      $("#ct-dialog").close();
+      await adoptFound(macs, service.value.trim());
+    } }, "Show the change")));
+  $("#ct-dialog").showModal();
+});
 
 // History
 

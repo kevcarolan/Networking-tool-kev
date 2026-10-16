@@ -184,6 +184,12 @@ install test on Ubuntu, then clearing the name and the licence terms.
 
 ## Open questions
 
+* **Circuits, done in part (2026-10-16):** owner chose to cover two kinds, connected
+  devices (today's tool) and carrier/WAN circuits (later). Built: any spreadsheet layout
+  (column mapping, saved layouts) and Found on the network (adopt from the scan). Still to
+  plan: carrier/WAN circuits (provider, circuit ID, router interface, live status from
+  monitoring); update-instead-of-replace uploads; per-type rules (alerts on moved/missing,
+  expected VLAN); maker from the MAC (OUI table in the bundle).
 * **Circuits (owner, 2026-10-15):** the circuits tool was built around one kind of site
   (CCTV, access control and building systems found by MAC/ARP on access switches, from an
   Excel list). Other customers' environments may need a different model. Rethink it for a
@@ -300,3 +306,4 @@ install test on Ubuntu, then clearing the name and the licence terms.
 | 2026-10-15 | Networking-tool-kev | Release 2.2.0 (first version that accepts the owner's licences) |
 | 2026-10-15 | Networking-tool-kev | Website (`website/`): home, features with vendor table, security, pricing from site.json, free-trial request, draft privacy notice; screenshots from the demo; built with website/build.py for the owner's existing web host |
 | 2026-10-15 | Networking-tool-kev | Website live on Render (static site from `website/`, auto-deploy on merge); README updated for Render; VERSION 2.3.0 for the next release; noted the circuits rethink and pricing as open questions |
+| 2026-10-16 | Networking-tool-kev | Circuits for any site: upload any spreadsheet layout (map the columns once, layout remembered), Found on the network tab (add devices the scan sees to the list), Add to the circuit list on the Ports view |

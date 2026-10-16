@@ -84,10 +84,26 @@ class CircuitField(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class ColumnMap(Base):
+    """A spreadsheet layout an admin matched to the list's columns on upload. The next file
+    whose header row reads the same (``signature``: SHA-256 of the normalised header cells)
+    is read with it, with no question asked."""
+
+    __tablename__ = "ct_column_maps"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    signature: Mapped[str] = mapped_column(String(64), unique=True)
+    name: Mapped[str] = mapped_column(String(255), default="")  # the file it was made from
+    headers: Mapped[str] = mapped_column(Text, default="[]")  # JSON: the header cells
+    columns: Mapped[str] = mapped_column(Text, default="{}")  # JSON: column index -> field
+    created_by: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 # --- live location: what the switches report (MAC and ARP tables) ------------------
 
 class CircuitScan(Base):
-    """One read of the MAC/ARP tables: the weekly scan, a manual scan or an upgrade job."""
+    """One read of the MAC/ARP tables: the scheduled scan, a manual scan or an upgrade job."""
 
     __tablename__ = "ct_scans"
 

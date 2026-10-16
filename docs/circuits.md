@@ -5,6 +5,13 @@ switch port it uses. When you plan an upgrade, it shows which circuits a device 
 Each firmware upgrade job saves the device's circuits when it is planned and again when
 it starts ([upgrades.md](upgrades.md)).
 
+There are two ways to fill the list, and they mix:
+
+* **Upload a spreadsheet**: the template's layout, or **your own list in any layout** (you
+  say once which column is which; see below).
+* **Found on the network**: take what the switches already see on their ports and add it to
+  the list, with no spreadsheet at all.
+
 ## Uploading the spreadsheet
 
 1. **Circuits → Upload spreadsheet** (*Circuits: manage*) and choose the file: an Excel
@@ -12,7 +19,9 @@ it starts ([upgrades.md](upgrades.md)).
 2. The header row is found by the **column names**. The coloured band row above the names,
    the column order and extra sheets don't matter. A header is recognised when at least six
    of the names below are in it, or when every name in it is one the list knows (a
-   **Blank template** with only a few columns).
+   **Blank template** with only a few columns). Common names from other lists are known
+   too: *Name*, *Hostname*, *Asset*, *Switch Name*, *Interface*, *Location*, *Vendor*...
+   If the header still isn't recognised, see **Your own layout** below.
 3. You get a **preview** before anything changes:
    * rows read, and rows **new / changed / removed** compared with the live list. Changed
      rows show the old and new value of each field;
@@ -37,6 +46,25 @@ Each row needs a **MAC address or an IP address**, so NetOps can find it on the 
 and NetOps fills in the *live* location from the switches (see below). Any other missing
 column is left empty. Custom columns (below) are read by their name too.
 
+### Your own layout
+
+When the file's column names aren't ones the list knows, the upload asks **which column is
+which** instead of failing:
+
+1. Pick the **sheet** (Excel) and the **row with the column names**. The first rows of the
+   file are shown, with a guess already made.
+2. For each column choose a list column, one of your **custom columns**, **Ignore**, or
+   (admins) **New column**, which adds a custom column named as in the file.
+3. Only the **MAC address** or the **IP address** column is needed; everything else is
+   optional.
+4. **Remember this layout** (ticked) saves the choice: the next file whose column names
+   read the same (capitals, spaces and punctuation don't matter) is read straight away.
+   **Saved layouts** at the bottom of the upload window lists them; delete one to choose
+   again.
+
+Then the usual preview and **Make this the live list**. Remember that an upload replaces the
+whole list: a file with only some devices removes the others (the preview shows how many).
+
 ### A blank template to fill in
 
 **Blank template** gives a sheet with only the column names, as CSV or Excel, in the form
@@ -48,6 +76,26 @@ the upload reads:
 
 Fill it in, one row per circuit, and upload it. The upload replaces the whole list, so
 start from **Export CSV** instead when you only want to change a few rows.
+
+## Found on the network
+
+**Circuits → Found on the network** lists every device the last scan saw on a switch port
+that isn't on the list: MAC, IP (from any ARP table), VLAN, switch, port, site, and what the
+device says it is over LLDP or CDP (phones and access points do). Links between switches
+and port-channels are left out, as for the live location below. A MAC seen on more than one
+edge port (a switch below that doesn't announce itself) shows "also on…".
+
+* Tick devices and **Add selected to the list** (*Circuits: manage*), with an optional
+  Service for all of them. They are added with the switch, port, VLAN, IP and MAC from the
+  scan, and the LLDP/CDP name as the device name. You see the usual preview first; the list
+  changes on **Make this the live list**, and the version is kept in Import history.
+* **Download as spreadsheet** gives them in the list's column names: fill in names and
+  services in Excel and upload the sheet.
+* On a switch's **Ports** view, a port in use but not on the list has **Add to the circuit
+  list** next to each MAC.
+
+The tab is empty until the network has been scanned (**Scan network now**, or the scheduled
+scan).
 
 ## Which site a circuit is at
 

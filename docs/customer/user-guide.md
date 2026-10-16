@@ -167,7 +167,13 @@ Details per platform: [upgrades.md](../upgrades.md).
 The master circuit list: every end device or service and the switch port it uses.
 
 * **Upload spreadsheet** (needs **Circuits: manage**), Excel or CSV: you see a preview of
-  what's new, changed and removed before you make it the live list.
+  what's new, changed and removed before you make it the live list. Your own list works in
+  any layout: if its column names aren't known, you say which column is which (only the MAC
+  or IP address is needed), and the layout is remembered for next time.
+* **Found on the network**: devices plugged into switch ports that aren't on the list, with
+  their IP, VLAN, port and what they say they are (LLDP/CDP). Tick them and **Add selected
+  to the list**, or download them as a spreadsheet to fill in. A switch's **Ports** view has
+  **Add to the circuit list** on ports in use that aren't on the list.
 * **Blank template**: a sheet with just the column names (the ones you see, or all), in
   the form the upload reads. MAC and IP address are always in it.
 * **Columns**: choose which columns you see and their order (remembered for you).

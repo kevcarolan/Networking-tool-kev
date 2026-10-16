@@ -8,6 +8,20 @@ itself, and the installer refuses to go back to an older version.
 
 ## 2.3.0 (not released yet)
 
+**New**
+- **Circuits: any spreadsheet.** Upload your own list in any layout: if its column names
+  aren't known, you say which column is which (only the MAC or IP address is needed), and
+  the layout is remembered for the next upload. Common names such as Hostname, Switch Name
+  and Interface are recognised on their own.
+- **Circuits: Found on the network.** A new tab lists devices plugged into switch ports
+  that aren't on the list, with their IP, VLAN, port and what they say they are. Add them
+  to the list in a few clicks, or download them to fill in. A switch's Ports view can add a
+  port's device too.
+
+**Fixed**
+- The Circuits page called the scheduled network scan "weekly"; it runs on the schedule set
+  in Settings (every night by default).
+
 ## 2.2.0 (2026-10-15)
 
 **New**
