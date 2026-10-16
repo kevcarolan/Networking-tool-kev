@@ -210,7 +210,8 @@ def test_discard_and_replace_pending(admin):
 def test_upload_errors(admin):
     r = _upload(admin, make_xlsx(), filename="list.csv")
     assert r.status_code == 422 and "Excel workbook" in r.json()["detail"]
-    assert _upload(admin, b"a,b\n1,2\n", filename="list.csv").status_code == 422
+    r = _upload(admin, b"a,b\n1,2\n", filename="list.csv")  # unknown headers: ask for the columns
+    assert r.status_code == 200 and r.json()["needs_mapping"] is True
     assert _upload(admin, b"x", filename="list.txt").status_code == 422
     r = _upload(admin, b"garbage")
     assert r.status_code == 422 and "xlsx" in r.json()["detail"]

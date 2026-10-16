@@ -1,4 +1,5 @@
-"""Reads the MAC and ARP tables of every device: weekly at night, or when an admin asks.
+"""Reads the MAC and ARP tables of every device: on the schedule in Settings (nightly by
+default), or when an admin asks.
 
 It logs in with each device's backup account (read-only "show" commands only) and
 keeps the result with store.save_read. Upgrade jobs read the same tables for their own

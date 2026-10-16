@@ -143,7 +143,17 @@ def circuits_for(switch_no: int) -> list[dict]:
     return rows
 
 
-def mac_table(rows: list[dict], moved: int | None = None, missing: int | None = None) -> str:
+# Plugged in but not on the circuit list: "Found on the network" shows them.
+UNLISTED = {
+    1: [{"vlan": 70, "mac": "0080.77a1.0b01", "port": "Gi1/0/30"},   # printers
+        {"vlan": 70, "mac": "0080.77a1.0b02", "port": "Gi1/0/31"}],
+    4: [{"vlan": 50, "mac": "0050.c2f3.4a10", "port": "Gi1/0/36"},   # a BMS controller
+        {"vlan": 1, "mac": "3c22.fb10.9e77", "port": "Gi1/0/44"}],   # a laptop on the default VLAN
+}
+
+
+def mac_table(rows: list[dict], moved: int | None = None, missing: int | None = None,
+              extra: list[dict] = ()) -> str:
     lines = ["          Mac Address Table", "-------------------------------------------", "",
              "Vlan    Mac Address       Type        Ports", "----    -----------       --------    -----"]
     for i, r in enumerate(rows):
@@ -151,7 +161,9 @@ def mac_table(rows: list[dict], moved: int | None = None, missing: int | None = 
             continue
         port = "Gi1/0/40" if i == moved else r["port"]
         lines.append(f"  {r['vlan']:<4}  {r['mac']}    DYNAMIC     {port}")
-    lines.append(f"Total Mac Addresses for this criterion: {len(rows)}")
+    for r in extra:
+        lines.append(f"  {r['vlan']:<4}  {r['mac']}    DYNAMIC     {r['port']}")
+    lines.append(f"Total Mac Addresses for this criterion: {len(rows) + len(extra)}")
     return "\n".join(lines) + "\n"
 
 
@@ -167,7 +179,8 @@ def build_network() -> FakeNetwork:
             rows = circuits_for(no)
             outputs.update({
                 "show mac address-table": mac_table(rows, moved=3 if no == 2 else None,
-                                                    missing=7 if no == 3 else None),
+                                                    missing=7 if no == 3 else None,
+                                                    extra=UNLISTED.get(no, [])),
                 "show ip arp": s.IOS_ARP,
                 "show lldp neighbors detail": s.LLDP_DETAIL,
                 "show cdp neighbors detail": s.CDP_DETAIL,

@@ -6,6 +6,7 @@ from collections import defaultdict
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from pydantic import Field as PField
 from sqlalchemy import delete, func, select
@@ -16,13 +17,16 @@ from app.core.audit import audit
 from app.core.auth import User, require, require_admin
 from app.core.db import get_db, session_scope, utcnow
 from app.core.models import Device
-from app.tools.circuits.importer import (_HEADERS, FIELDS, LABELS, CircuitImportError, _norm_header,
-                                         diff, match_switches, parse_csv, parse_workbook,
-                                         row_key)
+from app.tools.circuits.importer import (_HEADERS, FIELDS, LABELS, CircuitImportError, Mapping,
+                                         NeedsMapping, ParsedRow, ParsedSheet, _norm_header,
+                                         _validate, diff, guess, header_signature,
+                                         match_switches, normalize_mac, normalize_port,
+                                         normalize_switch, parse_csv, parse_workbook,
+                                         read_head, row_key)
 from app.tools.circuits import live
 from app.tools.circuits.models import (ACTIVE, PENDING, SUPERSEDED, Circuit, CircuitField,
-                                       CircuitImport, CircuitScan, DeviceScanState, LiveArp,
-                                       LiveMac)
+                                       CircuitImport, CircuitScan, ColumnMap, DeviceScanState,
+                                       LiveArp, LiveMac, LiveNeighbor)
 from app.tools.circuits.store import LiveIndex
 
 router = APIRouter(prefix="/api/circuits", tags=["circuits"])
@@ -464,6 +468,120 @@ def circuits_seen(db: Session, device_id: int, edge_macs: list[list[str]]) -> li
     return seen
 
 
+# --- found on the network: what is plugged in but not on the list ---------------------
+
+def discovered(db: Session) -> list[dict]:
+    """Every MAC the last scans saw on an edge port (not an uplink) that no row of the live
+    list stands for (by its MAC, or its IP through ARP). One entry per MAC, with the IP from
+    any ARP table and what the device says about itself over LLDP/CDP on that port."""
+    imp = _active(db)
+    listed: set[str] = set()
+    if imp is not None:
+        arp_by_ip = LiveIndex(db).arp
+        for c in _rows(db, imp.id):
+            if c.mac_norm:
+                listed.add(c.mac_norm)
+            elif c.ip.strip() and arp_by_ip.get(c.ip.strip()):
+                listed.add(arp_by_ip[c.ip.strip()])
+    ip_of: dict[str, str] = {}
+    for a in db.scalars(select(LiveArp).order_by(LiveArp.seen_at)):
+        ip_of[a.mac_norm] = a.ip  # the newest wins
+    neighbour = {(n.device_id, n.local_norm): n
+                 for n in db.scalars(select(LiveNeighbor).where(LiveNeighbor.infra.is_(False)))}
+    names, sites = _names(db), SiteIndex(db)
+    found: dict[str, dict] = {}
+    for m in db.scalars(select(LiveMac).where(LiveMac.uplink.is_(False))
+                        .order_by(LiveMac.device_id, LiveMac.port_norm)):
+        if not m.mac_norm or m.mac_norm in listed:
+            continue
+        item = found.get(m.mac_norm)
+        if item is not None:  # on more than one edge port (a switch with no LLDP below it)
+            item["also_on"].append(f"{names.get(m.device_id, '?')} {m.port}")
+            continue
+        n = neighbour.get((m.device_id, m.port_norm))
+        site = sites.resolve("", None, m.device_id)
+        found[m.mac_norm] = {
+            "mac": m.mac_norm, "ip": ip_of.get(m.mac_norm, ""), "vlan": m.vlan,
+            "device_id": m.device_id, "switch": names.get(m.device_id, ""), "port": m.port,
+            "port_norm": m.port_norm, "site_id": site["site_id"],
+            "site": site["site_name"] or site["site_text"],
+            "lldp_name": n.name if n else "", "lldp_platform": n.platform if n else "",
+            "seen_at": m.seen_at, "also_on": []}
+    return sorted(found.values(), key=lambda r: (r["site"], r["switch"], r["port_norm"], r["mac"]))
+
+
+@router.get("/discovered")
+def list_discovered(db: Session = Depends(get_db), _: User = Depends(CIRCUITS_VIEW)):
+    return {"scan": _scan_out(db), "devices": discovered(db)}
+
+
+DISCOVERED_HEADERS = ["Hardware Mac Address", "IP Address", "VLAN", "DEVICE", "PORT", "Site",
+                      "Device Name", "Says it is (LLDP/CDP)", "Also seen on", "Last seen"]
+
+
+@router.get("/discovered.xlsx")
+def discovered_xlsx(db: Session = Depends(get_db), _: User = Depends(CIRCUITS_VIEW)):
+    """What was found, in the list's own column names: fill in Device Name, Service and the
+    rest in Excel and upload it (the extra columns are ignored)."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Found on the network"
+    ws.append(DISCOVERED_HEADERS)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+    for r in discovered(db):
+        exports.append_row(ws, [r["mac"], r["ip"], r["vlan"], r["switch"], r["port"], r["site"],
+                                r["lldp_name"], r["lldp_platform"], ", ".join(r["also_on"]),
+                                _fmt(r["seen_at"])])
+    ws.freeze_panes = "A2"
+    buf = io.BytesIO()
+    wb.save(buf)
+    return Response(buf.getvalue(), headers={
+        "Content-Disposition": 'attachment; filename="found-on-the-network.xlsx"'},
+        media_type=exports.XLSX_TYPE)
+
+
+class AdoptIn(BaseModel):
+    macs: list[str] = PField(min_length=1, max_length=5000)
+    service: str = PField("", max_length=200)
+    device_type: str = PField("", max_length=255)
+
+
+@router.post("/discovered/adopt", status_code=201)
+def adopt(body: AdoptIn, db: Session = Depends(get_db), user: User = Depends(CIRCUITS_MANAGE)):
+    """Add found devices to the list: a pending import of the live list plus these rows,
+    shown as a preview like an upload and made live with the same commit."""
+    wanted = {normalize_mac(m) for m in body.macs} - {""}
+    picked = [r for r in discovered(db) if r["mac"] in wanted]
+    if not picked:
+        raise HTTPException(422, "None of these devices is on the found list any more: scan again")
+    imp = _active(db)
+    rows: list[ParsedRow] = []
+    for c in _rows(db, imp.id) if imp else []:
+        rows.append(ParsedRow(row_no=c.row_no, values={f: getattr(c, f) for f in FIELDS},
+                              switch_norm=c.switch_norm, port_norm=c.port_norm,
+                              mac_norm=c.mac_norm,
+                              warnings=[w for w in (c.warnings or "").split("; ") if w],
+                              custom=json.loads(c.custom or "{}")))
+    next_row = max((r.row_no for r in rows), default=1) + 1
+    for i, r in enumerate(picked):
+        values = {f: "" for f in FIELDS}
+        values.update(mac=r["mac"], ip=r["ip"], vlan=r["vlan"], switch=r["switch"],
+                      port=r["port"], device_name=r["lldp_name"], service=body.service.strip(),
+                      device_type=body.device_type.strip())
+        rows.append(ParsedRow(row_no=next_row + i, values=values,
+                              switch_norm=normalize_switch(r["switch"]),
+                              port_norm=normalize_port(r["port"]), mac_norm=r["mac"],
+                              warnings=_validate(values)))
+    labels = {f["key"]: f["label"] for f in _fields(db)}
+    parsed = ParsedSheet(sheet="", header_row=0, columns=labels, rows=rows)
+    db.commit()  # _store_pending opens its own session
+    return _store_pending(parsed, f"Found on the network ({len(picked)} added)", user.username)
+
+
 # --- reading the network (MAC and ARP tables) ---------------------------------
 
 @router.get("/scans")
@@ -501,11 +619,34 @@ def get_import(import_id: int, db: Session = Depends(get_db), _: User = Depends(
     return _import_out(imp)
 
 
+def _saved_maps(db: Session) -> dict[str, dict[int, str]]:
+    return {m.signature: {int(k): v for k, v in json.loads(m.columns or "{}").items()}
+            for m in db.scalars(select(ColumnMap))}
+
+
+def _mapping(text: str) -> Mapping | None:
+    """The ``map`` query parameter: {"sheet": "", "header_row": 0, "columns": {"3": "mac"}}."""
+    if not text:
+        return None
+    try:
+        raw = json.loads(text)
+        cols = {int(k): str(v) for k, v in (raw.get("columns") or {}).items() if v and v != "ignore"}
+        return Mapping(header_row=int(raw.get("header_row", 0)), columns=cols,
+                       sheet=str(raw.get("sheet") or "")[:255])
+    except (ValueError, TypeError, AttributeError):
+        raise HTTPException(422, "The column choices could not be read") from None
+
+
 @router.put("/imports/upload", status_code=201)
 async def upload(request: Request, filename: str = Query(..., max_length=255),
+                 map: str = Query("", max_length=20000), save: bool = False,  # noqa: A002
                  user: User = Depends(CIRCUITS_MANAGE)):
     """Upload a spreadsheet (raw .xlsx or .csv body). It is checked and kept as a pending
-    import with a preview; nothing changes until it is committed."""
+    import with a preview; nothing changes until it is committed.
+
+    When no header row is recognised (and no saved layout matches), the answer is
+    ``needs_mapping`` with the file's first rows: the person says which column is which and
+    sends the file again with ``map`` (and ``save`` to remember the layout)."""
     limit = request.app.state.settings.circuits_max_upload_mb * 2**20
     body = bytearray()
     async for chunk in request.stream():
@@ -519,13 +660,65 @@ async def upload(request: Request, filename: str = Query(..., max_length=255),
         parse = parse_csv
     else:
         raise HTTPException(422, "Upload an Excel workbook (.xlsx) or a CSV file")
+    mapping = _mapping(map)
     with session_scope() as db:
-        custom = _custom_headers(db)
+        custom, saved, fields = _custom_headers(db), _saved_maps(db), _fields(db)
     try:
-        parsed = await run_in_threadpool(parse, bytes(body), custom=custom)
+        parsed = await run_in_threadpool(parse, bytes(body), custom=custom, mapping=mapping,
+                                         saved=saved)
+    except NeedsMapping as exc:
+        try:
+            sheets = await run_in_threadpool(read_head, bytes(body), parse is parse_csv)
+        except CircuitImportError as err:
+            raise HTTPException(422, str(err)) from None
+        for sh in sheets:
+            sh["guess"] = guess(sh["rows"], custom)
+        return JSONResponse({"needs_mapping": True, "message": str(exc), "sheets": sheets,
+                             "fields": fields}, status_code=200)
     except CircuitImportError as exc:
         raise HTTPException(422, str(exc)) from None
+    if mapping is not None and save:
+        await run_in_threadpool(_save_map, parsed, filename, user.username)
     return await run_in_threadpool(_store_pending, parsed, filename, user.username)
+
+
+def _save_map(parsed, filename: str, username: str) -> None:
+    sig = header_signature(parsed.headers)
+    with session_scope() as db:
+        m = db.scalar(select(ColumnMap).where(ColumnMap.signature == sig)) or ColumnMap(signature=sig)
+        m.name, m.created_by, m.created_at = filename[:255], username, utcnow()
+        m.headers = json.dumps(parsed.headers)
+        m.columns = json.dumps({str(k): v for k, v in parsed.mapping.items()})
+        db.add(m)
+        audit(db, username, "circuits.layout.save",
+              f"{filename}: {len(parsed.mapping)} columns")
+
+
+@router.get("/column-maps")
+def column_maps(db: Session = Depends(get_db), _: User = Depends(CIRCUITS_VIEW)):
+    """The spreadsheet layouts people matched on upload."""
+    labels = {f["key"]: f["label"] for f in _fields(db)}
+    out = []
+    for m in db.scalars(select(ColumnMap).order_by(ColumnMap.created_at.desc())):
+        headers = json.loads(m.headers or "[]")
+        cols = {int(k): v for k, v in json.loads(m.columns or "{}").items()}
+        out.append({"id": m.id, "name": m.name, "created_by": m.created_by,
+                    "created_at": m.created_at,
+                    "columns": [{"header": headers[c] if c < len(headers) else f"column {c + 1}",
+                                 "field": f, "label": labels.get(f, f)}
+                                for c, f in sorted(cols.items())]})
+    return out
+
+
+@router.delete("/column-maps/{map_id}", status_code=204)
+def delete_column_map(map_id: int, db: Session = Depends(get_db),
+                      user: User = Depends(CIRCUITS_MANAGE)):
+    m = db.get(ColumnMap, map_id)
+    if m is None:
+        raise HTTPException(404, "Layout not found")
+    db.delete(m)
+    audit(db, user.username, "circuits.layout.delete", m.name)
+    return Response(status_code=204)
 
 
 def _store_pending(parsed, filename: str, username: str) -> dict:

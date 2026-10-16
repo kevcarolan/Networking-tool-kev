@@ -598,3 +598,8 @@ tr.link-row { cursor: pointer; }
 .gauge .g-label { width: 64px; color: var(--muted); }
 .load .bar.wide { width: 180px; }
 #mon-d-health-box .toolbar h3 { margin: 0; }
+
+/* Circuits: tab counts and the "which column is which" grid */
+.tabs .count:not(:empty) { margin-left: 6px; padding: 0 7px; border-radius: 999px; font-size: .8em; background: var(--border); }
+.map-grid select { min-width: 150px; }
+.map-grid .map-head th { font-weight: 400; color: var(--muted); font-style: italic; }

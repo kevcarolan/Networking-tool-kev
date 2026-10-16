@@ -6,6 +6,7 @@ the coloured band rows above it don't matter. Columns an admin adds (``ct_fields
 are read by their name too; their values are kept in ``Circuit.custom``."""
 
 import csv
+import hashlib
 import io
 import ipaddress
 import re
@@ -47,6 +48,15 @@ _HEADERS = {
     "type": "conn_type",
     "port": "port", "switch port": "port",
     "device": "switch", "switch": "switch",
+    # common names in other people's lists (asset registers, switch port exports)
+    "name": "device_name", "hostname": "device_name", "asset": "device_name",
+    "asset name": "device_name", "end device": "device_name",
+    "mac addr": "mac", "ethernet address": "mac", "physical address": "mac",
+    "ip addr": "ip", "ipv4 address": "ip", "ipv4": "ip",
+    "switch name": "switch", "access switch": "switch", "switch hostname": "switch",
+    "interface": "port", "switchport": "port", "port number": "port", "switch interface": "port",
+    "vendor": "manufacturer", "make": "manufacturer", "model": "device_type",
+    "location": "room", "building": "site", "level": "floor",
     "drawing number": "drawing_number",
     "device drawing reference": "drawing_ref", "drawing reference": "drawing_ref",
 }
@@ -76,10 +86,33 @@ class ParsedSheet:
     header_row: int
     columns: dict[str, str]  # field (or x_<custom key>) -> header text found
     rows: list[ParsedRow]
+    headers: list[str] = field(default_factory=list)  # the header row's cells
+    mapping: dict[int, str] = field(default_factory=dict)  # column index -> field used
+
+
+@dataclass
+class Mapping:
+    """Which column is which, chosen by a person for a sheet whose headers aren't known."""
+    header_row: int  # 0-based row of the sheet that holds the column names
+    columns: dict[int, str]  # column index -> field or x_<custom key>; others are ignored
+    sheet: str = ""  # workbook sheet ("" = the first one; CSV has one)
+
+
+class NeedsMapping(CircuitImportError):
+    """No header row could be recognised: the person picks the columns (``read_head``)."""
 
 
 def _norm_header(text) -> str:
     return " ".join(re.sub(r"[^a-z0-9]+", " ", str(text or "").lower()).split())
+
+
+def header_signature(cells) -> str:
+    """Identity of a spreadsheet layout: its header row, normalised (case, spaces and
+    punctuation don't matter), as SHA-256 hex."""
+    names = [_norm_header(c) for c in cells]
+    while names and not names[-1]:
+        names.pop()
+    return hashlib.sha256("|".join(names).encode()).hexdigest()
 
 
 def _cell(value) -> str:
@@ -223,27 +256,56 @@ _NOT_FOUND = ("No sheet has the circuit list header (e.g. 'Device Name', 'IP Add
               "'PORT', 'DEVICE') in its first 15 rows")
 
 
+def _apply_mapping(head: list[tuple], header_idx: int, columns: dict[int, str],
+                   known: set[str]) -> tuple[int, dict[int, str], dict[str, str]]:
+    if not 0 <= header_idx < len(head):
+        raise CircuitImportError("The header row chosen isn't in the first 15 rows")
+    row, mapping, found = head[header_idx], {}, {}
+    for col, fld in sorted(columns.items()):
+        if fld not in known:
+            raise CircuitImportError(f"Unknown column '{fld}'")
+        if fld in found:
+            raise CircuitImportError(f"'{LABELS.get(fld, fld)}' is chosen for more than one column")
+        mapping[col] = fld
+        found[fld] = _cell(row[col]) if col < len(row) else ""
+    return header_idx, mapping, found
+
+
 def _read_sheet(title: str, head: list[tuple], rows_after, custom: dict[str, str] | None,
-                max_rows: int) -> ParsedSheet | None:
+                max_rows: int, mapping: Mapping | None = None,
+                saved: dict[str, dict[int, str]] | None = None) -> ParsedSheet | None:
     """One sheet: ``head`` is its first 15 rows, ``rows_after(n)`` its rows from row n
-    (1-based). None when the sheet has no circuit list header."""
-    found = _find_header(head, custom)
+    (1-based). None when the sheet has no circuit list header. ``mapping`` (chosen by a
+    person) is used instead of finding the header; ``saved`` (header signature -> columns)
+    holds the layouts people chose before."""
+    known = set(FIELDS) | set((custom or {}).values())
+    if mapping is not None:
+        found = _apply_mapping(head, mapping.header_row, mapping.columns, known)
+    else:
+        found = _find_header(head, custom)
+        if not found and saved:
+            for idx, row in enumerate(head):
+                cols = saved.get(header_signature(row))
+                if cols:  # a custom column deleted since then is skipped
+                    found = _apply_mapping(head, idx, {c: f for c, f in cols.items()
+                                                       if f in known}, known)
+                    break
     if not found:
         return None
-    header_idx, mapping, columns = found
+    header_idx, mapping_used, columns = found
     missing = [f for f in REQUIRED if f not in columns]
     if missing:
         raise CircuitImportError(f"Sheet '{title}': columns {', '.join(missing)} not found")
     if "mac" not in columns and "ip" not in columns:
         raise CircuitImportError(
-            f"Sheet '{title}': neither 'Hardware Mac Address' nor 'IP Address' "
-            "was found - one of them is needed to find each circuit")
+            f"Sheet '{title}': no MAC address or IP address column (such as 'Hardware Mac "
+            "Address' or 'IP Address') - one of them is needed to find each circuit")
     rows = []
     start = header_idx + 2  # 1-based row number of the first data row
     for row_no, raw in enumerate(rows_after(start), start):
         values = {f: "" for f in FIELDS}
         extra = {}
-        for col, fld in mapping.items():
+        for col, fld in mapping_used.items():
             if col < len(raw):
                 if fld.startswith("x_"):
                     extra[fld[2:]] = _cell(raw[col])[:500]
@@ -257,35 +319,43 @@ def _read_sheet(title: str, head: list[tuple], rows_after, custom: dict[str, str
             row_no=row_no, values=values, switch_norm=normalize_switch(values["switch"]),
             port_norm=normalize_port(values["port"]), mac_norm=normalize_mac(values["mac"]),
             warnings=_validate(values), custom={k: v for k, v in extra.items() if v}))
-    return ParsedSheet(sheet=title, header_row=header_idx + 1, columns=columns, rows=rows)
+    return ParsedSheet(sheet=title, header_row=header_idx + 1, columns=columns, rows=rows,
+                       headers=[_cell(c) for c in head[header_idx]], mapping=mapping_used)
 
 
-def parse_workbook(data: bytes, max_rows: int = 50000,
-                   custom: dict[str, str] | None = None) -> ParsedSheet:
+def _open_workbook(data: bytes):
     from openpyxl import load_workbook
 
     _check_unpacked_size(data)
     try:
-        wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+        return load_workbook(io.BytesIO(data), read_only=True, data_only=True)
     except Exception as exc:  # noqa: BLE001 - zip/xml errors of a non-xlsx file
         raise CircuitImportError(f"Not a readable .xlsx workbook ({type(exc).__name__})") from None
+
+
+def parse_workbook(data: bytes, max_rows: int = 50000, custom: dict[str, str] | None = None,
+                   mapping: Mapping | None = None,
+                   saved: dict[str, dict[int, str]] | None = None) -> ParsedSheet:
+    wb = _open_workbook(data)
     try:
-        for ws in wb.worksheets:
+        sheets = wb.worksheets
+        if mapping is not None:
+            sheets = [ws for ws in sheets if ws.title == mapping.sheet] if mapping.sheet else sheets[:1]
+            if not sheets:
+                raise CircuitImportError(f"The workbook has no sheet '{mapping.sheet}'")
+        for ws in sheets:
             head = [tuple(r) for r in ws.iter_rows(min_row=1, max_row=15, values_only=True)]
             parsed = _read_sheet(ws.title, head,
                                  lambda n, ws=ws: ws.iter_rows(min_row=n, values_only=True),
-                                 custom, max_rows)
+                                 custom, max_rows, mapping, saved)
             if parsed:
                 return parsed
     finally:
         wb.close()
-    raise CircuitImportError(_NOT_FOUND)
+    raise NeedsMapping(_NOT_FOUND)
 
 
-def parse_csv(data: bytes, max_rows: int = 50000,
-              custom: dict[str, str] | None = None) -> ParsedSheet:
-    """A CSV file: comma, semicolon or tab separated (Excel uses ';' in some countries),
-    UTF-8 or Windows text."""
+def _csv_table(data: bytes, max_rows: int) -> list[tuple]:
     if data[:2] == b"PK":
         raise CircuitImportError("This is an Excel workbook: name it .xlsx, or save it as CSV")
     try:
@@ -302,10 +372,60 @@ def parse_csv(data: bytes, max_rows: int = 50000,
                 break
     except csv.Error as exc:
         raise CircuitImportError(f"Not a readable CSV file ({exc})") from None
-    parsed = _read_sheet("CSV", table[:15], lambda n: table[n - 1:], custom, max_rows)
+    return table
+
+
+def parse_csv(data: bytes, max_rows: int = 50000, custom: dict[str, str] | None = None,
+              mapping: Mapping | None = None,
+              saved: dict[str, dict[int, str]] | None = None) -> ParsedSheet:
+    """A CSV file: comma, semicolon or tab separated (Excel uses ';' in some countries),
+    UTF-8 or Windows text."""
+    table = _csv_table(data, max_rows)
+    parsed = _read_sheet("CSV", table[:15], lambda n: table[n - 1:], custom, max_rows,
+                         mapping, saved)
     if parsed is None:
-        raise CircuitImportError(_NOT_FOUND.replace("No sheet has", "The file doesn't have"))
+        raise NeedsMapping(_NOT_FOUND.replace("No sheet has", "The file doesn't have"))
     return parsed
+
+
+HEAD_ROWS, HEAD_COLS, HEAD_CELL = 15, 60, 120
+
+
+def read_head(data: bytes, csv_file: bool) -> list[dict]:
+    """The first rows of each sheet, as text, for a person to pick the header row and say
+    which column is which."""
+    def clip(rows):
+        out = [[_cell(c)[:HEAD_CELL] for c in r[:HEAD_COLS]] for r in rows[:HEAD_ROWS]]
+        width = max((len(r) for r in out), default=0)
+        return [r + [""] * (width - len(r)) for r in out]
+
+    if csv_file:
+        return [{"name": "CSV", "rows": clip(_csv_table(data, HEAD_ROWS))}]
+    wb = _open_workbook(data)
+    try:
+        return [{"name": ws.title, "rows": clip([tuple(r) for r in ws.iter_rows(
+            min_row=1, max_row=HEAD_ROWS, values_only=True)])} for ws in wb.worksheets]
+    finally:
+        wb.close()
+
+
+def guess(rows: list[list[str]], custom: dict[str, str] | None = None) -> dict:
+    """A starting point for the person: the row with the most column names we know, and
+    which of its columns we recognise."""
+    known = {**_HEADERS, **(custom or {})}
+    best, best_idx = {}, None
+    for idx, row in enumerate(rows):
+        cols, used = {}, set()
+        for col, cell in enumerate(row):
+            fld = known.get(_norm_header(cell))
+            if fld and fld not in used:
+                cols[col] = fld
+                used.add(fld)
+        if len(cols) > len(best):
+            best, best_idx = cols, idx
+    if best_idx is None:  # nothing known: the first row with text in it
+        best_idx = next((i for i, r in enumerate(rows) if any(r)), 0)
+    return {"header_row": best_idx, "columns": best}
 
 
 # --- comparing two versions of the list -------------------------------------
