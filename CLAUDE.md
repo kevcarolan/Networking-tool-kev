@@ -212,7 +212,8 @@ remote); never sync the two automatically.
 ## Website
 
 The public website is `website/` (plain HTML, no scripts or trackers; `python3 website/build.py`
-writes `website/public/`, which the owner uploads to their web host; see `website/README.md`).
+writes `website/public/`; the owner's Render static site builds and publishes it on every merge to
+`main` that touches `website/`; see `website/README.md`).
 Values such as the email address, prices and Stripe links are in `website/site.json`. It is
 left out of the install bundle (`.gitattributes` export-ignore). The product name may appear
 on the website. Claims on it must match what the product does today (upgrade drivers not yet

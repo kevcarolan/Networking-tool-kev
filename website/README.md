@@ -33,20 +33,23 @@ This writes the finished site to `website/public/`. That folder isn't kept in Gi
 
 The build stops if a `{{ }}` name is wrong, so a typo never reaches the live site.
 
-## Put it on the web host
+## Where it's hosted: Render
 
-The site is plain files, so any host works.
+The site is a **Static Site** on the owner's Render account (set up 2026-10-15). Render builds it from this repository by itself, so nothing is uploaded by hand.
 
-On a cPanel-style host (as for the other site):
+When a change to `website/` is merged into `main`, Render runs the build and publishes it within a couple of minutes.
 
-1. **Add the domain.** Add `netcairn.ie` to the hosting account as an **addon domain**. Point the domain's DNS at the host, as the host's instructions say.
-2. **Switch on HTTPS.** Turn on the free certificate for the domain. In cPanel this is **SSL/TLS Status** or **Let's Encrypt**.
-3. **Upload the site.** Upload **everything inside** `website/public/` into the domain's folder, using **File Manager** or FTP.
-   * Include the hidden `.htaccess` file. It forces HTTPS, adds the security headers and sets the "page not found" page.
-   * In File Manager, choose *Settings › Show hidden files* to see it.
-4. **Check it.** Open `https://netcairn.ie` and click through every page.
+| Render setting | Value |
+|---|---|
+| Branch | `main` |
+| Root Directory | `website` |
+| Build Command | `python3 build.py` |
+| Publish Directory | `public` |
+| Build Filters, included paths | `website/**` (product changes don't rebuild the site) |
+| Headers, path `/*` | `Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, with the values in `htaccess` |
+| Custom domains | `netcairn.ie` and `www.netcairn.ie`, using the DNS records Render shows; Render issues the HTTPS certificate |
 
-To update the site: change, build, and upload `public/` again, replacing the old files.
+Render ignores `.htaccess`. The file is kept for any Apache-based host (cPanel and similar) the site might move to: upload `public/`, including the hidden `.htaccess`.
 
 ## Before it goes live
 
