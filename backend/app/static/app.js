@@ -2097,7 +2097,7 @@ async function loadLayouts() {
 $("#ct-upload-close").addEventListener("click", () => $("#ct-upload-dialog").close());
 
 async function sendCircuitFile(file, mapping = null, save = false) {
-  let url = `/api/circuits/imports/upload?filename=${encodeURIComponent(file.name)}`;
+  let url = `/api/circuits/imports/upload?filename=${encodeURIComponent(file.name)}&mode=${ct.mode || "replace"}`;
   if (mapping) url += `&map=${encodeURIComponent(JSON.stringify(mapping))}${save ? "&save=true" : ""}`;
   const res = await fetch(url, {
     method: "PUT", credentials: "same-origin", body: file, headers: { "Content-Type": "application/octet-stream" },
@@ -2115,6 +2115,7 @@ $("#ct-upload-form").addEventListener("submit", async (ev) => {
   err.hidden = true;
   btn.disabled = true;
   btn.textContent = "Checking…";
+  ct.mode = form.mode.value;
   try {
     const data = await sendCircuitFile(file);
     form.hidden = true;
@@ -2237,13 +2238,17 @@ function renderPreview(imp) {
   const pane = $("#ct-preview");
   pane.replaceChildren(
     h("div", { class: "tiles" },
-      [["", "Rows read", imp.row_count], ["success", "New", d.added], ["never", "Changed", d.changed],
+      [["", s.update ? "Rows in the new list" : "Rows read", imp.row_count], ["success", "New", d.added], ["never", "Changed", d.changed],
         ["failed", "Removed", d.removed], ["", "Unchanged", d.unchanged], ["failed", "Rows not linked", s.rows_unmatched],
         ["never", "Rows with warnings", imp.warning_count]]
         .map(([cls, label, n]) => h("div", { class: `tile ${cls}` }, h("span", { class: "num" }, n), h("span", { class: "lbl" }, label)))),
-    h("p", { class: "muted" }, `${imp.filename}, sheet "${imp.sheet}", header on row ${s.header_row}. ` +
+    s.update ? h("p", { class: "notice" }, h("b", {}, "Update: "),
+      `${s.update.file_rows} row(s) in the file: ${s.update.updated} change a row of the list, ${s.update.added} are new, ` +
+      `${s.update.file_rows - s.update.updated - s.update.added} match a row with nothing to change. ${s.update.kept} row(s) of the list aren't in the file and stay as they are.`) : null,
+    h("p", { class: "muted" }, `${imp.filename}${imp.sheet ? `, sheet "${imp.sheet}"` : ""}${s.header_row ? `, header on row ${s.header_row}` : ""}. ` +
       (s.replaces_import ? "Compared with the current live list." : "There is no live list yet; every row is new.") +
-      (s.missing_columns.length ? ` Columns not found (left empty): ${s.missing_columns.join(", ")}.` : "")),
+      (s.missing_columns.length ? (s.update ? ` Not in the file (kept as they are): ${s.missing_columns.join(", ")}.`
+        : ` Columns not found (left empty): ${s.missing_columns.join(", ")}.`) : "")),
     h("h3", {}, "Switches not found in the inventory"),
     h("p", { class: "muted" }, "Rows on these switches can't be linked to upgrade jobs until a device with that name (or ending in -name) exists."),
     list([...s.unmatched_switches, ...s.ambiguous_switches.map((x) => `${x} (matches more than one device)`)],

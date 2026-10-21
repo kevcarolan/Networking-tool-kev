@@ -88,6 +88,7 @@ class ParsedSheet:
     rows: list[ParsedRow]
     headers: list[str] = field(default_factory=list)  # the header row's cells
     mapping: dict[int, str] = field(default_factory=dict)  # column index -> field used
+    update: dict | None = None  # set when the file updates the list instead of replacing it
 
 
 @dataclass

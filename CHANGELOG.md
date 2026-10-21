@@ -13,6 +13,9 @@ itself, and the installer refuses to go back to an older version.
   aren't known, you say which column is which (only the MAC or IP address is needed), and
   the layout is remembered for the next upload. Common names such as Hostname, Switch Name
   and Interface are recognised on their own.
+- **Circuits: update instead of replace.** An upload can now update the list: rows in the
+  file are changed or added (matched by MAC, else name, else switch and port) and every
+  other row is kept, so each team can upload just its own part.
 - **Circuits: Found on the network.** A new tab lists devices plugged into switch ports
   that aren't on the list, with their IP, VLAN, port and what they say they are. Add them
   to the list in a few clicks, or download them to fill in. A switch's Ports view can add a

@@ -169,7 +169,9 @@ The master circuit list: every end device or service and the switch port it uses
 * **Upload spreadsheet** (needs **Circuits: manage**), Excel or CSV: you see a preview of
   what's new, changed and removed before you make it the live list. Your own list works in
   any layout: if its column names aren't known, you say which column is which (only the MAC
-  or IP address is needed), and the layout is remembered for next time.
+  or IP address is needed), and the layout is remembered for next time. Choose **Replace
+  the list** (the file is the whole list) or **Update the list** (change and add rows from
+  the file, keep the rest; an empty cell keeps the old value).
 * **Found on the network**: devices plugged into switch ports that aren't on the list, with
   their IP, VLAN, port and what they say they are (LLDP/CDP). Tick them and **Add selected
   to the list**, or download them as a spreadsheet to fill in. A switch's **Ports** view has
