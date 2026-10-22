@@ -9,6 +9,11 @@ itself, and the installer refuses to go back to an older version.
 ## 2.3.0 (not released yet)
 
 **New**
+- **Circuits: rules per type.** A Rules tab on the Circuits page: for a type of circuit (a
+  Device type or Service, such as CCTV), get an email when one moves to another port or isn't
+  seen on the network for a number of hours, and check it is on the right VLAN (the VLANs you
+  give, or the one on its row of the list). Circuits on the wrong VLAN are flagged in the list.
+  Choose who gets these emails under Settings › Email alerts.
 - **Carrier circuits.** A new tab on the Circuits page for the lines from providers
   (internet, MPLS, point-to-point, SIP, 4G backup…): circuit ID, contract end, fault line, and
   the router or firewall interface each lands on. Their status and traffic come from

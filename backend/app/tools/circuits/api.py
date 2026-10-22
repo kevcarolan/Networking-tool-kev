@@ -27,6 +27,7 @@ from app.tools.circuits import live
 from app.tools.circuits.models import (ACTIVE, PENDING, SUPERSEDED, Circuit, CircuitField,
                                        CircuitImport, CircuitScan, ColumnMap, DeviceScanState,
                                        LiveArp, LiveMac, LiveNeighbor)
+from app.tools.circuits.rules import RuleSet
 from app.tools.circuits.store import LiveIndex
 
 router = APIRouter(prefix="/api/circuits", tags=["circuits"])
@@ -159,8 +160,10 @@ def list_circuits(db: Session = Depends(get_db), _: User = Depends(CIRCUITS_VIEW
     rows = _rows(db, imp.id)
     matches = _matches(db, rows)
     names, idx = _names(db), LiveIndex(db)
-    return {"import": _import_out(imp), "scan": scan,
-            "circuits": [_row_out(c, matches, names, idx, SiteIndex(db)) for c in rows]}
+    sites = SiteIndex(db)
+    out = [_row_out(c, matches, names, idx, sites) for c in rows]
+    RuleSet.load(db).annotate(out)
+    return {"import": _import_out(imp), "scan": scan, "circuits": out}
 
 
 @router.get("/export.csv")

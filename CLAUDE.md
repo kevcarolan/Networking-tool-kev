@@ -198,6 +198,11 @@ remote); never sync the two automatically.
   saved layouts are `ct_column_maps` keyed by `header_signature`. "Found on the network"
   (`api.discovered`) is edge-port MACs not on the list; adopting makes a pending import.
   Upload `mode=update` merges into the live list (`api.merge_rows`) instead of replacing it.
+  Rules per type (`circuits/rules.py`, table `ct_rules`): a Device type or Service value (""
+  = every row) with email on moved / not seen for N hours and a VLAN check (`vlan_problem`,
+  shown as `rule_problems`); alert kind `circuits` (`alerts._circuits`), checked once per
+  finished scan (`alerts_circuits_scan`, cleared when a rule changes), keys change with the
+  problem so each is sent once.
   Carrier circuits (`circuits/carriers.py`, table `ct_carriers`): provider lines on a
   device's interface; status read from the monitoring store (never the device); the poller
   watches their ports (`carriers.watched_ports`, `Job.carriers`); alert kind `carriers` for

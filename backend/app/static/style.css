@@ -380,6 +380,7 @@ textarea.pem { width: 100%; box-sizing: border-box; min-height: 120px; font-fami
 #sl-table td.msg { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 #sl-table td.when { white-space: nowrap; font-size: 13px; }
 #sl-table .link { cursor: pointer; color: var(--accent); }
+.badtext, .link.badtext, small.sub.badtext { color: var(--fail); }
 #sl-help-general { margin: 0; padding-left: 18px; }
 .bad-text { color: var(--fail); }
 @media (max-width: 600px) { #sl-table th:nth-child(4), #sl-table td:nth-child(4) { display: none; } }

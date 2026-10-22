@@ -149,6 +149,31 @@ interface**. Traffic in and out and how full the port is come from the same read
 
 The Sites page's own **Circuits** field is still free text for anything else to note.
 
+## Rules per type of circuit
+
+**Circuits → Rules** says what to check and email for each type of circuit. A rule is for the
+rows whose **Device type** or **Service** is a value (for example Service *CCTV*), or for every
+circuit when the value is left empty. Each rule can:
+
+* **email when one moves** to another switch port than the list says;
+* **email when one isn't seen** on the network for a number of hours (12 by default; the time
+  since it was last seen, so with a daily scan one missed scan is enough);
+* **check the VLAN** it is on: one of the VLANs the rule lists (`40`, `41-43`, or Juniper
+  VLAN names), or, with none listed, the VLAN on each row of the list. A circuit on another
+  VLAN shows *On VLAN 1, expected 40* under its live status, the **Wrong VLAN** tile counts
+  them, and the rule can email about it too.
+
+A circuit can match several rules (one for its Device type and one for its Service): it is
+emailed if any of them asks, and any of their VLANs is allowed.
+
+The rules are checked against the stored MAC and ARP tables once after each network scan
+(scheduled, **Scan network now**, or an upgrade's), and again straight away when a rule is
+added or changed. Each problem is emailed once: a circuit that moves again, is lost again
+after being seen, or ends up on yet another VLAN is a new problem. The emails go to the
+people who get **Circuits moved, missing or on the wrong VLAN** (Settings › Email alerts).
+Anyone with circuits *view* sees the rules; *manage* changes them, and every change is in the
+activity log.
+
 ## Which site a circuit is at
 
 Each circuit is linked to a site on the **Sites** page ([sites.md](sites.md)):

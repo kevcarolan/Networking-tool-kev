@@ -30,6 +30,8 @@ def test_first_run_fills_every_page(tmp_path, quick):
         circuits = c.get("/api/circuits").json()
         statuses = [r["live_status"] for r in circuits["circuits"]]
         assert statuses.count("moved") == 1 and statuses.count("not_seen") == 1
+        wrong = [r["device_name"] for r in circuits["circuits"] if r["rule_problems"]]
+        assert wrong == ["CCTV-HQ1-05"]  # the rules: on VLAN 1, the list says 40
         assert circuits["scan"]["last_full"]["devices_failed"] == 0
         assert c.get("/api/licence").json()["mode"] == "development"
         # the SNMP-only devices: no backups, read with SNMP and their sensors
