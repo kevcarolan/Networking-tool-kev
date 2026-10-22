@@ -187,9 +187,9 @@ install test on Ubuntu, then clearing the name and the licence terms.
 * **Circuits, done in part (2026-10-16):** owner chose to cover two kinds, connected
   devices (today's tool) and carrier/WAN circuits (later). Built: any spreadsheet layout
   (column mapping, saved layouts), Found on the network (adopt from the scan) and update
-  instead of replace on upload (2026-10-21). Still to
-  plan: carrier/WAN circuits (provider, circuit ID, router interface, live status from
-  monitoring); per-type rules (alerts on moved/missing,
+  instead of replace on upload (2026-10-21). Carrier circuits built
+  2026-10-22 (provider, circuit ID, contract, router interface, live status from monitoring,
+  watched port, contract-ending email). Still to plan: per-type rules (alerts on moved/missing,
   expected VLAN); maker from the MAC (OUI table in the bundle).
 * **Circuits (owner, 2026-10-15):** the circuits tool was built around one kind of site
   (CCTV, access control and building systems found by MAC/ARP on access switches, from an
@@ -309,3 +309,4 @@ install test on Ubuntu, then clearing the name and the licence terms.
 | 2026-10-15 | Networking-tool-kev | Website live on Render (static site from `website/`, auto-deploy on merge); README updated for Render; VERSION 2.3.0 for the next release; noted the circuits rethink and pricing as open questions |
 | 2026-10-16 | Networking-tool-kev | Circuits for any site: upload any spreadsheet layout (map the columns once, layout remembered), Found on the network tab (add devices the scan sees to the list), Add to the circuit list on the Ports view |
 | 2026-10-21 | Networking-tool-kev | Circuits: uploads can update the list instead of replacing it (match by MAC, else name, else switch and port; empty cells keep the old value) |
+| 2026-10-22 | Networking-tool-kev | Carrier circuits (Circuits › Carrier circuits): provider lines with contract and router interface, live status and traffic from monitoring, watched ports (down emails), contract-ending emails at 60 and 14 days, spreadsheet upload, search |

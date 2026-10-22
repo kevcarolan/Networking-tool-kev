@@ -56,6 +56,7 @@ KINDS = {"backups": "Backups", "changes": "Config changes", "compliance": "Compl
          "upgrades": "Upgrades",
          "licence": "Licence", "worker": "Upgrade worker", "syslog": "Syslog",
          "monitoring": "Devices down or up",
+         "carriers": "Carrier contracts ending",
          "reports": "Report"}
 LAST_REPORT = PREFIX + "report_last"  # the last report slot sent
 CHANGES_LIMIT = 30  # devices listed in one email
@@ -225,9 +226,34 @@ def due(db: Session, cfg: Config, now: datetime | None = None, syslog_dir=None,
     if monitor_dir is not None and cfg.wanted("monitoring") and "monitoring" in modules:
         out += _monitoring(db, since, now, done, monitor_dir)
         out += _meraki(since, now, done, monitor_dir)
+    if cfg.wanted("carriers") and "circuits" in modules:
+        out += _carriers(db, now, done)
     if syslog_dir is not None and "syslog" in modules:
         out += _syslog(db, cfg, syslog_dir)
     return out
+
+
+def _carriers(db, now, done) -> list[Alert]:
+    """Carrier circuit contracts that end within 60 days: one email when each reaches 60
+    days and again at 14, so there is time to renew or give notice."""
+    from app.tools.circuits.carriers import contract_alert_rows, label
+
+    rows = []
+    for c, days in contract_alert_rows(db, now.date()):
+        mark = 14 if days <= 14 else 60
+        key = f"carrier:{c.id}:{c.contract_end}:{mark}"
+        if key not in done:
+            rows.append((key, c, days))
+    if not rows:
+        return []
+    lines = [f"  {label(c)}{f' ({c.site})' if c.site else ''}: "
+             + (f"ended {-days} day(s) ago" if days < 0 else f"ends {c.contract_end} (in {days} days)")
+             + (f". {c.support}" if c.support else "") for _, c, days in rows]
+    keys = [k for k, _, _ in rows] + [f"carrier:{c.id}:{c.contract_end}:60" for _, c, d in rows if d <= 14]
+    return [Alert(keys, f"Carrier contracts ending: {len(rows)}",
+                  "These carrier circuit contracts end soon:\n\n" + "\n".join(lines) +
+                  "\n\nRenew them or give notice in time. The list is on the Circuits page "
+                  "(Carrier circuits).", kind="carriers")]
 
 
 MONITOR_KINDS = ("down", "up", "restarted", "port_down", "port_up", "health_problem", "health_ok", "failover")

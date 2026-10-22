@@ -9,6 +9,12 @@ itself, and the installer refuses to go back to an older version.
 ## 2.3.0 (not released yet)
 
 **New**
+- **Carrier circuits.** A new tab on the Circuits page for the lines from providers
+  (internet, MPLS, point-to-point, SIP, 4G backup…): circuit ID, contract end, fault line, and
+  the router or firewall interface each lands on. Their status and traffic come from
+  Monitoring, a line going down is emailed (even without a port description), and contracts
+  ending within 60 days are emailed. Add them one by one or from a spreadsheet; the search box
+  finds them by circuit ID.
 - **Circuits: any spreadsheet.** Upload your own list in any layout: if its column names
   aren't known, you say which column is which (only the MAC or IP address is needed), and
   the layout is remembered for the next upload. Common names such as Hostname, Switch Name
