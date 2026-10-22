@@ -1142,6 +1142,11 @@ snmptranslate -On UPS-MIB::upsEstimatedChargeRemaining.0   # a name to numbers (
         known, you say which column is which). It is checked and shown here first; the live list
         only changes when you click <b>Make this the live list</b>.</p>
       <label>File <input name="file" type="file" accept=".xlsx,.xlsm,.csv" required></label>
+      <fieldset class="choice">
+        <legend>What the file does</legend>
+        <label class="check"><input type="radio" name="mode" value="replace" checked> <span><b>Replace the list</b>: the file is the whole list; rows not in it are removed</span></label>
+        <label class="check"><input type="radio" name="mode" value="update"> <span><b>Update the list</b>: change the rows in the file and add new ones; every other row stays. Rows are matched by MAC, else device name, else switch and port; an empty cell keeps what the list has</span></label>
+      </fieldset>
       <p class="error" hidden></p>
       <div class="dialog-actions"><button class="primary" value="check">Check file</button></div>
       <div id="ct-layouts"></div>

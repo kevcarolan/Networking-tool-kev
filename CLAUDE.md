@@ -197,6 +197,7 @@ remote); never sync the two automatically.
   An unknown header gets `needs_mapping` (the person maps columns, `importer.Mapping`);
   saved layouts are `ct_column_maps` keyed by `header_signature`. "Found on the network"
   (`api.discovered`) is edge-port MACs not on the list; adopting makes a pending import.
+  Upload `mode=update` merges into the live list (`api.merge_rows`) instead of replacing it.
   Carrier circuits (`circuits/carriers.py`, table `ct_carriers`): provider lines on a
   device's interface; status read from the monitoring store (never the device); the poller
   watches their ports (`carriers.watched_ports`, `Job.carriers`); alert kind `carriers` for

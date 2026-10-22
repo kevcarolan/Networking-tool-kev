@@ -544,6 +544,87 @@ def discovered_xlsx(db: Session = Depends(get_db), _: User = Depends(CIRCUITS_VI
         media_type=exports.XLSX_TYPE)
 
 
+def _active_parsed(db: Session) -> list[ParsedRow]:
+    """The live list's rows, in the form a new import is built from."""
+    imp = _active(db)
+    return [ParsedRow(row_no=c.row_no, values={f: getattr(c, f) for f in FIELDS},
+                      switch_norm=c.switch_norm, port_norm=c.port_norm, mac_norm=c.mac_norm,
+                      warnings=[w for w in (c.warnings or "").split("; ") if w],
+                      custom=json.loads(c.custom or "{}"))
+            for c in (_rows(db, imp.id) if imp else [])]
+
+
+def merge_rows(current: list[ParsedRow], incoming: list[ParsedRow],
+               columns: dict[str, str]) -> tuple[list[ParsedRow], int, int]:
+    """Update the list with a file's rows instead of replacing it.
+
+    Each row of the file is matched to a row of the list by its MAC, else its device name,
+    else its switch and port (each row of the list is matched once). A matched row takes the
+    file's values for the columns the file has, where the file's cell isn't empty: an empty
+    cell keeps what the list has. A row that matches nothing is added. Rows of the list the
+    file doesn't mention are kept. Returns (rows, updated, added)."""
+    rows = [ParsedRow(row_no=r.row_no, values=dict(r.values), switch_norm=r.switch_norm,
+                      port_norm=r.port_norm, mac_norm=r.mac_norm, warnings=list(r.warnings),
+                      custom=dict(r.custom)) for r in current]
+    by_mac, by_name, by_port = defaultdict(list), defaultdict(list), defaultdict(list)
+    for i, r in enumerate(rows):
+        if r.mac_norm:
+            by_mac[r.mac_norm].append(i)
+        if r.values.get("device_name"):
+            by_name[r.values["device_name"].strip().lower()].append(i)
+        if r.switch_norm and r.port_norm:
+            by_port[(r.switch_norm, r.port_norm)].append(i)
+    used: set[int] = set()
+
+    def find(r: ParsedRow) -> int | None:
+        keys = []
+        if r.mac_norm:
+            keys.append(by_mac.get(r.mac_norm, []))
+        if r.values.get("device_name"):
+            keys.append(by_name.get(r.values["device_name"].strip().lower(), []))
+        if r.switch_norm and r.port_norm:
+            keys.append(by_port.get((r.switch_norm, r.port_norm), []))
+        for candidates in keys:
+            for i in candidates:
+                # a row of the list with another MAC is another device, whatever its name
+                if i not in used and not (r.mac_norm and rows[i].mac_norm
+                                          and rows[i].mac_norm != r.mac_norm):
+                    return i
+        return None
+
+    std = [f for f in columns if not f.startswith("x_")]
+    custom_keys = [f[2:] for f in columns if f.startswith("x_")]
+    updated = added = 0
+    next_row = max((r.row_no for r in rows), default=0) + 1
+    for r in incoming:
+        i = find(r)
+        if i is None:
+            rows.append(ParsedRow(row_no=next_row, values=dict(r.values), switch_norm=r.switch_norm,
+                                  port_norm=r.port_norm, mac_norm=r.mac_norm,
+                                  warnings=list(r.warnings), custom=dict(r.custom)))
+            next_row += 1
+            added += 1
+            continue
+        used.add(i)
+        old = rows[i]
+        values = dict(old.values)
+        for f in std:
+            if r.values.get(f, "").strip():
+                values[f] = r.values[f]
+        custom = dict(old.custom)
+        for k in custom_keys:
+            if (r.custom.get(k) or "").strip():
+                custom[k] = r.custom[k]
+        if values != old.values or custom != old.custom:
+            updated += 1
+        rows[i] = ParsedRow(row_no=old.row_no, values=values,
+                            switch_norm=normalize_switch(values["switch"]),
+                            port_norm=normalize_port(values["port"]),
+                            mac_norm=normalize_mac(values["mac"]), warnings=_validate(values),
+                            custom=custom)
+    return rows, updated, added
+
+
 class AdoptIn(BaseModel):
     macs: list[str] = PField(min_length=1, max_length=5000)
     service: str = PField("", max_length=200)
@@ -558,14 +639,7 @@ def adopt(body: AdoptIn, db: Session = Depends(get_db), user: User = Depends(CIR
     picked = [r for r in discovered(db) if r["mac"] in wanted]
     if not picked:
         raise HTTPException(422, "None of these devices is on the found list any more: scan again")
-    imp = _active(db)
-    rows: list[ParsedRow] = []
-    for c in _rows(db, imp.id) if imp else []:
-        rows.append(ParsedRow(row_no=c.row_no, values={f: getattr(c, f) for f in FIELDS},
-                              switch_norm=c.switch_norm, port_norm=c.port_norm,
-                              mac_norm=c.mac_norm,
-                              warnings=[w for w in (c.warnings or "").split("; ") if w],
-                              custom=json.loads(c.custom or "{}")))
+    rows = _active_parsed(db)
     next_row = max((r.row_no for r in rows), default=1) + 1
     for i, r in enumerate(picked):
         values = {f: "" for f in FIELDS}
@@ -640,13 +714,16 @@ def _mapping(text: str) -> Mapping | None:
 @router.put("/imports/upload", status_code=201)
 async def upload(request: Request, filename: str = Query(..., max_length=255),
                  map: str = Query("", max_length=20000), save: bool = False,  # noqa: A002
+                 mode: str = Query("replace", pattern="^(replace|update)$"),
                  user: User = Depends(CIRCUITS_MANAGE)):
     """Upload a spreadsheet (raw .xlsx or .csv body). It is checked and kept as a pending
     import with a preview; nothing changes until it is committed.
 
     When no header row is recognised (and no saved layout matches), the answer is
     ``needs_mapping`` with the file's first rows: the person says which column is which and
-    sends the file again with ``map`` (and ``save`` to remember the layout)."""
+    sends the file again with ``map`` (and ``save`` to remember the layout).
+
+    ``mode=update`` changes and adds rows instead of replacing the list (``merge_rows``)."""
     limit = request.app.state.settings.circuits_max_upload_mb * 2**20
     body = bytearray()
     async for chunk in request.stream():
@@ -679,7 +756,21 @@ async def upload(request: Request, filename: str = Query(..., max_length=255),
         raise HTTPException(422, str(exc)) from None
     if mapping is not None and save:
         await run_in_threadpool(_save_map, parsed, filename, user.username)
+    if mode == "update":
+        parsed = await run_in_threadpool(_merged, parsed)
     return await run_in_threadpool(_store_pending, parsed, filename, user.username)
+
+
+def _merged(parsed: ParsedSheet) -> ParsedSheet:
+    with session_scope() as db:
+        current = _active_parsed(db)
+        labels = {f["key"]: f["label"] for f in _fields(db)}
+    rows, updated, added = merge_rows(current, parsed.rows, parsed.columns)
+    return ParsedSheet(sheet=parsed.sheet, header_row=parsed.header_row, columns=labels,
+                       rows=rows, headers=parsed.headers, mapping=parsed.mapping,
+                       update={"file_rows": len(parsed.rows), "updated": updated, "added": added,
+                               "kept": len(current) - (len(parsed.rows) - added),
+                               "columns": parsed.columns})
 
 
 def _save_map(parsed, filename: str, username: str) -> None:
@@ -755,7 +846,8 @@ def _store_pending(parsed, filename: str, username: str) -> dict:
             "header_row": parsed.header_row,
             "columns": parsed.columns,
             "labels": labels,
-            "missing_columns": [label for k, label in labels.items() if k not in parsed.columns],
+            "missing_columns": [label for k, label in labels.items()
+                                if k not in (parsed.update or {}).get("columns", parsed.columns)],
             "switches": len(matches),
             "unmatched_switches": unmatched,
             "ambiguous_switches": ambiguous,
@@ -767,6 +859,7 @@ def _store_pending(parsed, filename: str, username: str) -> dict:
                          [(row_key(values(c), c.mac_norm), values(c)) for c in new_rows],
                          fields=compared),
             "replaces_import": active.id if active else None,
+            "update": parsed.update,
         }
         imp.summary = json.dumps(summary, default=str)
         audit(db, username, "circuits.import.preview",

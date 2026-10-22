@@ -62,8 +62,27 @@ which** instead of failing:
    **Saved layouts** at the bottom of the upload window lists them; delete one to choose
    again.
 
-Then the usual preview and **Make this the live list**. Remember that an upload replaces the
-whole list: a file with only some devices removes the others (the preview shows how many).
+Then the usual preview and **Make this the live list**.
+
+### Replace or update
+
+The upload window asks what the file does:
+
+* **Replace the list** (the default): the file is the whole list. Rows that aren't in it are
+  removed; the preview shows how many.
+* **Update the list**: the file changes some rows and adds new ones; every other row stays.
+  Use it when a team keeps its own part (only the cameras, only one building) or sends a
+  few corrections.
+  * Each row of the file is matched to a row of the list by its **MAC**, else its **device
+    name**, else its **switch and port**. A row of the list with a different MAC is never
+    matched by name (it is another device).
+  * A matched row takes the file's values for the columns the file has. An **empty cell
+    keeps** what the list has, so a file doesn't wipe columns it doesn't fill in. To clear
+    a value, edit it in a full export and replace the list.
+  * A row that matches nothing is **added**. Rows of the list the file doesn't mention are
+    **kept**, and nothing is removed.
+  * The preview says how many rows the file changes, adds and leaves alone, and the
+    usual new/changed counts compare it with the live list.
 
 ### A blank template to fill in
 

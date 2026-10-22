@@ -604,3 +604,7 @@ tr.link-row { cursor: pointer; }
 .map-grid select { min-width: 150px; }
 .map-grid .map-head th { font-weight: 400; color: var(--muted); font-style: italic; }
 .tabs .count.bad:not(:empty) { background: var(--fail); color: #fff; }
+
+fieldset.choice { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; display: grid; gap: 6px; }
+fieldset.choice legend { padding: 0 4px; color: var(--muted); }
+fieldset.choice label.check { align-items: flex-start; }
