@@ -97,6 +97,39 @@ edge port (a switch below that doesn't announce itself) shows "also on…".
 The tab is empty until the network has been scanned (**Scan network now**, or the scheduled
 scan).
 
+## Carrier circuits
+
+**Circuits → Carrier circuits** is the list of lines from providers: internet, MPLS,
+point-to-point, SIP, 4G/5G backup, dark fibre... One row per line, with:
+
+* **Provider** and **Circuit ID** (the provider's reference: what you quote when you ring
+  them). A line needs one or the other; the same provider can't have the same ID twice.
+* Service, bandwidth, site, WAN IP, cost, **contract end**, **fault line / account** and notes.
+* The **router or firewall** it plugs into (a device in the inventory) and its **interface**,
+  as the device names it (`GigabitEthernet0/0`, `ge-0/0/1`, `ether1`...). When the device is
+  monitored with SNMP, the interface names are offered as you type.
+
+**Status** comes from Monitoring's last reading of that interface (nothing is sent to the
+device from here): **Up**, **Down**, **Shut down** (the port is disabled), **Router down**,
+**Interface not found** (the name doesn't match one the device reports), **Not read yet** or
+**Not monitored** (the device isn't monitored, or its SNMP doesn't work), or **No router or
+interface**. Traffic in and out and how full the port is come from the same reading.
+
+* **Down emails:** the interface of a carrier circuit is *watched*: when it goes down or
+  comes back, Monitoring records an event and the **Devices down or up** email names the
+  circuit, even if the port has no description. Needs the Monitoring module.
+* **Contract emails:** **Carrier contracts ending** (Settings › Email alerts) sends one email
+  when a contract is 60 days from its end, and another at 14 days, so there's time to renew
+  or give notice. The tiles also count contracts ending within 60 days.
+* **Spreadsheets:** **Export CSV**; **Blank template** (Excel, with a Service pick-list and a
+  *How to fill in* sheet); **Upload spreadsheet** adds new lines and updates the ones with the
+  same Provider and Circuit ID (an empty cell keeps what is there; nothing is removed).
+  *Router or firewall* is matched to the inventory by name; *Contract end* is a date
+  (`2027-03-31`, `31/03/2027` or an Excel date).
+* **Search:** the search box finds a carrier circuit by its ID, provider, site or WAN IP.
+
+The Sites page's own **Circuits** field is still free text for anything else to note.
+
 ## Which site a circuit is at
 
 Each circuit is linked to a site on the **Sites** page ([sites.md](sites.md)):

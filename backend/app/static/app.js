@@ -312,6 +312,7 @@ const GS_GROUPS = [
   ["items", "Inventory items", (i) => [i.name, [i.type, i.site, i.rack && `rack ${i.rack}`, i.model, i.serial && `serial ${i.serial}`]], (i) => openItem(i.id)],
   ["sites", "Sites", (s) => [s.name, [s.code, s.city]], (s) => openSite(s.id)],
   ["circuits", "Circuits", (c) => [c.name, [c.service, c.ip, c.mac, c.switch && `${c.switch} ${c.port}`]], (c) => openCircuit(c)],
+  ["carriers", "Carrier circuits", (c) => [`${c.provider} ${c.circuit_ref}`.trim(), [c.service, c.site, c.wan_ip]], (c) => openCarrier(c.id)],
   ["network", "Seen on the network (last scan)", (n) => [n.mac, [n.ip, n.device ? `on ${n.device} ${n.port}` : "not on an edge port", n.vlan && `VLAN ${n.vlan}`, n.seen_at && fmtAgo(n.seen_at)]],
     (n) => n.device_id ? openPorts({ id: n.device_id, name: n.device }) : toast("Not seen on a switch's edge port")],
 ];
@@ -1919,6 +1920,7 @@ const CT_LIVE_CLS = { matches: "success", moved: "failed", found: "changed", not
 
 async function loadCircuits() {
   loadFound();
+  loadCarriers();
   try {
     const [data, meta] = await Promise.all([api("/api/circuits"), api("/api/circuits/meta")]);
     ct.meta = meta;
@@ -2288,6 +2290,7 @@ function selectCtTab(tab) {
   $$("#ct-tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
   $$(".ct-pane").forEach((p) => (p.hidden = p.id !== `ct-pane-${tab}`));
   if (tab === "found") loadFound();
+  if (tab === "carriers") loadCarriers();
 }
 $$("#ct-tabs button").forEach((b) => b.addEventListener("click", () => selectCtTab(b.dataset.tab)));
 
@@ -2367,6 +2370,158 @@ $("#ctf-add").addEventListener("click", () => {
       await adoptFound(macs, service.value.trim());
     } }, "Show the change")));
   $("#ct-dialog").showModal();
+});
+
+// Carrier circuits: lines from providers, with their status from monitoring
+
+const CC_CLS = { up: "success", down: "failed", device_down: "failed", admin_down: "never", not_found: "changed",
+  not_read: "never", not_monitored: "never", no_link: "never" };
+const cc = { rows: [], services: [], endingDays: 60, devices: null };
+
+async function loadCarriers() {
+  let d;
+  try { d = await api("/api/circuits/carriers"); } catch (e) { return; }
+  cc.rows = d.circuits;
+  cc.services = d.services;
+  cc.endingDays = d.ending_days;
+  cc.monitoring = d.monitoring;
+  const bad = cc.rows.filter((r) => ["down", "device_down"].includes(r.status)).length;
+  $("#ct-carrier-count").textContent = cc.rows.length ? String(cc.rows.length) : "";
+  $("#ct-carrier-count").classList.toggle("bad", bad > 0);
+  const n = (f) => cc.rows.filter(f).length;
+  const tiles = [
+    ["", "Carrier circuits", cc.rows.length, ""],
+    ["success", "Up", n((r) => r.status === "up"), "up"],
+    ["failed", "Down", bad, "down"],
+    ["never", "No live status", n((r) => !["up", "down", "device_down"].includes(r.status)), "nolive"],
+    ["changed", `Contract ends within ${cc.endingDays} days`, n((r) => r.contract_ending), "ending"],
+  ];
+  $("#cc-summary").replaceChildren(...tiles.map(([cls, label, num, filter]) =>
+    h("button", { class: `tile ${cls}`, onclick: () => { $("#cc-status").value = filter; renderCarriers(); } },
+      h("span", { class: "num" }, num), h("span", { class: "lbl" }, label))));
+  const keepSvc = $("#cc-service").value, keepSt = $("#cc-status").value;
+  fillSelect($("#cc-service"), "All services", [...new Set(cc.rows.map((r) => r.service).filter(Boolean))].sort().map((x) => [x, x]));
+  fillSelect($("#cc-status"), "All statuses", [["up", "Up"], ["down", "Down (line or router)"], ["nolive", "No live status"], ["ending", "Contract ending soon"]]);
+  $("#cc-service").value = keepSvc;
+  $("#cc-status").value = keepSt;
+  renderCarriers();
+}
+
+function renderCarriers() {
+  const q = $("#cc-search").value.trim().toLowerCase(), svc = $("#cc-service").value, st = $("#cc-status").value;
+  const rows = cc.rows.filter((r) => (!svc || r.service === svc) &&
+    (!st || (st === "up" && r.status === "up") || (st === "down" && ["down", "device_down"].includes(r.status)) ||
+      (st === "nolive" && !["up", "down", "device_down"].includes(r.status)) || (st === "ending" && r.contract_ending)) &&
+    (!q || [r.provider, r.circuit_ref, r.service, r.site, r.site_name, r.device, r.interface, r.wan_ip, r.support, r.notes]
+      .some((x) => (x || "").toLowerCase().includes(q))));
+  $("#cc-table tbody").replaceChildren(...rows.map((r) => h("tr", {},
+    h("td", {}, h("span", { class: `badge ${CC_CLS[r.status] || "never"}`, title: r.since ? `Since ${fmtTime(new Date(r.since * 1000).toISOString())}` : "" }, r.status_label)),
+    h("td", { class: "name" }, r.provider || "—"),
+    h("td", {}, r.circuit_ref ? h("code", {}, r.circuit_ref) : "—", r.wan_ip ? h("small", { class: "sub" }, r.wan_ip) : null),
+    h("td", {}, r.service || "—"), h("td", {}, r.bandwidth || "—"),
+    h("td", {}, r.site_name ? siteLink(r.site_name, r.site_id) : (r.site || "—")),
+    h("td", {}, r.device || "—", r.interface ? h("small", { class: "sub" }, r.interface) : null),
+    h("td", {}, r.in_bps != null || r.out_bps != null ? `${fmtBps(r.in_bps)} in / ${fmtBps(r.out_bps)} out` : "—",
+      r.util != null ? h("small", { class: "sub" }, `${r.util < 1 ? "under 1" : Math.round(r.util)}% of the port`) : null),
+    h("td", {}, r.contract_end || "—", r.contract_days != null && r.contract_ending
+      ? h("small", { class: `sub ${r.contract_days < 0 ? "errtext" : ""}` }, r.contract_days < 0 ? `ended ${-r.contract_days} day(s) ago` : `in ${r.contract_days} days`) : null),
+    h("td", {}, can("circuits", "manage") ? h("button", { type: "button", class: "small", onclick: () => carrierDialog(r) }, "Edit") : ""))));
+  const empty = $("#cc-empty");
+  empty.hidden = rows.length > 0;
+  empty.textContent = cc.rows.length ? "Nothing matches the filters." : "No carrier circuits yet: Add carrier circuit, or upload a spreadsheet (Blank template shows the columns).";
+}
+["#cc-search", "#cc-service", "#cc-status"].forEach((id) => $(id).addEventListener("input", renderCarriers));
+
+/** Show one carrier circuit: the Circuits page, Carrier circuits tab, filtered to it. */
+async function openCarrier(id) {
+  switchView("circuits");
+  selectCtTab("carriers");
+  await loadCarriers();
+  const r = cc.rows.find((x) => x.id === id);
+  if (!r) return;
+  $("#cc-search").value = r.circuit_ref || r.provider;
+  renderCarriers();
+}
+
+async function carrierDialog(r = null) {
+  if (!cc.devices) cc.devices = await api("/api/devices").catch(() => []);
+  const v = r || {};
+  const field = (name, label, attrs = {}) => h("label", {}, label, " ", h("input", { name, value: v[name] || "", ...attrs }));
+  const service = h("input", { name: "service", value: v.service || "", list: "cc-services" });
+  const device = h("select", { name: "device_id" }, h("option", { value: "" }, "— not linked —"),
+    cc.devices.slice().sort((a, b) => a.name.localeCompare(b.name)).map((d) => h("option", { value: d.id }, `${d.name}${d.site ? ` (${d.site})` : ""}`)));
+  device.value = v.device_id ? String(v.device_id) : "";
+  const iface = h("input", { name: "interface", value: v.interface || "", list: "cc-ifaces", placeholder: "e.g. GigabitEthernet0/0" });
+  const ifList = h("datalist", { id: "cc-ifaces" });
+  const loadIfaces = async () => {
+    ifList.replaceChildren();
+    if (!device.value || !cc.monitoring || !can("monitoring", "view")) return;
+    try {
+      const d = await api(`/api/monitoring/devices/${device.value}/interfaces`);
+      ifList.replaceChildren(...d.interfaces.filter((i) => i.type !== 24).map((i) => h("option", { value: i.name || i.descr }, i.alias || "")));
+    } catch (e) { /* no monitoring data for it */ }
+  };
+  device.addEventListener("change", loadIfaces);
+  loadIfaces();
+  const err = h("p", { class: "error", hidden: true });
+  const form = h("form", { class: "form" },
+    h("div", { class: "grid2" }, field("provider", "Provider"), field("circuit_ref", "Circuit ID")),
+    h("div", { class: "grid2" }, h("label", {}, "Service ", service), field("bandwidth", "Bandwidth", { placeholder: "e.g. 1 Gbps" })),
+    h("div", { class: "grid2" }, field("site", "Site", { placeholder: "name or code; empty = the router's site" }), field("wan_ip", "WAN IP")),
+    h("div", { class: "grid2" }, h("label", {}, "Router or firewall ", device), h("label", {}, "Interface ", iface)),
+    h("datalist", { id: "cc-services" }, cc.services.map((x) => h("option", { value: x }))), ifList,
+    h("div", { class: "grid2" }, field("contract_end", "Contract end", { type: "date" }), field("cost", "Cost")),
+    field("support", "Fault line / account"),
+    h("label", {}, "Notes ", h("textarea", { name: "notes", rows: 3 }, v.notes || "")),
+    err,
+    h("div", { class: "dialog-actions" },
+      r ? h("button", { type: "button", class: "danger", onclick: async () => {
+        if (!confirm(`Delete ${r.provider} ${r.circuit_ref}?`)) return;
+        try { await api(`/api/circuits/carriers/${r.id}`, { method: "DELETE" }); $("#ct-dialog").close(); loadCarriers(); } catch (e) { showError(err, e); }
+      } }, "Delete") : null,
+      h("span", { class: "spacer" }),
+      h("button", { class: "primary" }, r ? "Save" : "Add")));
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    err.hidden = true;
+    const f = new FormData(form);
+    const body = Object.fromEntries([...f.entries()].map(([k, x]) => [k, String(x).trim()]));
+    body.device_id = body.device_id ? Number(body.device_id) : null;
+    body.contract_end = body.contract_end || null;
+    try {
+      await api(r ? `/api/circuits/carriers/${r.id}` : "/api/circuits/carriers", { method: r ? "PUT" : "POST", body });
+      $("#ct-dialog").close();
+      toast(r ? "Carrier circuit saved" : "Carrier circuit added");
+      loadCarriers();
+    } catch (e) { showError(err, e); }
+  });
+  $("#ct-dialog-title").textContent = r ? `${r.provider} ${r.circuit_ref}`.trim() : "Add carrier circuit";
+  $("#ct-dialog-body").replaceChildren(form,
+    h("p", { class: "muted" }, "Choose the router or firewall the line plugs into, and its interface as the device names it. ",
+      "The status then comes from monitoring (the device must be monitored with SNMP). That port is watched: going down is an event and an email even without a description on it."));
+  $("#ct-dialog").showModal();
+}
+$("#cc-add").addEventListener("click", () => carrierDialog());
+
+$("#cc-upload").addEventListener("click", () => { $("#cc-file").value = ""; $("#cc-file").click(); });
+$("#cc-file").addEventListener("change", async (ev) => {
+  const file = ev.target.files[0];
+  if (!file) return;
+  try {
+    const res = await fetch(`/api/circuits/carriers/upload?filename=${encodeURIComponent(file.name)}`, {
+      method: "PUT", credentials: "same-origin", body: file, headers: { "Content-Type": "application/octet-stream" } });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) return showLogin();
+    if (!res.ok) throw new Error(data.detail || res.statusText);
+    const body = $("#ct-dialog-body");
+    $("#ct-dialog-title").textContent = `Uploaded ${file.name}`;
+    body.replaceChildren(h("p", {}, `${data.added} added, ${data.updated} updated. Nothing was removed.`),
+      data.problems.length ? h("div", {}, h("h3", {}, "Rows to check"), h("ul", { class: "plain" }, data.problems.map((x) => h("li", {}, x)))) : null);
+    $("#ct-dialog").showModal();
+    loadCarriers();
+  } catch (e) {
+    toast(e.message);
+  }
 });
 
 // History

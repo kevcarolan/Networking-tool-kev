@@ -33,13 +33,14 @@ import logging
 import os
 import signal
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
+from app.tools.circuits.importer import normalize_port
 from app.tools.monitoring import health as hw
 from app.tools.monitoring import ifaces
 from app.tools.monitoring import meraki as mk
@@ -68,6 +69,7 @@ class Job:
     snmp_note: str = ""  # why SNMP isn't used, when it isn't
     maintenance: bool = False
     platform: str = ""
+    carriers: dict = field(default_factory=dict)  # normalised interface -> carrier circuit
 
 
 def target_for(profile, address: str, cipher) -> SnmpTarget:
@@ -121,6 +123,9 @@ def load_jobs(db: Session, cipher) -> list[Job]:
     default = next((p for p in profiles.values() if p.is_default), None)
     choices = {t.device_id: t for t in db.scalars(select(MonitorTarget))}
     in_maintenance = maintenance_now(db)
+    from app.tools.circuits.carriers import watched_ports
+
+    carriers = watched_ports(db)
     jobs = []
     for d in db.scalars(select(Device).order_by(Device.name)):
         t = choices.get(d.id)
@@ -143,7 +148,7 @@ def load_jobs(db: Session, cipher) -> list[Job]:
         if not use_ping and snmp is None:
             note = note or "Ping and SNMP are both off"
         jobs.append(Job(d.id, d.name, d.address.strip(), d.site, use_ping, snmp, note,
-                        d.id in in_maintenance, d.platform))
+                        d.id in in_maintenance, d.platform, carriers.get(d.id, {})))
     return jobs
 
 
@@ -440,8 +445,12 @@ class Poller:
             keep[i.index] = {**counters, "oper": i.oper, "since": since, "ts": now}
             if i.graphed and (r["in_bps"] is not None or r["out_bps"] is not None):
                 samples.append((now, i.index, r["in_bps"], r["out_bps"], r["errors"], r["discards"]))
-            if before is not None and i.watched and i.admin == 1 and before.get("oper") != i.oper:
-                what = f"{i.label}{f' ({i.alias})' if i.alias else ''}"
+            carrier = job.carriers.get(normalize_port(i.name)) or job.carriers.get(
+                normalize_port(i.descr)) if job.carriers else None
+            if before is not None and (i.watched or carrier) and i.admin == 1 \
+                    and before.get("oper") != i.oper:
+                what = f"{i.label}{f' ({i.alias})' if i.alias else ''}" + \
+                    (f", carrier circuit {carrier}" if carrier else "")
                 if before.get("oper") == 1:
                     events.append({"ts": now, "device_id": job.device_id, "kind": "port_down",
                                    "detail": f"{what} went {ifaces.OPER.get(i.oper, 'down')}",

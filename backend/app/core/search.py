@@ -101,6 +101,7 @@ def search(db: Session, user: User, q: str, limit: int = LIMIT) -> dict:
 
     if "circuits" in modules and at_least(perms, "circuits", "view"):
         out["circuits"] = _circuits(db, q, mac, limit)
+        out["carriers"] = _carriers(db, q, limit)
         out["network"] = _network(db, q, mac, limit)
     return {"q": q, "groups": {k: v for k, v in out.items() if v["items"]}}
 
@@ -122,6 +123,17 @@ def _circuits(db: Session, q: str, mac: str, limit: int) -> dict:
     return _group([{"id": c.id, "name": c.device_name or f"row {c.row_no}", "service": c.service,
                     "ip": c.ip, "mac": c.mac_norm or c.mac, "switch": c.switch, "port": c.port,
                     "site": c.site} for c in rows], limit)
+
+
+def _carriers(db: Session, q: str, limit: int) -> dict:
+    from app.tools.circuits.models import CarrierCircuit
+
+    rows = list(db.scalars(select(CarrierCircuit).where(or_(*[
+        _like(getattr(CarrierCircuit, c), q) for c in
+        ("provider", "circuit_ref", "service", "site", "wan_ip", "support", "interface")]))
+        .order_by(CarrierCircuit.provider).limit(limit + 1)))
+    return _group([{"id": c.id, "provider": c.provider, "circuit_ref": c.circuit_ref,
+                    "service": c.service, "site": c.site, "wan_ip": c.wan_ip} for c in rows], limit)
 
 
 def _network(db: Session, q: str, mac: str, limit: int) -> dict:

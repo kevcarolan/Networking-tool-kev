@@ -292,6 +292,7 @@
         <div class="tabs" id="ct-tabs">
           <button data-tab="list" class="active">Circuit list</button>
           <button data-tab="found" title="Devices plugged into switch ports that aren't on the list">Found on the network <span id="ct-found-count" class="count"></span></button>
+          <button data-tab="carriers" title="Lines from providers: internet, MPLS, point-to-point…">Carrier circuits <span id="ct-carrier-count" class="count"></span></button>
         </div>
         <div id="ct-pane-list" class="ct-pane">
         <div id="ct-summary" class="tiles"></div>
@@ -351,6 +352,30 @@
             </table>
             <p id="ctf-empty" class="empty" hidden></p>
           </div>
+        </div>
+        <div id="ct-pane-carriers" class="ct-pane" hidden>
+          <p class="muted">Lines from providers and the router or firewall interface each one lands on.
+            Their status comes from monitoring's reading of that interface; a line going down is
+            emailed with the monitoring alerts, and contracts ending within 60 days are emailed too.</p>
+          <div id="cc-summary" class="tiles"></div>
+          <div class="toolbar">
+            <input id="cc-search" type="search" placeholder="Search provider, circuit ID, site, router…">
+            <select id="cc-service" aria-label="Service"><option value="">All services</option></select>
+            <select id="cc-status" aria-label="Status"><option value="">All statuses</option></select>
+            <span class="spacer"></span>
+            <a class="button" href="/api/circuits/carriers/export.csv" download>Export CSV</a>
+            <a class="button" href="/api/circuits/carriers/template.xlsx" download title="A blank sheet with the column names">Blank template</a>
+            <button id="cc-upload" data-perm="circuits:manage" title="Add and update carrier circuits from a spreadsheet">Upload spreadsheet</button>
+            <button id="cc-add" class="primary" data-perm="circuits:manage">Add carrier circuit</button>
+          </div>
+          <div class="table-wrap">
+            <table id="cc-table">
+              <thead><tr><th>Status</th><th>Provider</th><th>Circuit ID</th><th>Service</th><th>Bandwidth</th><th>Site</th><th>Router / interface</th><th>Traffic</th><th>Contract end</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+            <p id="cc-empty" class="empty" hidden></p>
+          </div>
+          <input id="cc-file" type="file" accept=".xlsx,.xlsm,.csv" hidden>
         </div>
       </section>
 

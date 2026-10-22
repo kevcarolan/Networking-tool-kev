@@ -241,6 +241,33 @@ def circuit_workbook() -> bytes:
 
 # --- filling an empty install through the API ----------------------------------------------
 
+def carriers(client, ids: dict) -> None:
+    """Lines from (made-up) providers, on the firewall and routers the simulator answers for.
+    One contract ends soon, and one line isn't linked to a router yet."""
+    from datetime import date, timedelta
+
+    today = date.today()
+    for body in (
+        {"provider": "Northwire Telecom", "circuit_ref": "NWT-IA-204417", "service": "Internet",
+         "bandwidth": "1 Gbps", "site": "Head office", "device_id": ids["hq-fw1"],
+         "interface": "GigabitEthernet0/5", "wan_ip": "198.51.100.2/30",
+         "contract_end": (today + timedelta(days=45)).isoformat(), "cost": "1,150 / month",
+         "support": "Fault line 0800 000 111, account 88213"},
+        {"provider": "Skylink Mobile", "circuit_ref": "SKY-4G-31007", "service": "4G / 5G backup",
+         "bandwidth": "100 Mbps", "site": "Head office", "device_id": ids["hq-fw1"],
+         "interface": "GigabitEthernet0/4", "notes": "Backup internet; the router is unplugged"},
+        {"provider": "Atlas Fibre", "circuit_ref": "ATF-P2P-00931", "service": "Point-to-point",
+         "bandwidth": "10 Gbps", "site": "DC1", "device_id": ids["dc1-spine1"], "interface": "ge-0/0/3",
+         "contract_end": (today + timedelta(days=400)).isoformat(), "support": "NOC 0800 000 222"},
+        {"provider": "BlueLine Networks", "circuit_ref": "BLN-BB-77120", "service": "Internet",
+         "bandwidth": "500 Mbps", "site": "Branch-North", "device_id": ids["bn-rtr1"],
+         "interface": "ether1", "contract_end": (today + timedelta(days=210)).isoformat()},
+        {"provider": "Northwire Telecom", "circuit_ref": "NWT-MPLS-55802", "service": "MPLS",
+         "bandwidth": "200 Mbps", "site": "Warehouse", "notes": "CE router not in the inventory yet"},
+    ):
+        _ok(client.post("/api/circuits/carriers", json=body))
+
+
 def seed(client, settings, net) -> dict:
     """Run once on an empty demo database: the admin, accounts, devices, standards, images,
     circuit list, a first check of everything, and one wall display. Returns what to print."""
@@ -302,6 +329,7 @@ def seed(client, settings, net) -> dict:
     for name, oid, extra in DEMO_SENSORS:  # the SNMP-only devices' readings (app.demo.monitor answers)
         _ok(client.post("/api/monitoring/sensors", json={"name": name, "oid": oid, **extra}))
     from app.demo import meraki as demo_meraki
+    carriers(client, ids)
     _ok(client.post("/api/monitoring/meraki/connections", json={  # answered by app.demo.meraki
         "name": demo_meraki.ORG["name"], "api_key": demo_meraki.KEY, "org_id": demo_meraki.ORG["id"],
         "org_name": demo_meraki.ORG["name"]}))

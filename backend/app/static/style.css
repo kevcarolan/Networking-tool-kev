@@ -603,3 +603,4 @@ tr.link-row { cursor: pointer; }
 .tabs .count:not(:empty) { margin-left: 6px; padding: 0 7px; border-radius: 999px; font-size: .8em; background: var(--border); }
 .map-grid select { min-width: 150px; }
 .map-grid .map-head th { font-weight: 400; color: var(--muted); font-style: italic; }
+.tabs .count.bad:not(:empty) { background: var(--fail); color: #fff; }

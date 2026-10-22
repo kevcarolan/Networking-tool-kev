@@ -1,9 +1,9 @@
 """Master circuit list tables (prefix ``ct_``). Every upload is kept as an
 import; exactly one import is "active" and is the current circuit list."""
 
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base, utcnow
@@ -200,3 +200,28 @@ class DeviceScanState(Base):
     last_error: Mapped[str] = mapped_column(Text, default="")
     mac_count: Mapped[int] = mapped_column(Integer, default=0)
     arp_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class CarrierCircuit(Base):
+    """A line from a provider (internet, MPLS, point-to-point, SIP...): its reference, the
+    contract, and the router or firewall interface it lands on. Its live status comes from
+    monitoring's reading of that interface."""
+
+    __tablename__ = "ct_carriers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider: Mapped[str] = mapped_column(String(200), default="")
+    circuit_ref: Mapped[str] = mapped_column(String(200), default="")  # the provider's circuit ID
+    service: Mapped[str] = mapped_column(String(100), default="")  # Internet, MPLS, P2P...
+    bandwidth: Mapped[str] = mapped_column(String(100), default="")
+    site: Mapped[str] = mapped_column(String(100), default="")  # name or code
+    device_id: Mapped[int | None] = mapped_column(
+        ForeignKey("devices.id", ondelete="SET NULL"), nullable=True)
+    interface: Mapped[str] = mapped_column(String(100), default="")
+    wan_ip: Mapped[str] = mapped_column(String(100), default="")
+    contract_end: Mapped[date | None] = mapped_column(Date, nullable=True)
+    cost: Mapped[str] = mapped_column(String(100), default="")
+    support: Mapped[str] = mapped_column(String(255), default="")  # fault line, account number
+    notes: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_by: Mapped[str] = mapped_column(String(200), default="")
