@@ -191,6 +191,12 @@ The master circuit list: every end device or service and the switch port it uses
 * **Exports:** the list as CSV, or an updated spreadsheet with the switch and port taken
   from the network.
 
+**Carrier circuits** (a tab on the same page): the lines from providers (internet, MPLS,
+point-to-point…) with their circuit ID, contract end, fault line, and the router or firewall
+interface each lands on. Their status (up or down, traffic) comes from Monitoring, a line
+going down is emailed with the monitoring alerts, and contracts ending within 60 days are
+emailed too. Add them one by one, or upload a spreadsheet (Blank template shows the columns).
+
 Upgrade jobs save the circuits on the device before and after, and warn about any that
 haven't come back. Details: [circuits.md](../circuits.md).
 
