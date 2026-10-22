@@ -199,6 +199,10 @@ interface each lands on. Their status (up or down, traffic) comes from Monitorin
 going down is emailed with the monitoring alerts, and contracts ending within 60 days are
 emailed too. Add them one by one, or upload a spreadsheet (Blank template shows the columns).
 
+**Rules** (another tab): for a type of circuit (a Device type or Service, such as CCTV), email
+when one moves or isn't seen on the network, and check it is on the right VLAN. Circuits on
+the wrong VLAN are flagged in the list (the **Wrong VLAN** tile).
+
 Upgrade jobs save the circuits on the device before and after, and warn about any that
 haven't come back. Details: [circuits.md](../circuits.md).
 

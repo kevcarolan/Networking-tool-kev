@@ -225,3 +225,22 @@ class CarrierCircuit(Base):
     notes: Mapped[str] = mapped_column(Text, default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_by: Mapped[str] = mapped_column(String(200), default="")
+
+
+class CircuitRule(Base):
+    """What to check and email for one kind of circuit: the rows whose Device Type (or
+    Service) is ``value`` ("" = every row). Checked against each network scan."""
+
+    __tablename__ = "ct_rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    field: Mapped[str] = mapped_column(String(20), default="device_type")  # or "service"
+    value: Mapped[str] = mapped_column(String(255), default="")
+    email_moved: Mapped[bool] = mapped_column(default=False)
+    email_missing: Mapped[bool] = mapped_column(default=False)
+    missing_hours: Mapped[int] = mapped_column(Integer, default=12)
+    check_vlan: Mapped[bool] = mapped_column(default=False)
+    vlans: Mapped[str] = mapped_column(String(255), default="")  # "" = the row's VLAN column
+    email_vlan: Mapped[bool] = mapped_column(default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_by: Mapped[str] = mapped_column(String(200), default="")

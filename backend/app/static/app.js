@@ -1943,6 +1943,8 @@ async function loadCircuits() {
     ["", "Network: found", live("found"), "live:found"],
     ["never", "Network: not seen", live("not_seen"), "live:not_seen"],
   ];
+  const wrongVlan = rows.filter((r) => (r.rule_problems || []).length).length;
+  if (wrongVlan) tiles.push(["failed", "Wrong VLAN", wrongVlan, "rules"]);
   $("#ct-summary").replaceChildren(...tiles.map(([cls, label, n, filter]) =>
     h("button", { class: `tile ${cls}`, onclick: () => { $("#ct-filter-match").value = filter; renderCircuits(); } },
       h("span", { class: "num" }, n), h("span", { class: "lbl" }, label))));
@@ -1980,6 +1982,7 @@ function renderCircuits() {
     if (match === "unlinked" && r.match === "matched") return false;
     if (match === "warnings" && !r.warnings) return false;
     if (match.startsWith("live:") && r.live_status !== match.slice(5)) return false;
+    if (match === "rules" && !(r.rule_problems || []).length) return false;
     if (q && ![r.device_name, r.eng_prefix, r.ip, r.mac, r.port, r.switch, r.drawing_number, r.drawing_ref,
       r.room, r.device_type, r.live_switch, r.live_port, r.live_mac, r.site_text, r.site_name,
       ...Object.keys(r).filter((k) => k.startsWith("x_")).map((k) => r[k])].some((v) => (v || "").toLowerCase().includes(q))) return false;
@@ -2050,7 +2053,8 @@ function liveCell(r) {
     h("span", { class: `badge ${CT_LIVE_CLS[r.live_status] || "never"}` }, r.live_status_label),
     where ? h("small", { class: "sub" }, h("code", {}, where)) : null,
     r.live_mac_source === "arp" ? h("small", { class: "sub", title: "The list has no MAC; it was found from the IP in an ARP table" }, `MAC ${r.live_mac} from ARP`) : null,
-    seen ? h("small", { class: "sub" }, seen) : null);
+    seen ? h("small", { class: "sub" }, seen) : null,
+    ...(r.rule_problems || []).map((p) => h("small", { class: "sub badtext", title: "From the rules (Rules tab)" }, p)));
 }
 
 $("#ct-scan").addEventListener("click", async () => {
@@ -2296,6 +2300,7 @@ function selectCtTab(tab) {
   $$(".ct-pane").forEach((p) => (p.hidden = p.id !== `ct-pane-${tab}`));
   if (tab === "found") loadFound();
   if (tab === "carriers") loadCarriers();
+  if (tab === "rules") loadRules();
 }
 $$("#ct-tabs button").forEach((b) => b.addEventListener("click", () => selectCtTab(b.dataset.tab)));
 
@@ -2528,6 +2533,83 @@ $("#cc-file").addEventListener("change", async (ev) => {
     toast(e.message);
   }
 });
+
+// Rules per type of circuit
+
+const cr = { rules: [], types: {}, fields: {} };
+
+async function loadRules() {
+  let d;
+  try { d = await api("/api/circuits/rules"); } catch (e) { return; }
+  Object.assign(cr, d);
+  const yes = (on, text) => (on ? text : h("span", { class: "muted" }, "—"));
+  $("#cr-table tbody").replaceChildren(...cr.rules.map((r) => h("tr", {},
+    h("td", { class: "name" }, r.label),
+    h("td", {}, String(r.circuits)),
+    h("td", {}, yes(r.email_moved, "Email")),
+    h("td", {}, yes(r.email_missing, `Email after ${r.missing_hours} h`)),
+    h("td", {}, r.check_vlan ? (r.vlans ? `VLAN ${r.vlans}` : "As on the list") : h("span", { class: "muted" }, "Not checked"),
+      r.check_vlan && r.email_vlan ? h("small", { class: "sub" }, "emailed") : null),
+    h("td", {}, r.check_vlan ? (r.wrong_vlan ? h("span", { class: "link badtext", title: "Show them on the list", onclick: () => {
+      selectCtTab("list"); $("#ct-filter-match").value = "rules"; renderCircuits();
+    } }, String(r.wrong_vlan)) : "0") : "—"),
+    h("td", {}, can("circuits", "manage") ? h("button", { type: "button", class: "small", onclick: () => ruleDialog(r) }, "Edit") : ""))));
+  const empty = $("#cr-empty");
+  empty.hidden = cr.rules.length > 0;
+  empty.textContent = "No rules yet. " + (can("circuits", "manage") ? "Add one, for example: CCTV cameras on VLAN 40, email when one moves or goes missing." : "");
+}
+
+function ruleDialog(r = null) {
+  const v = r || { field: "device_type", value: "", missing_hours: 12 };
+  const field = h("select", { name: "field" }, Object.entries(cr.fields).map(([k, label]) => h("option", { value: k }, label)));
+  field.value = v.field;
+  const list = h("datalist", { id: "cr-values" });
+  const fillValues = () => list.replaceChildren(...(cr.types[field.value] || []).map((x) => h("option", { value: x })));
+  field.addEventListener("change", fillValues);
+  fillValues();
+  const check = (name, label, extra = null) => h("label", { class: "check" },
+    h("input", { type: "checkbox", name, checked: !!v[name] }), " ", label, extra);
+  const hours = h("input", { type: "number", name: "missing_hours", min: 1, max: 720, value: v.missing_hours, style: "width:5em" });
+  const vlans = h("input", { name: "vlans", value: v.vlans || "", placeholder: "empty = the VLAN on each row of the list; or e.g. 40, 41-43" });
+  const err = h("p", { class: "error", hidden: true });
+  const form = h("form", { class: "form" },
+    h("div", { class: "grid2" }, h("label", {}, "Column ", field),
+      h("label", {}, "Is ", h("input", { name: "value", value: v.value || "", list: "cr-values", placeholder: "empty = every circuit" }))), list,
+    h("fieldset", { class: "choice" }, h("legend", {}, "Email"),
+      check("email_moved", "When one moves to another switch port"),
+      check("email_missing", "When one isn't seen on the network for ", h("span", {}, hours, " hours"))),
+    h("fieldset", { class: "choice" }, h("legend", {}, "VLAN"),
+      check("check_vlan", "Check the VLAN it is on"),
+      h("label", {}, "Allowed VLANs ", vlans),
+      check("email_vlan", "Email when one is on another VLAN")),
+    err,
+    h("div", { class: "dialog-actions" },
+      r ? h("button", { type: "button", class: "danger", onclick: async () => {
+        if (!confirm(`Delete the rule for ${r.label.toLowerCase()}?`)) return;
+        try { await api(`/api/circuits/rules/${r.id}`, { method: "DELETE" }); $("#ct-dialog").close(); loadRules(); loadCircuits(); } catch (e) { showError(err, e); }
+      } }, "Delete") : null,
+      h("span", { class: "spacer" }),
+      h("button", { class: "primary" }, r ? "Save" : "Add rule")));
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    err.hidden = true;
+    const f = new FormData(form);
+    const body = { field: f.get("field"), value: String(f.get("value")).trim(), vlans: String(f.get("vlans")).trim(),
+      missing_hours: Number(f.get("missing_hours")) || 12 };
+    ["email_moved", "email_missing", "check_vlan", "email_vlan"].forEach((k) => (body[k] = f.get(k) === "on"));
+    try {
+      await api(r ? `/api/circuits/rules/${r.id}` : "/api/circuits/rules", { method: r ? "PUT" : "POST", body });
+      $("#ct-dialog").close();
+      toast(r ? "Rule saved" : "Rule added");
+      loadRules();
+      loadCircuits();
+    } catch (e) { showError(err, e); }
+  });
+  ctDialog(r ? `Rule: ${r.label}` : "Add rule", form,
+    h("p", { class: "muted" }, "Checked against the last network scan. A circuit can match several rules: ",
+      "it is emailed if any of them asks, and any of their VLANs is allowed. VLAN names (Juniper) work too."));
+}
+$("#cr-add").addEventListener("click", async () => { if (!cr.fields.device_type) await loadRules(); ruleDialog(); });
 
 // History
 

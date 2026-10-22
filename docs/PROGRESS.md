@@ -189,8 +189,9 @@ install test on Ubuntu, then clearing the name and the licence terms.
   (column mapping, saved layouts), Found on the network (adopt from the scan) and update
   instead of replace on upload (2026-10-21). Carrier circuits built
   2026-10-22 (provider, circuit ID, contract, router interface, live status from monitoring,
-  watched port, contract-ending email). Still to plan: per-type rules (alerts on moved/missing,
-  expected VLAN); maker from the MAC (OUI table in the bundle).
+  watched port, contract-ending email). Rules per type built 2026-10-22 (email on moved or
+  not seen, expected VLAN, checked after each scan). Still to plan: maker from the MAC (OUI
+  table in the bundle).
 * **Circuits (owner, 2026-10-15):** the circuits tool was built around one kind of site
   (CCTV, access control and building systems found by MAC/ARP on access switches, from an
   Excel list). Other customers' environments may need a different model. Rethink it for a
@@ -310,3 +311,4 @@ install test on Ubuntu, then clearing the name and the licence terms.
 | 2026-10-16 | Networking-tool-kev | Circuits for any site: upload any spreadsheet layout (map the columns once, layout remembered), Found on the network tab (add devices the scan sees to the list), Add to the circuit list on the Ports view |
 | 2026-10-21 | Networking-tool-kev | Circuits: uploads can update the list instead of replacing it (match by MAC, else name, else switch and port; empty cells keep the old value) |
 | 2026-10-22 | Networking-tool-kev | Carrier circuits (Circuits › Carrier circuits): provider lines with contract and router interface, live status and traffic from monitoring, watched ports (down emails), contract-ending emails at 60 and 14 days, spreadsheet upload, search |
+| 2026-10-22 | Networking-tool-kev | Circuit rules per type (Circuits › Rules): for a Device type or Service, email when one moves or isn't seen for N hours, check the VLAN (listed VLANs or the row's own); wrong VLAN flagged in the list; new alert kind, checked once after each scan |

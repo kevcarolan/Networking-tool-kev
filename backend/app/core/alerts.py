@@ -56,6 +56,7 @@ KINDS = {"backups": "Backups", "changes": "Config changes", "compliance": "Compl
          "upgrades": "Upgrades",
          "licence": "Licence", "worker": "Upgrade worker", "syslog": "Syslog",
          "monitoring": "Devices down or up",
+         "circuits": "Circuits moved, missing or on the wrong VLAN",
          "carriers": "Carrier contracts ending",
          "reports": "Report"}
 LAST_REPORT = PREFIX + "report_last"  # the last report slot sent
@@ -66,6 +67,8 @@ _SECRET = re.compile(r"secret|passw|key|community|psk|hash|encrypt|private|token
 # What devices log when someone changes their config (Cisco, Junos, Arista, AlliedWare...)
 _WHO = re.compile(r"CONFIG_I|configured from|UI_COMMIT|config(uration)? (was )?(changed|saved)"
                   r"|committed|SYS-5-CONFIG", re.I)
+CIRCUITS_SCAN = PREFIX + "circuits_scan"  # the last network scan the circuit rules were checked on
+CIRCUITS_LIMIT = 50  # circuits listed in one email
 SYSLOG_AFTER = PREFIX + "syslog_after"  # messages received after this time are still to send
 SYSLOG_LIMIT = 50  # messages listed in one email
 PASSWORD = PREFIX + "smtp_password_enc"
@@ -228,6 +231,8 @@ def due(db: Session, cfg: Config, now: datetime | None = None, syslog_dir=None,
         out += _meraki(since, now, done, monitor_dir)
     if cfg.wanted("carriers") and "circuits" in modules:
         out += _carriers(db, now, done)
+    if cfg.wanted("circuits") and "circuits" in modules:
+        out += _circuits(db, now, done)
     if syslog_dir is not None and "syslog" in modules:
         out += _syslog(db, cfg, syslog_dir)
     return out
@@ -254,6 +259,31 @@ def _carriers(db, now, done) -> list[Alert]:
                   "These carrier circuit contracts end soon:\n\n" + "\n".join(lines) +
                   "\n\nRenew them or give notice in time. The list is on the Circuits page "
                   "(Carrier circuits).", kind="carriers")]
+
+
+def _circuits(db, now, done) -> list[Alert]:
+    """What the circuit rules flag (moved, not seen, wrong VLAN), checked once after each
+    network scan; each problem is emailed once."""
+    from app.tools.circuits.models import CircuitScan
+    from app.tools.circuits.rules import problems
+
+    scan = db.scalar(select(CircuitScan.id).where(CircuitScan.finished_at.is_not(None))
+                     .order_by(CircuitScan.id.desc()).limit(1))
+    if scan is None or appsettings.stored(db).get(CIRCUITS_SCAN) == str(scan):
+        return []
+    rows = [p for p in problems(db, now) if p[0] not in done]
+    if not rows:
+        appsettings.save(db, {CIRCUITS_SCAN: str(scan)}, "system")
+        return []
+    counts = {k: sum(1 for _, kind, _ in rows if kind == k) for k in ("moved", "missing", "vlan")}
+    words = {"moved": "moved", "missing": "not seen", "vlan": "on the wrong VLAN"}
+    subject = "Circuits: " + ", ".join(f"{n} {words[k]}" for k, n in counts.items() if n)
+    lines = [line for _, _, line in rows[:CIRCUITS_LIMIT]]
+    more = f"\n  ...and {len(rows) - CIRCUITS_LIMIT} more." if len(rows) > CIRCUITS_LIMIT else ""
+    return [Alert([k for k, _, _ in rows], subject,
+                  "The last network scan found these circuits breaking their rules:\n\n"
+                  + "\n".join(lines) + more + "\n\nThe list and the rules are on the Circuits page.",
+                  kind="circuits", save={CIRCUITS_SCAN: str(scan)})]
 
 
 MONITOR_KINDS = ("down", "up", "restarted", "port_down", "port_up", "health_problem", "health_ok", "failover")

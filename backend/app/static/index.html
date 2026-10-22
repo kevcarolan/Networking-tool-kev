@@ -293,6 +293,7 @@
           <button data-tab="list" class="active">Circuit list</button>
           <button data-tab="found" title="Devices plugged into switch ports that aren't on the list">Found on the network <span id="ct-found-count" class="count"></span></button>
           <button data-tab="carriers" title="Lines from providers: internet, MPLS, point-to-point…">Carrier circuits <span id="ct-carrier-count" class="count"></span></button>
+          <button data-tab="rules" title="What to check and email for each type of circuit">Rules</button>
         </div>
         <div id="ct-pane-list" class="ct-pane">
         <div id="ct-summary" class="tiles"></div>
@@ -315,6 +316,7 @@
             <option value="live:not_seen">Network: not seen</option>
             <option value="live:several">Network: on several ports</option>
             <option value="live:no_address">Network: no MAC or IP</option>
+            <option value="rules">On the wrong VLAN (rules)</option>
           </select>
           <span class="spacer"></span>
           <button id="ct-columns" title="Choose and order the columns you see">Columns</button>
@@ -376,6 +378,23 @@
             <p id="cc-empty" class="empty" hidden></p>
           </div>
           <input id="cc-file" type="file" accept=".xlsx,.xlsm,.csv" hidden>
+        </div>
+        <div id="ct-pane-rules" class="ct-pane" hidden>
+          <p class="muted">A rule is for one type of circuit (a Device type or Service on the list, or every
+            circuit): email when one moves to another port or isn't seen on the network, and check it is on
+            the right VLAN. Rules are checked after each network scan, and each problem is emailed once to
+            the people who get <b>Circuits moved, missing or on the wrong VLAN</b> (Settings › Email alerts).</p>
+          <div class="toolbar">
+            <span class="spacer"></span>
+            <button id="cr-add" class="primary" data-perm="circuits:manage">Add rule</button>
+          </div>
+          <div class="table-wrap">
+            <table id="cr-table">
+              <thead><tr><th>For</th><th>Circuits</th><th>Moved</th><th>Not seen</th><th>VLAN</th><th>Wrong VLAN now</th><th></th></tr></thead>
+              <tbody></tbody>
+            </table>
+            <p id="cr-empty" class="empty" hidden></p>
+          </div>
         </div>
       </section>
 

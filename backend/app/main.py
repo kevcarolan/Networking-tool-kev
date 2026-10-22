@@ -22,6 +22,7 @@ from app.tools.config_backup.service import BackupService
 from app.tools.config_backup.storage import GitConfigStore
 from app.tools.circuits import api as circuits_api
 from app.tools.circuits import carriers as carriers_api
+from app.tools.circuits import rules as rules_api
 from app.tools.calendar import api as calendar_api
 from app.tools.circuits.scan import CircuitScanService
 from app.tools.circuits import topology as topology_api
@@ -143,6 +144,7 @@ def create_app(settings: Settings | None = None, fetcher=fetch_config,
     app.include_router(jobs_api.router, dependencies=[Depends(licence.module("upgrades"))])
     app.include_router(circuits_api.router, dependencies=[Depends(licence.module("circuits"))])
     app.include_router(carriers_api.router, dependencies=[Depends(licence.module("circuits"))])
+    app.include_router(rules_api.router, dependencies=[Depends(licence.module("circuits"))])
     app.include_router(topology_api.router, dependencies=[Depends(licence.module("circuits"))])
     app.include_router(syslog_api.router, dependencies=[Depends(licence.module("syslog"))])
     app.include_router(monitoring_api.router, dependencies=[Depends(licence.module("monitoring"))])

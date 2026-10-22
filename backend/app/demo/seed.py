@@ -153,14 +153,15 @@ UNLISTED = {
 
 
 def mac_table(rows: list[dict], moved: int | None = None, missing: int | None = None,
-              extra: list[dict] = ()) -> str:
+              extra: list[dict] = (), wrong_vlan: int | None = None) -> str:
     lines = ["          Mac Address Table", "-------------------------------------------", "",
              "Vlan    Mac Address       Type        Ports", "----    -----------       --------    -----"]
     for i, r in enumerate(rows):
         if i == missing:
             continue
         port = "Gi1/0/40" if i == moved else r["port"]
-        lines.append(f"  {r['vlan']:<4}  {r['mac']}    DYNAMIC     {port}")
+        vlan = 1 if i == wrong_vlan else r["vlan"]  # plugged into a port on the default VLAN
+        lines.append(f"  {vlan:<4}  {r['mac']}    DYNAMIC     {port}")
     for r in extra:
         lines.append(f"  {r['vlan']:<4}  {r['mac']}    DYNAMIC     {r['port']}")
     lines.append(f"Total Mac Addresses for this criterion: {len(rows) + len(extra)}")
@@ -180,7 +181,8 @@ def build_network() -> FakeNetwork:
             outputs.update({
                 "show mac address-table": mac_table(rows, moved=3 if no == 2 else None,
                                                     missing=7 if no == 3 else None,
-                                                    extra=UNLISTED.get(no, [])),
+                                                    extra=UNLISTED.get(no, []),
+                                                    wrong_vlan=4 if no == 1 else None),
                 "show ip arp": s.IOS_ARP,
                 "show lldp neighbors detail": s.LLDP_DETAIL,
                 "show cdp neighbors detail": s.CDP_DETAIL,
@@ -240,6 +242,18 @@ def circuit_workbook() -> bytes:
 
 
 # --- filling an empty install through the API ----------------------------------------------
+
+def circuit_rules(client) -> None:
+    """Rules per type: cameras and access points emailed when they move or go missing, and
+    cameras and door controllers checked for their VLAN (CCTV-HQ1-05 is on VLAN 1)."""
+    for body in (
+        {"field": "service", "value": "CCTV", "email_moved": True, "email_missing": True,
+         "missing_hours": 24, "check_vlan": True, "email_vlan": True},
+        {"field": "service", "value": "Access control", "check_vlan": True, "vlans": "42"},
+        {"field": "service", "value": "Wireless APs", "email_moved": True, "email_missing": True},
+    ):
+        _ok(client.post("/api/circuits/rules", json=body))
+
 
 def carriers(client, ids: dict) -> None:
     """Lines from (made-up) providers, on the firewall and routers the simulator answers for.
@@ -304,6 +318,7 @@ def seed(client, settings, net) -> dict:
     imp = _ok(client.put("/api/circuits/imports/upload", params={"filename": "circuits.xlsx"},
                          content=circuit_workbook())).json()
     _ok(client.post(f"/api/circuits/imports/{imp['id']}/commit"))
+    circuit_rules(client)
     inventory(client)
     # SNMP-only devices, after the inventory so hq-ups1 takes over the HQ-UPS1 row (its rack
     # place, model and serial); no credential: nothing is read over SSH

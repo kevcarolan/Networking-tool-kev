@@ -102,6 +102,7 @@ server checks every minute.
 | Licence | 30 and 7 days before the licence ends, and when it (or the trial) has ended |
 | Upgrade worker | The upgrade worker has been stopped for more than 10 minutes |
 | Devices down or up | A device went down, came back up or restarted, a hardware problem started or cleared (a failed fan or power supply, a temperature alarm, CPU or memory over the threshold), or a port with a description, a port-channel or a carrier circuit's port went down or came back (Monitoring). One email per check; devices in a calendar window or an upgrade are left out |
+| Circuits moved, missing or on the wrong VLAN | After a network scan: a circuit moved to another switch port, wasn't seen for the hours its rule says, or is on a VLAN its rule doesn't allow (Circuits › Rules). Each problem is emailed once |
 | Carrier contracts ending | A carrier circuit's contract ends within 60 days, and again at 14 days (Circuits › Carrier circuits) |
 | Syslog | Devices sent messages at the level you choose (Critical and worse by default) or worse. They are gathered into at most one email every few minutes (5 by default), listing up to 50, so a storm of messages is one email |
 | Report | The report (below), on the day and at the time you choose |
